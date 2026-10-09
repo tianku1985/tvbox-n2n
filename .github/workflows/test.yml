@@ -251,9 +251,10 @@ jobs:
           git remote set-url --add origin "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
           git pull --rebase
           sed -i "/${{ matrix.userName }}\/${{ matrix.repoName }}/s#Updated: [a-zA-Z0-9]*#Updated: ${{ env.commit }}#" README.md
+          rm -f n2n-edge.zip
           git add --all
           git commit -m "${{ env.commit }}"
-          git push -u -f origin master
+          git push -u -f origin HEAD
 
   telegram-bot-api:
     name: Telegram Bot API
