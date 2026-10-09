@@ -45,12 +45,16 @@ cd "$N2N_SRC"
 
 echo "==> 应用 Android tuntap 补丁"
 cp "$GITHUB_WORKSPACE/.github/n2n/edge/tuntap_android.c" src/tuntap_linux.c
-# 删除其它三个 tuntap 实现：Makefile 用 $(wildcard src/*.c) 全量打包 libn2n.a，
-# 若保留则 lib 内会有 4 份 tuntap_open 定义，链接时会被随机选中（且非我们的版本）。
-rm -f src/tuntap_freebsd.c src/tuntap_netbsd.c src/tuntap_osx.c
+# 其余 tuntap_freebsd/netbsd/osx.c 均被 #ifdef __FreeBSD__/__NetBSD__/__APPLE__ 包裹，
+# 在 Android/Linux 下编译为空目标文件，不会与我们的 tuntap_open 冲突，故无需删除。
 
-chmod +x autogen.sh
+echo "==> 生成 autotools 构建脚本"
+chmod +x autogen.sh 2>/dev/null || true
 ./autogen.sh
+if [ ! -f configure ]; then
+  echo "！！！ autogen.sh 未能生成 configure，无法继续"
+  exit 1
+fi
 
 mkdir -p "$OUT"
 
@@ -61,7 +65,10 @@ build_abi() {
   local host="$1"
   local outname="$2"
   echo "==> 编译 $outname ($host)"
-  make distclean >/dev/null 2>&1 || true
+  # 关键：严禁使用 make distclean —— 它的规则会 `rm -f ... configure Makefile`，
+  # 于是第二个 ABI 一进来就把 configure 删掉，导致下一步 ./configure 报
+  # "./configure: No such file or directory"。这里只清理上一 ABI 的编译产物。
+  rm -f src/*.o libn2n.a edge
   ./configure \
     --host="$host" \
     CC="$TC/bin/${host}${ANDROID_API}-clang" \
