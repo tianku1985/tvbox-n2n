@@ -117,6 +117,23 @@ def patch_proguard():
             print("已修改 proguard-rules.pro: 追加混淆保留规则")
 
 
+def patch_setting_layout():
+    """上游把设置页左侧菜单容器设为 gone（仅一页设置内容时无需菜单）。
+    注入 N2N 页后需要菜单作为入口，将其改为可见。"""
+    p = REPO / "app" / "src" / "main" / "res" / "layout" / "activity_setting.xml"
+    if not p.exists():
+        fail("activity_setting.xml: 文件不存在")
+    src = p.read_text(encoding="utf-8")
+    if 'android:id="@+id/mGridView"' not in src:
+        fail("activity_setting.xml: 找不到 mGridView")
+    if 'android:visibility="gone"' in src:
+        src = src.replace('android:visibility="gone"', 'android:visibility="visible"', 1)
+        p.write_text(src, encoding="utf-8")
+        print("已修改 activity_setting.xml: 显示设置页菜单栏（N2N 入口）")
+    else:
+        print("activity_setting.xml: 菜单栏已可见，跳过")
+
+
 def main():
     # 1) 合并源码与资源（只新增/覆盖，不删除上游文件）
     merge_copy(SKEL / "java", REPO / "app" / "src" / "main" / "java")
@@ -127,8 +144,9 @@ def main():
     n2n_assets.mkdir(parents=True, exist_ok=True)
     print(f"已准备 {n2n_assets}")
 
-    # 3) 依次打三个补丁
+    # 3) 依次打四个补丁
     patch_setting_activity()
+    patch_setting_layout()
     patch_manifest()
     patch_proguard()
     print("n2n 集成完成")
