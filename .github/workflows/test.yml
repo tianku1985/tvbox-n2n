@@ -14,6 +14,11 @@ on:
         required: false
         type: boolean
 
+# 发布 Release / 推回 master 需要 contents:write；clean 清理 runs 需要 actions:write
+permissions:
+  contents: write
+  actions: write
+
 jobs:
   build:
     needs: telegram-bot-api
