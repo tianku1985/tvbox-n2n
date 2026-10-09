@@ -51,6 +51,9 @@ chmod +x autogen.sh
 
 mkdir -p "$OUT"
 
+# Clang 16+ 把函数指针类型不兼容等诊断默认当作编译错误，
+# 而 n2n 3.1.1 的 edge_management.c/sn_management.c 与之不兼容（差一个 const），
+# 故显式降级为警告，兼容 NDK 26/27（clang 17/19）。
 build_abi() {
   local host="$1"
   local outname="$2"
@@ -62,7 +65,7 @@ build_abi() {
     AR="$TC/bin/llvm-ar" \
     RANLIB="$TC/bin/llvm-ranlib" \
     STRIP="$TC/bin/llvm-strip" \
-    CFLAGS="-O2" > configure.log 2>&1 || { echo "！！！ configure 失败，日志: "; tail -n 60 configure.log; exit 1; }
+    CFLAGS="-O2 -Wno-error=incompatible-function-pointer-types -Wno-error=incompatible-pointer-types" > configure.log 2>&1 || { echo "！！！ configure 失败，日志: "; tail -n 60 configure.log; exit 1; }
   make edge -j"$(nproc)" > build.log 2>&1 || { echo "！！！ make 失败，日志: "; tail -n 120 build.log; exit 1; }
   "$TC/bin/llvm-strip" edge
   cp edge "$OUT/$outname"
