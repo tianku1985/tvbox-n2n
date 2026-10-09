@@ -122,6 +122,9 @@ jobs:
           # 替换Windows路径为系统Python路径
           # sed -i "s|buildPython(\"D:/Programs/Python/Python38/python.exe\")|buildPython(\"/usr/bin/python3\")|g" pyramid/build.gradle
           sed -i '/buildPython.*python.exe/d' pyramid/build.gradle
+          # pyquery 2.1.0 声明了并不存在的 cssselect>=1.5.0，Chaquopy 解析会失败；
+          # 固定到 2.0.2（TVBoxOS 本身即 2.0.2），对已锁版本的仓库无影响。
+          sed -i 's/install "pyquery"/install "pyquery==2.0.2"/g' pyramid/build.gradle
 
       - name: Setup Python local.properties
         #if: ${{ matrix.userName == 'q215613905' && env.commit }}

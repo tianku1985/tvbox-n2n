@@ -301,7 +301,8 @@ public class N2nVpnService extends VpnService {
             NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "n2n", NotificationManager.IMPORTANCE_LOW);
             nm.createNotificationChannel(channel);
         }
-        Intent content = new Intent(this, com.github.tvbox.osc.ui.activity.MainActivity.class);
+        // 两仓均无 MainActivity，主界面类为 HomeActivity
+        Intent content = new Intent(this, com.github.tvbox.osc.ui.activity.HomeActivity.class);
         content.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= 23) {
