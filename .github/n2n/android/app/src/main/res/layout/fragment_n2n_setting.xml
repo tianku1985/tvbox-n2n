@@ -1,0 +1,371 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- N2N 设置页布局：状态行 + 连接/断开开关 + 各配置入口行（社区/密钥/服务器/IP/掩码/MTU/额外路由/MAC） -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/ll_n2n_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:paddingTop="30dp"
+    android:paddingBottom="30dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="40dp"
+        android:layout_marginBottom="16dp"
+        android:text="N2N 组网"
+        android:textColor="#FF00E676"
+        android:textSize="22sp"
+        android:textStyle="bold" />
+
+    <!-- 当前连接状态展示行 -->
+    <LinearLayout
+        android:id="@+id/ll_n2n_status"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:paddingStart="40dp"
+        android:paddingEnd="40dp">
+
+        <TextView
+            android:layout_width="180dp"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:text="状态"
+            android:textColor="#FFAAAAAA"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/tv_n2n_status"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:text="未连接"
+            android:textColor="#FFFFFFFF"
+            android:textSize="15sp" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="40dp"
+        android:layout_marginEnd="40dp"
+        android:background="#33FFFFFF" />
+
+    <!-- 连接/断开开关行 -->
+    <LinearLayout
+        android:id="@+id/ll_n2n_toggle"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="@drawable/bg_n2n_row"
+        android:focusable="true"
+        android:orientation="horizontal"
+        android:paddingStart="40dp"
+        android:paddingEnd="40dp">
+
+        <TextView
+            android:layout_width="180dp"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:text="连接"
+            android:textColor="#FFAAAAAA"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/tv_n2n_toggle"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:text="连接"
+            android:textColor="#FF00E676"
+            android:textSize="15sp" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="40dp"
+        android:layout_marginEnd="40dp"
+        android:background="#33FFFFFF" />
+
+    <!-- 社区 -->
+    <LinearLayout
+        android:id="@+id/ll_n2n_community"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="@drawable/bg_n2n_row"
+        android:focusable="true"
+        android:orientation="horizontal"
+        android:paddingStart="40dp"
+        android:paddingEnd="40dp">
+
+        <TextView
+            android:layout_width="180dp"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:text="社区"
+            android:textColor="#FFAAAAAA"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/tv_n2n_community"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical|end"
+            android:text="n2n"
+            android:textColor="#FFFFFFFF"
+            android:textSize="15sp"
+            android:ellipsize="end"
+            android:maxLines="1" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="40dp"
+        android:layout_marginEnd="40dp"
+        android:background="#33FFFFFF" />
+
+    <LinearLayout
+        android:id="@+id/ll_n2n_key"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="@drawable/bg_n2n_row"
+        android:focusable="true"
+        android:orientation="horizontal"
+        android:paddingStart="40dp"
+        android:paddingEnd="40dp">
+
+        <TextView
+            android:layout_width="180dp"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:text="密钥"
+            android:textColor="#FFAAAAAA"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/tv_n2n_key"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical|end"
+            android:textColor="#FFFFFFFF"
+            android:textSize="15sp"
+            android:ellipsize="end"
+            android:maxLines="1" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="40dp"
+        android:layout_marginEnd="40dp"
+        android:background="#33FFFFFF" />
+
+    <LinearLayout
+        android:id="@+id/ll_n2n_supernode"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="@drawable/bg_n2n_row"
+        android:focusable="true"
+        android:orientation="horizontal"
+        android:paddingStart="40dp"
+        android:paddingEnd="40dp">
+
+        <TextView
+            android:layout_width="180dp"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:text="服务器"
+            android:textColor="#FFAAAAAA"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/tv_n2n_supernode"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical|end"
+            android:textColor="#FFFFFFFF"
+            android:textSize="15sp"
+            android:ellipsize="end"
+            android:maxLines="1" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="40dp"
+        android:layout_marginEnd="40dp"
+        android:background="#33FFFFFF" />
+
+    <LinearLayout
+        android:id="@+id/ll_n2n_ip"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="@drawable/bg_n2n_row"
+        android:focusable="true"
+        android:orientation="horizontal"
+        android:paddingStart="40dp"
+        android:paddingEnd="40dp">
+
+        <TextView
+            android:layout_width="180dp"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:text="虚拟IP"
+            android:textColor="#FFAAAAAA"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/tv_n2n_ip"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical|end"
+            android:textColor="#FFFFFFFF"
+            android:textSize="15sp"
+            android:ellipsize="end"
+            android:maxLines="1" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="40dp"
+        android:layout_marginEnd="40dp"
+        android:background="#33FFFFFF" />
+
+    <LinearLayout
+        android:id="@+id/ll_n2n_mask"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="@drawable/bg_n2n_row"
+        android:focusable="true"
+        android:orientation="horizontal"
+        android:paddingStart="40dp"
+        android:paddingEnd="40dp">
+
+        <TextView
+            android:layout_width="180dp"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:text="子网掩码"
+            android:textColor="#FFAAAAAA"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/tv_n2n_mask"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical|end"
+            android:textColor="#FFFFFFFF"
+            android:textSize="15sp"
+            android:ellipsize="end"
+            android:maxLines="1" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="40dp"
+        android:layout_marginEnd="40dp"
+        android:background="#33FFFFFF" />
+
+    <LinearLayout
+        android:id="@+id/ll_n2n_mtu"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="@drawable/bg_n2n_row"
+        android:focusable="true"
+        android:orientation="horizontal"
+        android:paddingStart="40dp"
+        android:paddingEnd="40dp">
+
+        <TextView
+            android:layout_width="180dp"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:text="MTU"
+            android:textColor="#FFAAAAAA"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/tv_n2n_mtu"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical|end"
+            android:text="1400"
+            android:textColor="#FFFFFFFF"
+            android:textSize="15sp" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="40dp"
+        android:layout_marginEnd="40dp"
+        android:background="#33FFFFFF" />
+
+    <LinearLayout
+        android:id="@+id/ll_n2n_route"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="@drawable/bg_n2n_row"
+        android:focusable="true"
+        android:orientation="horizontal"
+        android:paddingStart="40dp"
+        android:paddingEnd="40dp">
+
+        <TextView
+            android:layout_width="180dp"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:text="额外路由"
+            android:textColor="#FFAAAAAA"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/tv_n2n_route"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical|end"
+            android:textColor="#FFFFFFFF"
+            android:textSize="15sp"
+            android:ellipsize="end"
+            android:maxLines="1" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="40dp"
+        android:layout_marginEnd="40dp"
+        android:background="#33FFFFFF" />
+
+    <!-- MAC 行：点击后由代码重新生成随机本地管理地址 -->
+    <LinearLayout
+        android:id="@+id/ll_n2n_mac"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="@drawable/bg_n2n_row"
+        android:focusable="true"
+        android:orientation="horizontal"
+        android:paddingStart="40dp"
+        android:paddingEnd="40dp">
+
+        <TextView
+            android:layout_width="180dp"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:text="MAC"
+            android:textColor="#FFAAAAAA"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/tv_n2n_mac"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical|end"
+            android:textColor="#FFFFFFFF"
+            android:textSize="15sp" />
+    </LinearLayout>
+</LinearLayout>
