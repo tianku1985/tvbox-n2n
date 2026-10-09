@@ -11,6 +11,7 @@ import android.net.VpnService;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.ParcelFileDescriptor;
+import android.system.Os;
 import android.util.Log;
 
 import java.io.File;
@@ -25,8 +26,13 @@ import java.util.List;
  * n2n VPN 服务：
  * 1. 建立 VpnService TUN 设备，配置好 IP 与路由；
  * 2. 把打包在 assets 里的 edge 二进制释放到 files 目录并赋予可执行权限；
- * 3. 启动 edge 进程，将其标准输入重定向为 TUN 的文件描述符
- *    （配合原生 tuntap_android.c 用 stdin/N2N_TUN_FD 覆盖 tuntap_open）。
+ * 3. 启动 edge 进程，并把 TUN 的文件描述符号通过环境变量 N2N_TUN_FD 传给子进程
+ *    （配合原生 tuntap_android.c 覆盖 tuntap_open 直接使用该 fd）。
+ *
+ * 说明：不能使用 ProcessBuilder.Redirect.from(FileDescriptor)——Android/OpenJDK
+ * 的 Redirect 只有 from/to/appendTo(File) 重载，没有 FileDescriptor 版本。
+ * 正确做法是 detachFd() 取得裸 fd，再用 Os.dup() 复制（dup 会清除 FD_CLOEXEC，
+ * 使该 fd 能被子进程继承），最后把 fd 号经环境变量告知子进程（与 Xray/AeroVPN 一致）。
  */
 public class N2nVpnService extends VpnService {
 
@@ -40,6 +46,7 @@ public class N2nVpnService extends VpnService {
 
     private Process edgeProcess;                       // edge 子进程
     private ParcelFileDescriptor vpnFd;                // VpnService 建立的 TUN 文件描述符
+    private int tunFd = -1;                             // 可被子进程继承的 TUN fd（detach+dup 后）
     private volatile boolean running;                  // 当前是否处于运行状态
 
     /** 是否正在运行（供设置页状态展示） */
@@ -124,6 +131,19 @@ public class N2nVpnService extends VpnService {
             return;
         }
 
+        // 把 TUN fd 传给子进程：detachFd 取得裸 fd，Os.dup 复制并清除 FD_CLOEXEC，
+        // 使复制出的 fd 能被子进程继承；子进程通过环境变量 N2N_TUN_FD 得知 fd 号。
+        try {
+            int rawFd = vpnFd.detachFd();
+            tunFd = Os.dup(rawFd);
+            Os.close(rawFd);
+            vpnFd = null;
+        } catch (Exception e) {
+            Log.e(TAG, "tun fd dup failed", e);
+            stopVpn(true);
+            return;
+        }
+
         ProcessBuilder pb = new ProcessBuilder(buildCommand(cfg, bin));
         pb.redirectErrorStream(true);
         try {
@@ -131,8 +151,7 @@ public class N2nVpnService extends VpnService {
         } catch (Exception e) {
             Log.e(TAG, "log setup failed", e);
         }
-        pb.redirectInput(ProcessBuilder.Redirect.from(vpnFd.getFileDescriptor()));
-        pb.environment().put("N2N_TUN_FD", "0");
+        pb.environment().put("N2N_TUN_FD", String.valueOf(tunFd));
         try {
             edgeProcess = pb.start();
         } catch (IOException e) {
@@ -317,6 +336,14 @@ public class N2nVpnService extends VpnService {
                 // ignore
             }
             vpnFd = null;
+        }
+        if (tunFd >= 0) {
+            try {
+                Os.close(tunFd);                     // 关闭本进程持有的 TUN fd 引用
+            } catch (Exception e) {
+                // ignore
+            }
+            tunFd = -1;
         }
         if (selfStop) {
             stopForeground(true);

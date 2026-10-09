@@ -1,0 +1,49 @@
+name: Build n2n edge
+
+# n2n-edge 独立工作流：单独编译 edge 二进制并上传产物，与主构建 test.yml 解耦。
+#
+# 触发方式：
+#   1. 手动触发（Actions → Build n2n edge → Run workflow）
+#   2. 推送修改 .github/n2n/**（C 补丁或编译脚本变更时自动重编）
+#   3. 被其他工作流以 reusable workflow 方式调用（workflow_call）
+#
+# test.yml 的 build job 会通过 GitHub API 下载本工作流产生的最新 n2n-edge 产物。
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/n2n/**'
+      - '.github/workflows/n2n-edge.yml'
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: 编译 n2n edge 二进制
+        run: |
+          chmod +x .github/n2n/build-edge.sh
+          ./.github/n2n/build-edge.sh
+
+      - name: 上传二进制产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: n2n-edge
+          path: .github/n2n/bin/*
+
+  # 每次运行后清理 14 天前的旧记录/产物，避免仓库的 Actions 存储无限增长
+  clean:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: 清理旧的运行记录与产物
+        uses: Mattraks/delete-workflow-runs@main
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 14
+          keep_minimum_runs: 10

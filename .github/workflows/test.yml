@@ -287,25 +287,6 @@ jobs:
           name: telegram-bot-api-binary
           path: telegram-bot-api-binary
 
-  n2n-edge:
-    # 编译并缓存 edge 二进制，供 build 步骤下载后打入 APK assets
-    name: 构建 n2n edge
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: 编译 n2n edge 二进制
-        run: |
-          chmod +x .github/n2n/build-edge.sh
-          ./.github/n2n/build-edge.sh
-
-      - name: 上传二进制产物
-        uses: actions/upload-artifact@v4
-        with:
-          name: n2n-edge
-          path: .github/n2n/bin/*
-
   clean:
     needs: build
     runs-on: ubuntu-latest
