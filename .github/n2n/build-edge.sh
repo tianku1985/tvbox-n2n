@@ -45,6 +45,9 @@ cd "$N2N_SRC"
 
 echo "==> 应用 Android tuntap 补丁"
 cp "$GITHUB_WORKSPACE/.github/n2n/edge/tuntap_android.c" src/tuntap_linux.c
+# 删除其它三个 tuntap 实现：Makefile 用 $(wildcard src/*.c) 全量打包 libn2n.a，
+# 若保留则 lib 内会有 4 份 tuntap_open 定义，链接时会被随机选中（且非我们的版本）。
+rm -f src/tuntap_freebsd.c src/tuntap_netbsd.c src/tuntap_osx.c
 
 chmod +x autogen.sh
 ./autogen.sh

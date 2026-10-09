@@ -343,7 +343,7 @@ static void tun_stop_bridge (void) {
 }
 
 int tuntap_open (tuntap_dev *device, char *dev, const char *address_mode, char *device_ip,
-                 char *device_mask, const char *device_mac, int mtu, int metric) {
+                 char *device_mask, const char *device_mac, int mtu) {
     const char *env_fd;
     int fd = -1;
 
