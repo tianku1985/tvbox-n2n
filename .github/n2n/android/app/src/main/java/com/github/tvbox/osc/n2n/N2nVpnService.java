@@ -12,6 +12,7 @@ import android.os.Build;
 import android.os.IBinder;
 import android.os.ParcelFileDescriptor;
 import android.system.Os;
+import android.system.OsConstants;
 import android.util.Log;
 
 import java.io.File;
@@ -31,8 +32,10 @@ import java.util.List;
  *
  * 说明：不能使用 ProcessBuilder.Redirect.from(FileDescriptor)——Android/OpenJDK
  * 的 Redirect 只有 from/to/appendTo(File) 重载，没有 FileDescriptor 版本。
- * 正确做法是 detachFd() 取得裸 fd，再用 Os.dup() 复制（dup 会清除 FD_CLOEXEC，
- * 使该 fd 能被子进程继承），最后把 fd 号经环境变量告知子进程（与 Xray/AeroVPN 一致）。
+ * 正确做法是用 ParcelFileDescriptor.getFd() 取 fd 号，再用
+ * Os.fcntlInt(fd, F_SETFD, 0) 清除 FD_CLOEXEC 使子进程可继承（注意 Android 的
+ * Os.dup/close 只有 FileDescriptor 版本，不能对 detachFd 出来的裸 int fd 直接
+ * dup/close），最后把 fd 号经环境变量告知子进程（与 Xray/AeroVPN 一致）。
  */
 public class N2nVpnService extends VpnService {
 
@@ -46,7 +49,7 @@ public class N2nVpnService extends VpnService {
 
     private Process edgeProcess;                       // edge 子进程
     private ParcelFileDescriptor vpnFd;                // VpnService 建立的 TUN 文件描述符
-    private int tunFd = -1;                             // 可被子进程继承的 TUN fd（detach+dup 后）
+    private int tunFd = -1;                             // TUN fd 号（已清除 FD_CLOEXEC，可被子进程继承）
     private volatile boolean running;                  // 当前是否处于运行状态
 
     /** 是否正在运行（供设置页状态展示） */
@@ -131,15 +134,15 @@ public class N2nVpnService extends VpnService {
             return;
         }
 
-        // 把 TUN fd 传给子进程：detachFd 取得裸 fd，Os.dup 复制并清除 FD_CLOEXEC，
-        // 使复制出的 fd 能被子进程继承；子进程通过环境变量 N2N_TUN_FD 得知 fd 号。
+        // 把 TUN fd 传给子进程：getFd() 取得 fd 号（PFD 仍持有所有权，由 stopVpn 统一 close），
+        // 再用 fcntl(F_SETFD, 0) 清除 FD_CLOEXEC，使 exec 后的 edge 子进程能继承该 fd；
+        // 子进程通过环境变量 N2N_TUN_FD 得知 fd 号。注意 Android 的 Os.dup/close 只有
+        // FileDescriptor 版本，不能对 detachFd 出来的裸 int fd 直接 dup/close（编译不过）。
         try {
-            int rawFd = vpnFd.detachFd();
-            tunFd = Os.dup(rawFd);
-            Os.close(rawFd);
-            vpnFd = null;
+            tunFd = vpnFd.getFd();
+            Os.fcntlInt(vpnFd.getFileDescriptor(), OsConstants.F_SETFD, 0);
         } catch (Exception e) {
-            Log.e(TAG, "tun fd dup failed", e);
+            Log.e(TAG, "tun fd setup failed", e);
             stopVpn(true);
             return;
         }
@@ -339,12 +342,7 @@ public class N2nVpnService extends VpnService {
             vpnFd = null;
         }
         if (tunFd >= 0) {
-            try {
-                Os.close(tunFd);                     // 关闭本进程持有的 TUN fd 引用
-            } catch (Exception e) {
-                // ignore
-            }
-            tunFd = -1;
+            tunFd = -1;                          // fd 号仅供环境变量使用，TUN fd 由上方 vpnFd.close() 统一关闭
         }
         if (selfStop) {
             stopForeground(true);
