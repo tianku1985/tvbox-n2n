@@ -57,11 +57,11 @@ public class N2nSettingFragment extends BaseLazyFragment {
         return new N2nSettingFragment();
     }
 
-    /** 主线程轮询：每 2 秒刷新一次连接状态 */
+    /** 主线程轮询：每 2 秒刷新一次连接状态（页面未初始化前不处理，避免 NPE） */
     private Handler mHandler = new Handler(Looper.getMainLooper()) {
         @Override
         public void handleMessage(Message msg) {
-            if (msg.what == MSG_REFRESH) {
+            if (msg.what == MSG_REFRESH && tvStatus != null) {
                 refreshStatus();
                 sendEmptyMessageDelayed(MSG_REFRESH, 2000);
             }
@@ -261,10 +261,15 @@ public class N2nSettingFragment extends BaseLazyFragment {
         }
     }
 
-    // 页面可见时开启状态轮询，不可见时停止
+    // 页面可见时开启状态轮询，不可见时停止。
+    // 注意：ViewPager 会预加载本页，onResume 时 init() 可能尚未执行（懒加载，
+    // 控件仍为 null），此时不能启动轮询，否则 refreshStatus() 会 NPE 闪退。
     @Override
     public void onResume() {
         super.onResume();
+        if (tvStatus == null) {
+            return;
+        }
         mHandler.removeMessages(MSG_REFRESH);
         mHandler.sendEmptyMessageDelayed(MSG_REFRESH, 500);
     }
