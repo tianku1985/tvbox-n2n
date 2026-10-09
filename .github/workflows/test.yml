@@ -189,7 +189,7 @@ jobs:
           fi
           echo -e '\n```' >> apk/${{ matrix.userName }}-Release.log
       - name: Upload App To Artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v6
         if: ${{ env.commit }}
         with:
           name: ${{ matrix.userName }}-${{ matrix.repoName }}
@@ -282,7 +282,7 @@ jobs:
           cp telegram-bot-api/bin/telegram-bot-api telegram-bot-api-binary
 
       - name: Upload Binary
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v6
         with:
           name: telegram-bot-api-binary
           path: telegram-bot-api-binary
