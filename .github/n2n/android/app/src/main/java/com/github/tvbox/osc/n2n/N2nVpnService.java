@@ -51,10 +51,29 @@ public class N2nVpnService extends VpnService {
     private ParcelFileDescriptor vpnFd;                // VpnService 建立的 TUN 文件描述符
     private int tunFd = -1;                             // TUN fd 号（已清除 FD_CLOEXEC，可被子进程继承）
     private volatile boolean running;                  // 当前是否处于运行状态
+    private volatile long startedAt;                   // edge 启动时间（用于区分"连接中/已连接"）
+    private volatile String lastError = "";            // 最近一次失败原因（页面状态行展示）
 
     /** 是否正在运行（供设置页状态展示） */
     public static boolean isRunning() {
         return instance != null && instance.running;
+    }
+
+    /** 连接状态文字：未连接 / 已断开（原因） / 连接中… / 已连接 */
+    public static String stateText() {
+        N2nVpnService s = instance;
+        if (s == null || !s.running) {
+            if (s != null && s.lastError != null && !s.lastError.isEmpty()) {
+                return "已断开（" + s.lastError + "）";
+            }
+            return "未连接";
+        }
+        Process p = s.edgeProcess;
+        if (p == null || !p.isAlive()) {
+            return "连接中…";
+        }
+        // edge 存活超过 3 秒视为连接成功（静态 IP 已配置到 TUN 上）
+        return System.currentTimeMillis() - s.startedAt < 3000 ? "连接中…" : "已连接";
     }
 
     /** 启动 VPN 服务（API 26+ 使用 startForegroundService） */
@@ -71,6 +90,7 @@ public class N2nVpnService extends VpnService {
     /** 停止并清理 VPN 与 edge 进程 */
     public static void stopAll() {
         if (instance != null) {
+            instance.lastError = "";                   // 用户主动断开，清除旧的失败原因
             instance.stopVpn(true);
         }
     }
@@ -106,6 +126,7 @@ public class N2nVpnService extends VpnService {
         File bin = prepareBinary();
         if (bin == null) {
             Log.e(TAG, "edge binary not found");
+            lastError = "edge 二进制缺失";
             stopVpn(true);
             return;
         }
@@ -130,6 +151,7 @@ public class N2nVpnService extends VpnService {
             vpnFd = null;
         }
         if (vpnFd == null) {
+            lastError = "VPN 接口建立失败";
             stopVpn(true);
             return;
         }
@@ -160,10 +182,13 @@ public class N2nVpnService extends VpnService {
         } catch (IOException e) {
             Log.e(TAG, "edge start failed", e);
             edgeProcess = null;
+            lastError = "edge 启动失败";
             stopVpn(true);
             return;
         }
 
+        lastError = "";
+        startedAt = System.currentTimeMillis();
         running = true;
         trackProcess(edgeProcess);
     }
@@ -177,6 +202,7 @@ public class N2nVpnService extends VpnService {
                     int rc = process.waitFor();
                     Log.i(TAG, "edge exited rc=" + rc);
                     if (running && process == edgeProcess) {
+                        lastError = "edge 已退出(rc=" + rc + ")，请查看运行日志";
                         stopVpn(true);
                     }
                 } catch (InterruptedException e) {
@@ -186,28 +212,60 @@ public class N2nVpnService extends VpnService {
         }, "n2n-wait").start();
     }
 
-    /** 组装 edge 命令行参数 */
+    /** 组装 edge 命令行参数；密钥/MAC 为空时不传对应参数（edge 不接受空值参数） */
     private String[] buildCommand(N2nConfig cfg, File bin) {
         List<String> cmd = new ArrayList<>();
         cmd.add(bin.getAbsolutePath());
         cmd.add("-c");
         cmd.add(cfg.community);
-        cmd.add("-k");
-        cmd.add(cfg.key);
+        if (cfg.key != null && !cfg.key.isEmpty()) {
+            cmd.add("-k");
+            cmd.add(cfg.key);
+        }
         cmd.add("-a");
         cmd.add(cfg.ip);
         cmd.add("-s");
         cmd.add(cfg.mask);
         cmd.add("-l");
         cmd.add(cfg.supernode);
-        cmd.add("-m");
-        cmd.add(cfg.mac);
+        if (cfg.mac != null && !cfg.mac.isEmpty()) {
+            cmd.add("-m");
+            cmd.add(cfg.mac);
+        }
         cmd.add("-M");
         cmd.add(String.valueOf(cfg.mtu));
         cmd.add("-d");
         cmd.add("n2n0");
         cmd.add("-f");
         return cmd.toArray(new String[0]);
+    }
+
+    /** 读取 edge 运行日志尾部（最多 maxChars 字符），供页面「运行日志」展示 */
+    public static String logTail(Context ctx, int maxChars) {
+        File f = new File(ctx.getFilesDir() + File.separator + BIN_DIR, "edge.log");
+        if (!f.exists() || f.length() == 0) {
+            return "（暂无日志，请先连接一次）";
+        }
+        java.io.RandomAccessFile raf = null;
+        try {
+            raf = new java.io.RandomAccessFile(f, "r");
+            long len = raf.length();
+            long skip = Math.max(0, len - maxChars);
+            byte[] buf = new byte[(int) (len - skip)];
+            raf.seek(skip);
+            raf.readFully(buf);
+            return new String(buf, "UTF-8");
+        } catch (Exception e) {
+            return "（日志读取失败: " + e.getMessage() + "）";
+        } finally {
+            if (raf != null) {
+                try {
+                    raf.close();
+                } catch (IOException e) {
+                    // ignore
+                }
+            }
+        }
     }
 
     /** 解析额外路由："a.b.c.d/前缀" 或 "a.b.c.d"(视为 /32)，支持空格/逗号分隔 */

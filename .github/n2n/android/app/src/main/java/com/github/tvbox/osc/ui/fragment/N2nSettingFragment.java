@@ -48,6 +48,8 @@ public class N2nSettingFragment extends BaseLazyFragment {
     private TextView tvMtu;
     private TextView tvRoute;
     private TextView tvMac;
+    private TextView tvPing;
+    private TextView tvLog;
 
     /** 当前配置（Hawk 持久化） */
     private N2nConfig cfg;
@@ -88,6 +90,8 @@ public class N2nSettingFragment extends BaseLazyFragment {
         tvMtu = findViewById(R.id.tv_n2n_mtu);
         tvRoute = findViewById(R.id.tv_n2n_route);
         tvMac = findViewById(R.id.tv_n2n_mac);
+        tvPing = findViewById(R.id.tv_n2n_ping);
+        tvLog = findViewById(R.id.tv_n2n_log);
 
         // 『连接/断开』切换行
         findViewById(R.id.ll_n2n_toggle).setOnClickListener(new View.OnClickListener() {
@@ -112,6 +116,20 @@ public class N2nSettingFragment extends BaseLazyFragment {
                 cfg.save();
                 tvMac.setText(cfg.mac);
                 Toast.makeText(mContext, "MAC 已重新生成", Toast.LENGTH_SHORT).show();
+            }
+        });
+        // Ping 测试行
+        findViewById(R.id.ll_n2n_ping).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showPingDialog();
+            }
+        });
+        // 运行日志行
+        findViewById(R.id.ll_n2n_log).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showLogDialog();
             }
         });
 
@@ -252,13 +270,132 @@ public class N2nSettingFragment extends BaseLazyFragment {
     /** 根据连接状态刷新『状态/连接』两行 */
     private void refreshStatus() {
         boolean running = N2nVpnService.isRunning();
-        if (running) {
-            tvStatus.setText("已连接");
-            tvToggle.setText("断开");
+        String state = N2nVpnService.stateText();
+        if (running && "已连接".equals(state)) {
+            // 已连接：展示分配到的虚拟 IP（静态配置即所获 IP）
+            tvStatus.setText("已连接  IP: " + cfg.ip);
+            tvStatus.setTextColor(0xFF00E676);
         } else {
-            tvStatus.setText("未连接");
-            tvToggle.setText("连接");
+            tvStatus.setText(state);
+            tvStatus.setTextColor(0xFFFFFFFF);
         }
+        tvToggle.setText(running ? "断开" : "连接");
+    }
+
+    /** Ping 测试：目标默认为服务器地址（去掉端口），可手动输入虚拟网段内其他 IP */
+    private void showPingDialog() {
+        String defTarget = hostOf(cfg.supernode);
+        final EditText et = new EditText(mContext);
+        et.setText(defTarget);
+        et.setSelection(et.getText().length());
+        et.setInputType(InputType.TYPE_CLASS_TEXT);
+        new AlertDialog.Builder(mContext)
+                .setTitle("Ping 测试（IP 或域名）")
+                .setView(et)
+                .setPositiveButton("开始", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        String target = et.getText() == null ? "" : et.getText().toString().trim();
+                        if (!target.isEmpty()) {
+                            pingHost(target);
+                        }
+                    }
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    /** 取 "host:port" 中的 host 部分（无端口则原样返回） */
+    private static String hostOf(String addr) {
+        if (addr == null) {
+            return "";
+        }
+        int i = addr.lastIndexOf(':');
+        // 端口冒号只有在没有多个冒号（非 IPv6）时才剥离
+        return (i > 0 && addr.indexOf(':') == i) ? addr.substring(0, i) : addr;
+    }
+
+    /** 后台执行 ping -c 4，结果显示在行尾并弹窗展示完整输出 */
+    private void pingHost(final String target) {
+        if (tvPing != null) {
+            tvPing.setText("测试中…");
+        }
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                String output;
+                String summary;
+                try {
+                    Process p = Runtime.getRuntime().exec(
+                            new String[]{"ping", "-c", "4", "-W", "2", target});
+                    java.io.BufferedReader br = new java.io.BufferedReader(
+                            new java.io.InputStreamReader(p.getInputStream(), "UTF-8"));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = br.readLine()) != null) {
+                        sb.append(line).append('\n');
+                    }
+                    br.close();
+                    p.waitFor();
+                    output = sb.toString();
+                    summary = summarizePing(output, target);
+                } catch (Exception e) {
+                    output = "ping 失败: " + e.getMessage();
+                    summary = "失败";
+                }
+                final String fOutput = output;
+                final String fSummary = summary;
+                mHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (tvPing != null) {
+                            tvPing.setText(fSummary);
+                        }
+                        showTextDialog("Ping " + target, fOutput);
+                    }
+                });
+            }
+        }, "n2n-ping").start();
+    }
+
+    /** 从 ping 输出提取一行摘要（延迟或丢包） */
+    private static String summarizePing(String output, String target) {
+        // 匹配 rtt 统计行: "rtt min/avg/max/mdev = 1.2/3.4/5.6/0.7 ms"
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("=\\s*([\\d.]+)/([\\d.]+)/([\\d.]+)/[\\d.]+\\s*ms")
+                .matcher(output);
+        if (m.find()) {
+            return target + "  " + m.group(2) + " ms";
+        }
+        if (output.contains("100% packet loss") || output.contains("100% loss")) {
+            return target + "  不可达";
+        }
+        if (output.contains("ttl=") || output.contains("TTL=")) {
+            return target + "  可达";
+        }
+        return target + "  无响应";
+    }
+
+    /** 运行日志：读取 edge 输出尾部并展示 */
+    private void showLogDialog() {
+        showTextDialog("edge 运行日志（尾部）", N2nVpnService.logTail(mContext, 8000));
+    }
+
+    /** 等宽滚动文本弹窗（日志/ping 输出共用） */
+    private void showTextDialog(String title, String content) {
+        android.widget.ScrollView sv = new android.widget.ScrollView(mContext);
+        TextView tv = new TextView(mContext);
+        tv.setText(content);
+        tv.setTextIsSelectable(true);
+        tv.setTypeface(android.graphics.Typeface.MONOSPACE);
+        tv.setTextSize(12);
+        tv.setPadding(40, 24, 40, 24);
+        sv.addView(tv);
+        new AlertDialog.Builder(mContext)
+                .setTitle(title)
+                .setView(sv)
+                .setPositiveButton("关闭", null)
+                .show();
     }
 
     // 页面可见时开启状态轮询，不可见时停止。
