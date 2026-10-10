@@ -101,8 +101,22 @@ def patch_manifest():
         fail("manifest: 找不到 </application>")
     else:
         src = src.replace("</application>", service + "\n    </application>", 1)
-        p.write_text(src, encoding="utf-8")
         print("已修改 manifest: 注册 VpnService")
+
+    # 强制安装时解压 native 库：edge 以 liblegedge.so 形式打包，Android 10+ W^X
+    # 禁止执行 filesDir 里的二进制，必须从已解压的 nativeLibraryDir 执行。
+    # 若上游显式设为 false（库直接留在 APK 内），文件不会落盘，execve 会失败。
+    import re
+    if re.search(r'<application[^>]*android:extractNativeLibs="false"', src):
+        src = re.sub(r'(<application[^>]*?)android:extractNativeLibs="false"',
+                     r'android:extractNativeLibs="true"', src, count=1)
+        print("manifest: extractNativeLibs false -> true")
+    elif not re.search(r'<application[^>]*android:extractNativeLibs=', src):
+        src = re.sub(r'<application',
+                     '<application\n        android:extractNativeLibs="true"',
+                     src, count=1)
+        print("manifest: 新增 extractNativeLibs=true")
+    p.write_text(src, encoding="utf-8")
 
 
 def patch_proguard():

@@ -352,8 +352,27 @@ public class N2nVpnService extends VpnService {
         return out;
     }
 
-    /** 把匹配当前 CPU 架构的 edge 二进制从 assets 释放到 files/n2n/ 并 chmod 可执行 */
+    /**
+     * 定位可执行 edge：
+     * Android 10+(API 29) 优先用安装时解压到 nativeLibraryDir 的 liblegedge.so
+     * （W^X 限制下 filesDir 二进制无法执行，该目录由系统解压、只读且可执行）；
+     * 不存在或低版本时，再从 assets 释放到 files/n2n/edge。
+     */
     private File prepareBinary() {
+        if (Build.VERSION.SDK_INT >= 29) {
+            File nl = new File(getApplicationInfo().nativeLibraryDir, "liblegedge.so");
+            if (nl.exists()) {
+                diag("使用 nativeLibraryDir 内 edge: " + nl.getAbsolutePath()
+                        + " (" + nl.length() + " bytes)");
+                return nl;
+            }
+            diag("nativeLibraryDir 未找到 liblegedge.so，回退从 assets 释放");
+        }
+        return extractBinary();
+    }
+
+    /** 把匹配当前 CPU 架构的 edge 二进制从 assets 释放到 files/n2n/ 并 chmod 可执行 */
+    private File extractBinary() {
         File dir = new File(getFilesDir(), BIN_DIR);
         if (!dir.exists() && !dir.mkdirs()) {
             sLastError = "无法创建工作目录 " + dir.getAbsolutePath();
