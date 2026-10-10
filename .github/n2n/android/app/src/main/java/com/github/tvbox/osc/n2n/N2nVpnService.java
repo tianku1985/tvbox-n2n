@@ -52,7 +52,10 @@ public class N2nVpnService extends VpnService {
     private int tunFd = -1;                             // TUN fd 号（已清除 FD_CLOEXEC，可被子进程继承）
     private volatile boolean running;                  // 当前是否处于运行状态
     private volatile long startedAt;                   // edge 启动时间（用于区分"连接中/已连接"）
-    private volatile String lastError = "";            // 最近一次失败原因（页面状态行展示）
+
+    // 最近一次失败原因。用【静态】字段：服务在早期失败会立即 stopSelf 清空 instance，
+    // 若错误存在实例字段里会随之丢失，页面又退化成"未连接"而无从排查。
+    private static volatile String sLastError = "";
 
     /** 是否正在运行（供设置页状态展示） */
     public static boolean isRunning() {
@@ -63,10 +66,8 @@ public class N2nVpnService extends VpnService {
     public static String stateText() {
         N2nVpnService s = instance;
         if (s == null || !s.running) {
-            if (s != null && s.lastError != null && !s.lastError.isEmpty()) {
-                return "已断开（" + s.lastError + "）";
-            }
-            return "未连接";
+            return (sLastError == null || sLastError.isEmpty())
+                    ? "未连接" : "已断开（" + sLastError + "）";
         }
         Process p = s.edgeProcess;
         if (p == null || !p.isAlive()) {
@@ -89,8 +90,8 @@ public class N2nVpnService extends VpnService {
 
     /** 停止并清理 VPN 与 edge 进程 */
     public static void stopAll() {
+        sLastError = "";                               // 用户主动断开，清除旧的失败原因
         if (instance != null) {
-            instance.lastError = "";                   // 用户主动断开，清除旧的失败原因
             instance.stopVpn(true);
         }
     }
@@ -112,24 +113,59 @@ public class N2nVpnService extends VpnService {
         return START_NOT_STICKY;                        // 被系统杀掉后不自动重启
     }
 
+    /** 日志文件（Java 阶段诊断 + edge 输出共用同一文件） */
+    private File logFile() {
+        File dir = new File(getFilesDir(), BIN_DIR);
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+        return new File(dir, "edge.log");
+    }
+
+    /** 追加一行带时间戳的 Java 层阶段诊断（即使 edge 没启动，失败原因也有据可查） */
+    private void diag(String msg) {
+        java.io.FileWriter w = null;
+        try {
+            String ts = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+                    .format(new java.util.Date());
+            w = new java.io.FileWriter(logFile(), true);
+            w.write("[" + ts + "] " + msg + "\n");
+        } catch (IOException e) {
+            Log.e(TAG, "diag write failed: " + msg, e);
+        } finally {
+            closeQuietly(w);
+        }
+    }
+
     /** 建立 VpnService、释放二进制并拉起 edge 进程 */
     private void startVpn(N2nConfig cfg) {
         if (running) {
             stopVpn(false);                            // 重复启动时先停掉旧会话
         }
+
+        // 新一轮连接：清空旧日志与错误，立即开始阶段记录（早于任何可能的 return）
+        sLastError = "";
+        try {
+            new FileOutputStream(logFile()).close();
+        } catch (IOException e) {
+            Log.e(TAG, "reset log failed", e);
+        }
+        diag("==== 开始建立 n2n 连接 ====");
+        diag("设备 ABI=" + java.util.Arrays.toString(Build.SUPPORTED_ABIS)
+                + " Android API=" + Build.VERSION.SDK_INT);
+
         if (Build.VERSION.SDK_INT < 21) {
-            Log.e(TAG, "VpnService requires API 21+");
-            stopVpn(true);
+            fail("VpnService 需要 Android 5.0 (API 21) 以上");
             return;
         }
 
         File bin = prepareBinary();
         if (bin == null) {
-            Log.e(TAG, "edge binary not found");
-            lastError = "edge 二进制缺失";
+            // 具体原因已由 prepareBinary/pickAsset 写入日志与 sLastError
             stopVpn(true);
             return;
         }
+        diag("edge 二进制就绪: " + bin.getAbsolutePath() + " (" + bin.length() + " bytes)");
 
         // 尽早进入前台，避免 startForegroundService 未及时 startForeground 导致 ANR
         startForeground(NOTIFY_ID, buildNotification(cfg));
@@ -139,22 +175,26 @@ public class N2nVpnService extends VpnService {
             b.setSession("n2n-" + cfg.community);
             b.setMtu(cfg.mtu);
             int prefix = N2nConfig.prefixLengthOfMask(cfg.mask);
+            diag("配置 TUN: address=" + cfg.ip + "/" + prefix + " mtu=" + cfg.mtu);
             b.addAddress(InetAddress.getByName(cfg.ip), prefix);
             b.addRoute(InetAddress.getByName(cfg.ip), prefix);
             List<String[]> routes = parseRoutes(cfg.extraRoute);
             for (String[] r : routes) {
+                diag("额外路由: " + r[0] + "/" + r[1]);
                 b.addRoute(InetAddress.getByName(r[0]), Integer.parseInt(r[1]));
             }
             vpnFd = b.establish();
         } catch (Exception e) {
             Log.e(TAG, "vpn establish failed", e);
             vpnFd = null;
-        }
-        if (vpnFd == null) {
-            lastError = "VPN 接口建立失败";
-            stopVpn(true);
+            fail("VPN 接口建立异常: " + e.getMessage());
             return;
         }
+        if (vpnFd == null) {
+            fail("VPN 接口建立失败（establish 返回 null，可能被系统拒绝或参数非法）");
+            return;
+        }
+        diag("TUN 建立成功");
 
         // 把 TUN fd 传给子进程：getFd() 取得 fd 号（PFD 仍持有所有权，由 stopVpn 统一 close），
         // 再用 fcntl(F_SETFD, 0) 清除 FD_CLOEXEC，使 exec 后的 edge 子进程能继承该 fd；
@@ -165,16 +205,21 @@ public class N2nVpnService extends VpnService {
             Os.fcntlInt(vpnFd.getFileDescriptor(), OsConstants.F_SETFD, 0);
         } catch (Exception e) {
             Log.e(TAG, "tun fd setup failed", e);
-            stopVpn(true);
+            fail("TUN fd 设置失败: " + e.getMessage());
             return;
         }
+        diag("TUN fd=" + tunFd + " 已清除 FD_CLOEXEC，可被子进程继承");
 
-        ProcessBuilder pb = new ProcessBuilder(buildCommand(cfg, bin));
+        String[] command = buildCommand(cfg, bin);
+        diag("启动命令: " + joinArgs(command));
+        ProcessBuilder pb = new ProcessBuilder(command);
         pb.redirectErrorStream(true);
         try {
-            pb.redirectOutput(ProcessBuilder.Redirect.appendTo(new File(getFilesDir() + File.separator + BIN_DIR, "edge.log")));
+            // edge 的 stdout/stderr 追加到同一日志，接在 Java 阶段诊断之后
+            pb.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile()));
         } catch (Exception e) {
             Log.e(TAG, "log setup failed", e);
+            diag("警告: edge 输出重定向失败: " + e.getMessage());
         }
         pb.environment().put("N2N_TUN_FD", String.valueOf(tunFd));
         try {
@@ -182,15 +227,33 @@ public class N2nVpnService extends VpnService {
         } catch (IOException e) {
             Log.e(TAG, "edge start failed", e);
             edgeProcess = null;
-            lastError = "edge 启动失败";
-            stopVpn(true);
+            fail("edge 启动失败: " + e.getMessage());
             return;
         }
 
-        lastError = "";
         startedAt = System.currentTimeMillis();
         running = true;
+        diag("edge 进程已拉起，等待连接 supernode " + cfg.supernode);
         trackProcess(edgeProcess);
+    }
+
+    /** 记录失败原因（同时写状态字段与日志），随后由调用方执行 stopVpn(true) */
+    private void fail(String reason) {
+        sLastError = reason;
+        diag("失败: " + reason);
+        stopVpn(true);
+    }
+
+    /** 拼接命令行参数（仅用于日志展示） */
+    private static String joinArgs(String[] args) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < args.length; i++) {
+            if (i > 0) {
+                sb.append(' ');
+            }
+            sb.append(args[i]);
+        }
+        return sb.toString();
     }
 
     /** 当 edge 进程意外退出时自动断开并清理 */
@@ -202,7 +265,8 @@ public class N2nVpnService extends VpnService {
                     int rc = process.waitFor();
                     Log.i(TAG, "edge exited rc=" + rc);
                     if (running && process == edgeProcess) {
-                        lastError = "edge 已退出(rc=" + rc + ")，请查看运行日志";
+                        sLastError = "edge 已退出(rc=" + rc + ")";
+                        diag("edge 进程退出，返回码 rc=" + rc + "（详见上方 edge 输出）");
                         stopVpn(true);
                     }
                 } catch (InterruptedException e) {
@@ -292,12 +356,19 @@ public class N2nVpnService extends VpnService {
     private File prepareBinary() {
         File dir = new File(getFilesDir(), BIN_DIR);
         if (!dir.exists() && !dir.mkdirs()) {
+            sLastError = "无法创建工作目录 " + dir.getAbsolutePath();
+            diag("失败: mkdirs " + dir.getAbsolutePath());
             return null;
         }
         String assetName = pickAsset();
         if (assetName == null) {
+            sLastError = "没有匹配当前架构的 edge（当前 ABI="
+                    + java.util.Arrays.toString(Build.SUPPORTED_ABIS) + "）";
+            diag("失败: assets/n2n 内无匹配二进制，设备 ABI="
+                    + java.util.Arrays.toString(Build.SUPPORTED_ABIS));
             return null;
         }
+        diag("匹配到 assets/n2n/" + assetName);
         File out = new File(dir, BIN_NAME);
         InputStream is = null;
         FileOutputStream fos = null;
@@ -312,6 +383,8 @@ public class N2nVpnService extends VpnService {
             fos.flush();
         } catch (IOException e) {
             Log.e(TAG, "extract binary failed", e);
+            sLastError = "释放 edge 失败: " + e.getMessage();
+            diag("失败: 释放二进制异常: " + e);
             return null;
         } finally {
             closeQuietly(is);
@@ -319,6 +392,8 @@ public class N2nVpnService extends VpnService {
         }
         if (!out.setExecutable(true, false) || !out.setReadable(true, false)) {
             Log.e(TAG, "chmod failed");
+            sLastError = "edge 赋可执行权限失败";
+            diag("失败: chmod +x " + out.getAbsolutePath());
             return null;
         }
         return out;
@@ -326,15 +401,6 @@ public class N2nVpnService extends VpnService {
 
     /** 返回当前设备架构对应的 assets 内二进制文件名；无匹配则返回 null */
     private String pickAsset() {
-        if (Build.VERSION.SDK_INT < 21) {
-            // 极老设备：尝试兼容的 32 位 x86/arm 取舍（这类设备基本不考虑 64 位）
-            try {
-                getAssets().open("n2n/edge-armeabi-v7a").close();
-                return "edge-armeabi-v7a";
-            } catch (IOException e) {
-                return null;
-            }
-        }
         String[] abis = Build.SUPPORTED_ABIS;
         for (String abi : abis) {
             String candidate;
@@ -342,8 +408,12 @@ public class N2nVpnService extends VpnService {
                 candidate = "edge-arm64-v8a";
             } else if (abi.equals("armeabi-v7a")) {
                 candidate = "edge-armeabi-v7a";
+            } else if (abi.equals("x86_64")) {
+                candidate = "edge-x86_64";
+            } else if (abi.equals("x86")) {
+                candidate = "edge-x86";
             } else {
-                continue;                            // 本仓库只打包了这两个 ABI
+                continue;                            // 其他 ABI 未提供
             }
             try {
                 getAssets().open("n2n/" + candidate).close();

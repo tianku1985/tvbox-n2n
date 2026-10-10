@@ -83,6 +83,10 @@ build_abi() {
 
 build_abi "aarch64-linux-android" "edge-arm64-v8a"
 build_abi "armv7a-linux-androideabi" "edge-armeabi-v7a"
+# x86 / x86_64 主要用于逍遥/MEmu 等 x86 内核模拟器，以及 x86 平板。
+# NDK 提供 i686-linux-android<api>-clang 与 x86_64-linux-android<api>-clang。
+build_abi "x86_64-linux-android" "edge-x86_64"
+build_abi "i686-linux-android" "edge-x86"
 
 echo "==> 完成，产物列表:"
 ls -l "$OUT"
