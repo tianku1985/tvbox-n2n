@@ -177,11 +177,18 @@ public class N2nVpnService extends VpnService {
             int prefix = N2nConfig.prefixLengthOfMask(cfg.mask);
             diag("配置 TUN: address=" + cfg.ip + "/" + prefix + " mtu=" + cfg.mtu);
             b.addAddress(InetAddress.getByName(cfg.ip), prefix);
-            b.addRoute(InetAddress.getByName(cfg.ip), prefix);
+            // Android addRoute() 要求路由目标的主机位必须清零（必须是网络地址），
+            // 否则抛 IllegalArgumentException("Bad address")——如 10.0.0.233/24
+            // 会被拒，必须转成 10.0.0.0/24 再添加路由。
+            InetAddress netAddr = maskToNetwork(cfg.ip, prefix);
+            diag("路由: " + netAddr.getHostAddress() + "/" + prefix);
+            b.addRoute(netAddr, prefix);
             List<String[]> routes = parseRoutes(cfg.extraRoute);
             for (String[] r : routes) {
-                diag("额外路由: " + r[0] + "/" + r[1]);
-                b.addRoute(InetAddress.getByName(r[0]), Integer.parseInt(r[1]));
+                int p = Integer.parseInt(r[1]);
+                InetAddress re = maskToNetwork(r[0], p);
+                diag("额外路由: " + re.getHostAddress() + "/" + p);
+                b.addRoute(re, p);
             }
             vpnFd = b.establish();
         } catch (Exception e) {
@@ -330,6 +337,20 @@ public class N2nVpnService extends VpnService {
                 }
             }
         }
+    }
+
+    /** 按前缀长度清零主机位，得到网络地址（10.0.0.233/24 → 10.0.0.0/24） */
+    private static InetAddress maskToNetwork(String ip, int prefix)
+            throws java.net.UnknownHostException {
+        byte[] b = InetAddress.getByName(ip).getAddress();
+        for (int i = prefix / 8; i < b.length; i++) {
+            if (i == prefix / 8 && prefix % 8 != 0) {
+                b[i] &= (byte) (0xFF << (8 - prefix % 8));
+            } else {
+                b[i] = 0;
+            }
+        }
+        return InetAddress.getByAddress(b);
     }
 
     /** 解析额外路由："a.b.c.d/前缀" 或 "a.b.c.d"(视为 /32)，支持空格/逗号分隔 */
