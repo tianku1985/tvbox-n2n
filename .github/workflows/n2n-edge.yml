@@ -30,7 +30,7 @@ jobs:
           ./.github/n2n/build-edge.sh
 
       - name: 上传二进制产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: n2n-edge
           path: .github/n2n/bin/*
