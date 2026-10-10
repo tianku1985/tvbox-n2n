@@ -97,9 +97,19 @@ jobs:
           fi
           curl -sL -H "Authorization: Bearer ${{ github.token }}" -o n2n-edge.zip \
             "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$ART_ID/zip"
+          TMPD=$(mktemp -d)
+          unzip -o n2n-edge.zip -d "$TMPD"
+          # 扁平 edge-* 二进制 → assets/n2n（作为低版本/回退方案释放执行）
           mkdir -p TVBoxOSC/app/src/main/assets/n2n
-          unzip -o n2n-edge.zip -d TVBoxOSC/app/src/main/assets/n2n
-          ls -l TVBoxOSC/app/src/main/assets/n2n
+          find "$TMPD" -maxdepth 1 -name 'edge-*' -type f -exec cp {} TVBoxOSC/app/src/main/assets/n2n/ \;
+          # jni/<abi>/liblegedge.so → jniLibs（Android 10+ W^X 下从 nativeLibraryDir 执行）
+          if [ -d "$TMPD/jni" ]; then
+            mkdir -p TVBoxOSC/app/src/main/jniLibs
+            cp -r "$TMPD/jni/"* TVBoxOSC/app/src/main/jniLibs/
+          fi
+          rm -rf "$TMPD"
+          echo "== assets/n2n =="; ls -l TVBoxOSC/app/src/main/assets/n2n
+          echo "== jniLibs =="; find TVBoxOSC/app/src/main/jniLibs -type f
 
       - name: Compress Source Code
         if: ${{ env.commit }}
@@ -165,7 +175,16 @@ jobs:
         working-directory: TVBoxOSC
         run: |
           chmod +x gradlew
-          ./gradlew assemblerelease --build-cache --parallel --daemon --warning-mode all
+          # 输出 tee 落盘，失败时把真正的编译错误行直接打在日志尾部，便于一眼看到
+          set +e
+          ./gradlew assemblerelease --build-cache --parallel --daemon --warning-mode all 2>&1 | tee gradle.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "===== 编译错误行（error: / e: ）====="
+            grep -nE "error:|^e: |Execution failed for task" gradle.log | tail -n 60 || true
+            exit "$rc"
+          fi
       - name: Prepare App
         if: ${{ env.commit }}
         working-directory: TVBoxOSC
@@ -251,12 +270,28 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git remote set-url --add origin "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
-          git pull --rebase
+          git pull --rebase || true
           sed -i "/${{ matrix.userName }}\/${{ matrix.repoName }}/s#Updated: [a-zA-Z0-9]*#Updated: ${{ env.commit }}#" README.md
           rm -f n2n-edge.zip
           git add --all
-          git commit -m "${{ env.commit }}"
-          git push -u -f origin HEAD
+          # rebuild 触发时 README 可能已经是同一个 commit，此时 git commit 会以
+          # "nothing to commit" 退出 1 直接把步骤标红，这里按需提交
+          if git diff --cached --quiet; then
+            echo "README 已是最新，无需提交"
+          else
+            git commit -m "${{ env.commit }}"
+          fi
+          # 两个矩阵 job 会并发推送同一分支，失败则重新拉取后重试
+          for i in 1 2 3; do
+            if git push -u -f origin HEAD; then
+              echo "推送成功"
+              exit 0
+            fi
+            echo "推送失败，5 秒后重试（$i/3）"
+            sleep 5
+            git pull --rebase || true
+          done
+          exit 1
 
   telegram-bot-api:
     name: Telegram Bot API

@@ -64,6 +64,7 @@ mkdir -p "$OUT"
 build_abi() {
   local host="$1"
   local outname="$2"
+  local jniabi="$3"
   echo "==> 编译 $outname ($host)"
   # 关键：严禁使用 make distclean —— 它的规则会 `rm -f ... configure Makefile`，
   # 于是第二个 ABI 一进来就把 configure 删掉，导致下一步 ./configure 报
@@ -79,14 +80,18 @@ build_abi() {
   make edge -j"$(nproc)" > build.log 2>&1 || { echo "！！！ make 失败，日志: "; tail -n 120 build.log; exit 1; }
   "$TC/bin/llvm-strip" edge
   cp edge "$OUT/$outname"
+  # 同时放入 jniLibs 布局（liblegedge.so）：Android 10+ W^X 禁止执行 filesDir 释放的
+  # 二进制，而 nativeLibraryDir 只读且可执行，服务在 API 29+ 从该目录拉起 edge。
+  mkdir -p "$OUT/jni/$jniabi"
+  cp edge "$OUT/jni/$jniabi/liblegedge.so"
 }
 
-build_abi "aarch64-linux-android" "edge-arm64-v8a"
-build_abi "armv7a-linux-androideabi" "edge-armeabi-v7a"
+build_abi "aarch64-linux-android" "edge-arm64-v8a" "arm64-v8a"
+build_abi "armv7a-linux-androideabi" "edge-armeabi-v7a" "armeabi-v7a"
 # x86 / x86_64 主要用于逍遥/MEmu 等 x86 内核模拟器，以及 x86 平板。
 # NDK 提供 i686-linux-android<api>-clang 与 x86_64-linux-android<api>-clang。
-build_abi "x86_64-linux-android" "edge-x86_64"
-build_abi "i686-linux-android" "edge-x86"
+build_abi "x86_64-linux-android" "edge-x86_64" "x86_64"
+build_abi "i686-linux-android" "edge-x86" "x86"
 
 echo "==> 完成，产物列表:"
 ls -l "$OUT"
