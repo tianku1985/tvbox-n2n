@@ -1,9 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- N2N 设置页布局：状态行 + 连接/断开开关 + 各配置入口行（社区/密钥/服务器/IP/掩码/MTU/额外路由/MAC） -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/ll_n2n_root"
+<!-- N2N 设置页布局：状态行 + 连接/断开开关 + 各配置入口行（社区/密钥/服务器/IP/掩码/MTU/额外路由/MAC/Ping/日志）。
+     外层 ScrollView 提供纵向滚动（行数较多，超出屏幕时手机/TV 遥控器可下翻）。 -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:fillViewport="true">
+
+<LinearLayout
+    android:id="@+id/ll_n2n_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
     android:orientation="vertical"
     android:paddingTop="30dp"
     android:paddingBottom="30dp">
@@ -443,3 +449,4 @@
             android:textSize="15sp" />
     </LinearLayout>
 </LinearLayout>
+</ScrollView>
