@@ -100,6 +100,34 @@ public class N2nVpnService extends VpnService {
     public void onCreate() {
         super.onCreate();
         instance = this;                               // 记录实例，供 stopAll/isRunning 使用
+        installCrashDump();
+    }
+
+    /**
+     * 进程崩溃时把完整异常栈写进 edge.log。
+     * 之前日志停在「TUN 建立成功」后应用就闪退，Java 层 catch 只接 Exception，
+     * Error/其它 Throwable 直接穿透导致闪退且毫无痕迹——有了这个转储，
+     * 下次复现直接在设置页「运行日志」里就能看到崩溃栈。
+     */
+    private void installCrashDump() {
+        final Thread.UncaughtExceptionHandler prev =
+                Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
+            @Override
+            public void uncaughtException(Thread t, Throwable e) {
+                try {
+                    java.io.StringWriter sw = new java.io.StringWriter();
+                    e.printStackTrace(new java.io.PrintWriter(sw));
+                    diag("!!!! 未捕获崩溃 thread=" + t.getName() + " !!!!");
+                    diag(sw.toString());
+                } catch (Throwable ignored) {
+                    // 转储失败也不能影响原崩溃流程
+                }
+                if (prev != null) {
+                    prev.uncaughtException(t, e);
+                }
+            }
+        });
     }
 
     @Override
@@ -107,7 +135,15 @@ public class N2nVpnService extends VpnService {
         if (intent != null) {
             Object cfg = intent.getSerializableExtra("cfg");
             if (cfg instanceof N2nConfig) {
-                startVpn((N2nConfig) cfg);             // 解析出配置并建立 VPN
+                try {
+                    startVpn((N2nConfig) cfg);         // 解析出配置并建立 VPN
+                } catch (Throwable t) {
+                    // 兜底：任何 Throwable 都先落日志再断开，避免“闪退无痕迹”
+                    Log.e(TAG, "startVpn crashed", t);
+                    sLastError = "连接异常: " + t;
+                    diag("startVpn 未捕获异常: " + Log.getStackTraceString(t));
+                    stopVpn(true);
+                }
             }
         }
         return START_NOT_STICKY;                        // 被系统杀掉后不自动重启
@@ -191,10 +227,10 @@ public class N2nVpnService extends VpnService {
                 b.addRoute(re, p);
             }
             vpnFd = b.establish();
-        } catch (Exception e) {
+        } catch (Throwable e) {
             Log.e(TAG, "vpn establish failed", e);
             vpnFd = null;
-            fail("VPN 接口建立异常: " + e.getMessage());
+            fail("VPN 接口建立异常: " + e);
             return;
         }
         if (vpnFd == null) {
@@ -207,34 +243,47 @@ public class N2nVpnService extends VpnService {
         // 再用 fcntl(F_SETFD, 0) 清除 FD_CLOEXEC，使 exec 后的 edge 子进程能继承该 fd；
         // 子进程通过环境变量 N2N_TUN_FD 得知 fd 号。注意 Android 的 Os.dup/close 只有
         // FileDescriptor 版本，不能对 detachFd 出来的裸 int fd 直接 dup/close（编译不过）。
+        // 此处必须 catch Throwable：此前只 catch Exception，一旦是 Error 闪退且日志无痕。
         try {
             tunFd = vpnFd.getFd();
+            diag("取得 TUN fd=" + tunFd);
             Os.fcntlInt(vpnFd.getFileDescriptor(), OsConstants.F_SETFD, 0);
-        } catch (Exception e) {
-            Log.e(TAG, "tun fd setup failed", e);
-            fail("TUN fd 设置失败: " + e.getMessage());
+            diag("已清除 FD_CLOEXEC，子进程可继承");
+        } catch (Throwable t) {
+            Log.e(TAG, "tun fd setup failed", t);
+            fail("TUN fd 设置失败: " + t);
             return;
         }
-        diag("TUN fd=" + tunFd + " 已清除 FD_CLOEXEC，可被子进程继承");
 
-        String[] command = buildCommand(cfg, bin);
-        diag("启动命令: " + joinArgs(command));
-        ProcessBuilder pb = new ProcessBuilder(command);
-        pb.redirectErrorStream(true);
+        String[] command;
         try {
+            command = buildCommand(cfg, bin);
+        } catch (Throwable t) {
+            Log.e(TAG, "build command failed", t);
+            fail("拼装 edge 命令失败: " + t);
+            return;
+        }
+        diag("启动命令: " + joinArgs(command));
+        ProcessBuilder pb;
+        try {
+            pb = new ProcessBuilder(command);
+            pb.redirectErrorStream(true);
             // edge 的 stdout/stderr 追加到同一日志，接在 Java 阶段诊断之后
             pb.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile()));
-        } catch (Exception e) {
-            Log.e(TAG, "log setup failed", e);
-            diag("警告: edge 输出重定向失败: " + e.getMessage());
+            pb.environment().put("N2N_TUN_FD", String.valueOf(tunFd));
+        } catch (Throwable t) {
+            Log.e(TAG, "process builder setup failed", t);
+            fail("edge 进程准备失败: " + t);
+            return;
         }
-        pb.environment().put("N2N_TUN_FD", String.valueOf(tunFd));
         try {
             edgeProcess = pb.start();
-        } catch (IOException e) {
+        } catch (Throwable e) {
+            // 注意不只是 IOException：ProcessBuilder.start 还可能抛 SecurityException 等
+            // RuntimeException（不捕获会直接闪退且日志停在「启动命令」）
             Log.e(TAG, "edge start failed", e);
             edgeProcess = null;
-            fail("edge 启动失败: " + e.getMessage());
+            fail("edge 启动失败: " + e);
             return;
         }
 
