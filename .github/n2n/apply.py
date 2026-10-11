@@ -74,7 +74,97 @@ def patch_setting_activity():
             src = src.replace(anchor, anchor + "\n        " + frag, 1)
             print("已修改 SettingActivity: 追加 Fragment")
 
+    # 4) 主界面 N2N 入口图标点击时带 extra=n2n_go，进入设置页后直接定位到 N2N 子页
+    #    （N2N 始终追加在 fragments 末尾，故 index=fragments.size()-1）
+    if "n2n_go" not in src:
+        anchor = "mViewPager.setCurrentItem(0);"
+        if anchor not in src:
+            fail("SettingActivity: 找不到 setCurrentItem 锚点")
+        else:
+            src = src.replace(
+                anchor,
+                "mViewPager.setCurrentItem(getIntent() != null"
+                " && getIntent().getBooleanExtra(\"n2n_go\", false)"
+                " ? fragments.size() - 1 : 0);",
+                1,
+            )
+            print("已修改 SettingActivity: 支持 n2n_go 直达 N2N 子页")
+
     p.write_text(src, encoding="utf-8")
+
+
+def patch_home_entry():
+    """在主界面顶栏『收藏/应用(tvDrawer)』与『设置(tvMenu)』两个图标之间插入 N2N 组网
+    入口。仅 takagen99/Box 的主界面有该图标栏；q215613905/TVBoxOS 无对应锚点时
+    打印跳过（不 fail），其入口仍在 设置页左侧菜单的「N2N 组网」。"""
+    # ---- 布局：tvMenu 图标前插入 tvN2n 图标（尺寸/边距/背景与 tvMenu 一致） ----
+    layout = (REPO / "app" / "src" / "main" / "res" / "layout" / "activity_home.xml")
+    if layout.exists():
+        src = layout.read_text(encoding="utf-8")
+        if "@+id/tvN2n" not in src:
+            anchor_layout = '        <ImageView\n            android:id="@+id/tvMenu"'
+            if anchor_layout in src:
+                icon = (
+                    '        <ImageView\n'
+                    '            android:id="@+id/tvN2n"\n'
+                    '            android:layout_width="@dimen/vs_50"\n'
+                    '            android:layout_height="@dimen/vs_50"\n'
+                    '            android:layout_marginStart="@dimen/vs_15"\n'
+                    '            android:layout_marginLeft="@dimen/vs_15"\n'
+                    '            android:layout_marginEnd="@dimen/vs_15"\n'
+                    '            android:layout_marginRight="@dimen/vs_15"\n'
+                    '            android:background="@drawable/button_dialog_vod"\n'
+                    '            android:clickable="true"\n'
+                    '            android:contentDescription="N2N 组网"\n'
+                    '            android:focusable="true"\n'
+                    '            android:padding="@dimen/vs_10"\n'
+                    '            android:src="@drawable/ic_n2n" />\n\n'
+                )
+                src = src.replace(anchor_layout, icon + anchor_layout, 1)
+                layout.write_text(src, encoding="utf-8")
+                print("已修改 activity_home.xml: 收藏与设置之间插入 N2N 入口图标")
+            else:
+                print("activity_home.xml: 无 tvMenu 锚点，跳过主界面 N2N 入口")
+
+    # ---- HomeActivity：字段、绑定、点击跳转（带 n2n_go extra） ----
+    home = (REPO / "app" / "src" / "main" / "java" / "com" / "github"
+            / "tvbox" / "osc" / "ui" / "activity" / "HomeActivity.java")
+    if home.exists():
+        src = home.read_text(encoding="utf-8")
+        if "tvN2n" not in src:
+            changed = False
+            anchor_field = "private ImageView tvMenu;"
+            if anchor_field in src:
+                src = src.replace(anchor_field,
+                                  anchor_field + "\n    private ImageView tvN2n;", 1)
+                changed = True
+            anchor_bind = "this.tvMenu = findViewById(R.id.tvMenu);"
+            if anchor_bind in src:
+                src = src.replace(
+                    anchor_bind,
+                    anchor_bind + "\n        this.tvN2n = findViewById(R.id.tvN2n);",
+                    1,
+                )
+                changed = True
+            anchor_click = "tvMenu.setOnClickListener(new View.OnClickListener() {"
+            click_block = (
+                "        // N2N 组网入口（收藏/应用与设置之间），直达设置页 N2N 子页\n"
+                "        tvN2n.setOnClickListener(new View.OnClickListener() {\n"
+                "            @Override\n"
+                "            public void onClick(View view) {\n"
+                "                Intent n2nIntent = new Intent(HomeActivity.this, SettingActivity.class);\n"
+                "                n2nIntent.putExtra(\"n2n_go\", true);\n"
+                "                startActivity(n2nIntent);\n"
+                "            }\n"
+                "        });\n"
+            )
+            if anchor_click in src:
+                src = src.replace(anchor_click, click_block + anchor_click, 1)
+                changed = True
+            if changed:
+                home.write_text(src, encoding="utf-8")
+                print("已修改 HomeActivity: 绑定 N2N 入口点击事件")
+
 
 
 def patch_manifest():
@@ -158,8 +248,9 @@ def main():
     n2n_assets.mkdir(parents=True, exist_ok=True)
     print(f"已准备 {n2n_assets}")
 
-    # 3) 依次打四个补丁
+    # 3) 依次打补丁
     patch_setting_activity()
+    patch_home_entry()
     patch_setting_layout()
     patch_manifest()
     patch_proguard()

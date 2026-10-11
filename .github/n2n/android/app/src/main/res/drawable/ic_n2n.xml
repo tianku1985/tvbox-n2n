@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- N2N 组网主界面入口图标：三个节点两两相连（二层组网拓扑），白色适配深色顶栏 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.4"
+        android:fillColor="#00000000"
+        android:pathData="M6,17 L12,7 L18,18 Z" />
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M6,17 m-2.2,0 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0" />
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,7 m-2.2,0 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0" />
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M18,18 m-2.2,0 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0" />
+</vector>

@@ -23,8 +23,10 @@ public class N2nConfig implements Serializable {
     public String key = "";
     /** 超级节点地址，格式 host:port */
     public String supernode = "n2n.ntop.org:7777";
-    /** 分配的虚拟 IP，网内各端须唯一 */
+    /** 分配的虚拟 IP，网内各端须唯一（手动模式使用） */
     public String ip = "10.0.0.2";
+    /** true=自动获取虚拟 IP（在 mask 网段内随机选址，被占用时自动更换）；false=使用上方手动 IP */
+    public boolean autoIp = false;
     /** 子网掩码 */
     public String mask = "255.255.255.0";
     /** edge 使用的 MAC 地址（空则自动生成本地管理地址） */
@@ -79,5 +81,41 @@ public class N2nConfig implements Serializable {
         } catch (Exception e) {
             return 24;
         }
+    }
+
+    /**
+     * 在 baseIp/mask 所在 IPv4 子网内随机挑选一个主机地址（自动获取 IP 用）。
+     * 避开网络地址、广播地址以及 .1（常见网关）；主机位空间过小时放宽 .1 限制。
+     */
+    public static String randomIpInSubnet(String baseIp, String mask) {
+        try {
+            long base = ipv4ToLong(java.net.InetAddress.getByName(baseIp).getAddress());
+            long m = ipv4ToLong(java.net.InetAddress.getByName(mask).getAddress());
+            long network = base & m;
+            long broadcast = network | (~m & 0xFFFFFFFFL);
+            long min = network + 2;                 // 跳过网络地址(+0)与网关(.1)
+            long max = broadcast - 1;              // 跳过广播地址
+            if (max <= min) {                       // /30、/31 等极小网段兜底
+                min = network + 1;
+                max = broadcast - 1;
+            }
+            if (max <= network) {
+                return baseIp;                      // 实在没有可用主机位
+            }
+            long picked = min + (long) (new Random().nextDouble() * (max - min + 1));
+            return longToIpv4(picked);
+        } catch (Exception e) {
+            return baseIp;
+        }
+    }
+
+    private static long ipv4ToLong(byte[] a) {
+        return ((a[0] & 0xFFL) << 24) | ((a[1] & 0xFFL) << 16)
+                | ((a[2] & 0xFFL) << 8) | (a[3] & 0xFFL);
+    }
+
+    private static String longToIpv4(long v) {
+        return ((v >> 24) & 0xFF) + "." + ((v >> 16) & 0xFF) + "."
+                + ((v >> 8) & 0xFF) + "." + (v & 0xFF);
     }
 }

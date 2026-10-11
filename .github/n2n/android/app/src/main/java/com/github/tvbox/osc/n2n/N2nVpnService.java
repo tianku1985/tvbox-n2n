@@ -50,9 +50,18 @@ public class N2nVpnService extends VpnService {
     private Process edgeProcess;                       // edge 子进程
     private ParcelFileDescriptor vpnFd;                // VpnService 建立的 TUN 文件描述符
     private int tunFd = -1;                             // TUN fd 号（已清除 FD_CLOEXEC，可被子进程继承）
-    private ParcelFileDescriptor dupFd;                 // fcntl 不可用时 Os.dup 出的可继承副本，stopVpn 关闭
+    private ParcelFileDescriptor dupFd;                 // fcntl 不可用时 Os.dup 出的可继承副本，stopVpn/换址关闭
     private volatile boolean running;                  // 当前是否处于运行状态
     private volatile long startedAt;                   // edge 启动时间（用于区分"连接中/已连接"）
+
+    // 本轮连接实际使用的配置（自动获取 IP 模式下与持久化的 cfg 不同；NAK 换址时变化）
+    private N2nConfig activeCfg;
+    private File edgeBin;                               // 已释放就绪的 edge 可执行文件（换址复用）
+    private String attemptIp;                          // 本轮 edge 实际绑定的虚拟 IP
+    private String attemptMac;                         // 本轮 edge 实际使用的 MAC
+    private int attemptSeq;                            // 自动选址尝试序号（0 = 首次）
+    private final Object rewireLock = new Object();    // NAK 自动换址串行化
+    private static final int MAX_ATTEMPTS = 8;         // 自动选址最多尝试次数
 
     // 最近一次失败原因。用【静态】字段：服务在早期失败会立即 stopSelf 清空 instance，
     // 若错误存在实例字段里会随之丢失，页面又退化成"未连接"而无从排查。
@@ -66,6 +75,12 @@ public class N2nVpnService extends VpnService {
     /** 是否正在运行（供设置页状态展示） */
     public static boolean isRunning() {
         return instance != null && instance.running;
+    }
+
+    /** 本轮实际分配到的虚拟 IP（自动模式下非用户填写值；未运行时返回 null） */
+    public static String currentIp() {
+        N2nVpnService s = instance;
+        return (s != null && s.running) ? s.attemptIp : null;
     }
 
     /** 连接状态文字：未连接 / 已断开（原因） / 连接中（原因） / 已连接 */
@@ -211,22 +226,47 @@ public class N2nVpnService extends VpnService {
             stopVpn(true);
             return;
         }
+        edgeBin = bin;
         diag("edge 二进制就绪: " + bin.getAbsolutePath() + " (" + bin.length() + " bytes)");
+
+        activeCfg = cfg;
+        attemptSeq = 0;
+        // 自动获取：首次即在网段内随机选址；手动：直接使用配置 IP
+        attemptIp = cfg.autoIp ? N2nConfig.randomIpInSubnet(cfg.ip, cfg.mask) : cfg.ip;
+        attemptMac = cfg.mac;
+        if (cfg.autoIp) {
+            diag("IP 获取方式: 自动，首次选址 " + attemptIp);
+        }
 
         // 尽早进入前台，避免 startForegroundService 未及时 startForeground 导致 ANR
         startForeground(NOTIFY_ID, buildNotification(cfg));
+
+        if (!bringUpEdge()) {
+            return;                                     // 失败原因已写入日志/状态
+        }
+    }
+
+    /**
+     * 用当前 attemptIp/attemptMac 建立 TUN 并拉起 edge。首次连接与 NAK 自动换址共用。
+     * 成功返回 true；失败已调用 fail()/stopVpn()，返回 false。
+     */
+    private boolean bringUpEdge() {
+        N2nConfig cfg = activeCfg;
+        // 换址重连前先拆旧链路（首次进来时没有旧资源，方法内部均做 null 判断）
+        teardownEdge();
 
         try {
             Builder b = new Builder();
             b.setSession("n2n-" + cfg.community);
             b.setMtu(cfg.mtu);
             int prefix = N2nConfig.prefixLengthOfMask(cfg.mask);
-            diag("配置 TUN: address=" + cfg.ip + "/" + prefix + " mtu=" + cfg.mtu);
-            b.addAddress(InetAddress.getByName(cfg.ip), prefix);
+            diag("配置 TUN: address=" + attemptIp + "/" + prefix + " mtu=" + cfg.mtu
+                    + (attemptSeq > 0 ? "（第 " + (attemptSeq + 1) + " 次尝试）" : ""));
+            b.addAddress(InetAddress.getByName(attemptIp), prefix);
             // Android addRoute() 要求路由目标的主机位必须清零（必须是网络地址），
             // 否则抛 IllegalArgumentException("Bad address")——如 10.0.0.233/24
             // 会被拒，必须转成 10.0.0.0/24 再添加路由。
-            InetAddress netAddr = maskToNetwork(cfg.ip, prefix);
+            InetAddress netAddr = maskToNetwork(attemptIp, prefix);
             diag("路由: " + netAddr.getHostAddress() + "/" + prefix);
             b.addRoute(netAddr, prefix);
             List<String[]> routes = parseRoutes(cfg.extraRoute);
@@ -241,11 +281,11 @@ public class N2nVpnService extends VpnService {
             Log.e(TAG, "vpn establish failed", e);
             vpnFd = null;
             fail("VPN 接口建立异常: " + e);
-            return;
+            return false;
         }
         if (vpnFd == null) {
             fail("VPN 接口建立失败（establish 返回 null，可能被系统拒绝或参数非法）");
-            return;
+            return false;
         }
         diag("TUN 建立成功");
 
@@ -261,16 +301,16 @@ public class N2nVpnService extends VpnService {
         } catch (Throwable t) {
             Log.e(TAG, "tun fd setup failed", t);
             fail("TUN fd 设置失败: " + t);
-            return;
+            return false;
         }
 
         String[] command;
         try {
-            command = buildCommand(cfg, bin);
+            command = buildCommand(cfg, edgeBin, attemptIp, attemptMac);
         } catch (Throwable t) {
             Log.e(TAG, "build command failed", t);
             fail("拼装 edge 命令失败: " + t);
-            return;
+            return false;
         }
         diag("启动命令: " + joinArgs(command));
         ProcessBuilder pb;
@@ -283,24 +323,54 @@ public class N2nVpnService extends VpnService {
         } catch (Throwable t) {
             Log.e(TAG, "process builder setup failed", t);
             fail("edge 进程准备失败: " + t);
-            return;
+            return false;
         }
+        Process proc;
         try {
-            edgeProcess = pb.start();
+            proc = pb.start();
         } catch (Throwable e) {
             // 注意不只是 IOException：ProcessBuilder.start 还可能抛 SecurityException 等
             // RuntimeException（不捕获会直接闪退且日志停在「启动命令」）
             Log.e(TAG, "edge start failed", e);
             edgeProcess = null;
             fail("edge 启动失败: " + e);
-            return;
+            return false;
         }
 
+        edgeProcess = proc;
         startedAt = System.currentTimeMillis();
         running = true;
         diag("edge 进程已拉起，等待连接 supernode " + cfg.supernode);
-        trackProcess(edgeProcess);
-        watchEdgeLog(edgeProcess);
+        trackProcess(proc);
+        watchEdgeLog(proc);
+        return true;
+    }
+
+    /** 拆除当前 edge 进程与 TUN（换址重连/停止时调用），各项资源均允许为空 */
+    private void teardownEdge() {
+        Process p = edgeProcess;
+        if (p != null) {
+            edgeProcess = null;
+            try {
+                p.destroyForcibly();
+            } catch (Throwable ignored) {
+            }
+        }
+        if (dupFd != null) {
+            try {
+                dupFd.close();
+            } catch (IOException ignored) {
+            }
+            dupFd = null;
+        }
+        if (vpnFd != null) {
+            try {
+                vpnFd.close();
+            } catch (IOException ignored) {
+            }
+            vpnFd = null;
+        }
+        tunFd = -1;
     }
 
     /** 记录失败原因（同时写状态字段与日志），随后由调用方执行 stopVpn(true) */
@@ -380,11 +450,16 @@ public class N2nVpnService extends VpnService {
      *   成功：[OK] edge <<< ================ >>> supernode（首次收到 REGISTER_SUPER_ACK）
      *   拒绝：authentication error, MAC or IP address already in use ...
      *   无响应：supernode not responding, now trying
+     * 自动获取 IP 模式下，连续 2 条 NAK 即自动换址（必要时换 MAC）重建链路。
      */
     private void watchEdgeLog(final Process process) {
+        // 每个 watcher 与一次 bringUpEdge 一一对应，只统计本 attempt 启动后的新增日志，
+        // 避免把上一轮 attempt 的 NAK 行计入本轮。
+        final long baseOffset = logFile().length();
         Thread t = new Thread(new Runnable() {
             @Override
             public void run() {
+                int nakCount = 0;
                 while (running && process.isAlive()) {
                     try {
                         Thread.sleep(2000);
@@ -392,14 +467,18 @@ public class N2nVpnService extends VpnService {
                         if (!f.exists()) {
                             continue;
                         }
-                        // 日志每轮连接都会清空重建，体积很小，直接读尾部 64KB 即可
                         long len = f.length();
-                        int take = (int) Math.min(len, 64 * 1024);
+                        if (len <= baseOffset) {
+                            continue;
+                        }
+                        long avail = len - baseOffset;
+                        int take = (int) Math.min(avail, 64 * 1024);
                         byte[] buf = new byte[take];
                         java.io.FileInputStream in = new java.io.FileInputStream(f);
                         long skipped = 0;
-                        while (len - take - skipped > 0) {
-                            long s = in.skip(len - take - skipped);
+                        long wantSkip = len - take;
+                        while (wantSkip - skipped > 0) {
+                            long s = in.skip(wantSkip - skipped);
                             if (s <= 0) break;
                             skipped += s;
                         }
@@ -414,14 +493,29 @@ public class N2nVpnService extends VpnService {
                         if (tail.contains("[OK] edge <<<")) {
                             sRegistered = true;
                             sEdgeWarn = "";
-                        } else if (!sRegistered) {
-                            // NAK 拒绝优先于"超级节点无响应"（前者会同时触发后者告警）
-                            if (tail.contains("MAC or IP address already in use")) {
-                                sEdgeWarn = "IP/MAC被占用，请更换虚拟IP";
+                            continue;
+                        }
+                        if (sRegistered) {
+                            continue;
+                        }
+                        if (tail.contains("MAC or IP address already in use")) {
+                            nakCount += countOccur(tail, "MAC or IP address already in use");
+                            if (activeCfg != null && activeCfg.autoIp) {
+                                // 自动模式：约 8 秒内两条 NAK 即换址，避免在死地址上空等
+                                if (nakCount >= 2) {
+                                    nakCount = 0;
+                                    if (process == edgeProcess) {
+                                        rewireAfterNak();
+                                        return;                // 本 watcher 随旧进程结束
+                                    }
+                                }
                             } else if (sEdgeWarn.isEmpty()
-                                    && tail.contains("supernode not responding")) {
-                                sEdgeWarn = "超级节点无响应";
+                                    || sEdgeWarn.startsWith("自动选址")) {
+                                sEdgeWarn = "IP/MAC被占用，请更换虚拟IP";
                             }
+                        } else if (sEdgeWarn.isEmpty()
+                                && tail.contains("supernode not responding")) {
+                            sEdgeWarn = "超级节点无响应";
                         }
                     } catch (Throwable ignored) {
                         // 日志读取异常不影响连接主流程
@@ -433,8 +527,55 @@ public class N2nVpnService extends VpnService {
         t.start();
     }
 
+    private static int countOccur(String s, String sub) {
+        int n = 0, i = 0;
+        while ((i = s.indexOf(sub, i)) >= 0) {
+            n++;
+            i += sub.length();
+        }
+        return n;
+    }
+
+    /**
+     * NAK 自动换址：杀掉当前 edge、关闭 TUN，换一个同网段随机 IP（第 4 次起连 MAC
+     * 一起换，规避 MAC 维度的残留/冲突），再用新身份重建链路。依据服务端 3.1.1
+     * update_edge()：simple_id 社区中全新 MAC + 空闲 IP 必然注册成功。
+     */
+    private void rewireAfterNak() {
+        synchronized (rewireLock) {
+            if (!running || sRegistered || edgeProcess == null
+                    || activeCfg == null || !activeCfg.autoIp) {
+                return;
+            }
+            if (attemptSeq + 1 >= MAX_ATTEMPTS) {
+                fail("自动获取 IP 失败：连续 " + MAX_ATTEMPTS + " 个地址均被超级节点拒绝，"
+                        + "请检查社区名/密钥是否正确，或改用手动指定 IP");
+                return;
+            }
+            attemptSeq++;
+            if (attemptSeq >= 3) {
+                attemptMac = N2nConfig.randomMac();
+                diag("连续多次被拒，本轮连 MAC 一并更换为 " + attemptMac);
+            }
+            String nextIp = attemptIp;
+            for (int i = 0; i < 10 && nextIp.equals(attemptIp); i++) {
+                nextIp = N2nConfig.randomIpInSubnet(activeCfg.ip, activeCfg.mask);
+            }
+            diag("虚拟 IP 被超级节点拒绝（MAC or IP already in use），自动更换 "
+                    + attemptIp + " -> " + nextIp + "（第 " + (attemptSeq + 1) + "/"
+                    + MAX_ATTEMPTS + " 次尝试）");
+            attemptIp = nextIp;
+            sRegistered = false;
+            sEdgeWarn = "自动选址中(" + (attemptSeq + 1) + "/" + MAX_ATTEMPTS + ")";
+            if (bringUpEdge()) {
+                // 换址成功后刷新常驻通知中的 IP 显示
+                startForeground(NOTIFY_ID, buildNotification(activeCfg));
+            }
+        }
+    }
+
     /** 组装 edge 命令行参数；密钥/MAC 为空时不传对应参数（edge 不接受空值参数） */
-    private String[] buildCommand(N2nConfig cfg, File bin) {
+    private String[] buildCommand(N2nConfig cfg, File bin, String ip, String mac) {
         List<String> cmd = new ArrayList<>();
         cmd.add(bin.getAbsolutePath());
         cmd.add("-c");
@@ -448,12 +589,12 @@ public class N2nVpnService extends VpnService {
         // 返回 2 → help(2) 打印用法后直接 exit(0)，表现为「edge 进程退出 rc=0」
         // 且从未真正启动（日志止于「启动命令」，其后只有用法文本）。
         cmd.add("-a");
-        cmd.add(cfg.ip + "/" + N2nConfig.prefixLengthOfMask(cfg.mask));
+        cmd.add(ip + "/" + N2nConfig.prefixLengthOfMask(cfg.mask));
         cmd.add("-l");
         cmd.add(cfg.supernode);
-        if (cfg.mac != null && !cfg.mac.isEmpty()) {
+        if (mac != null && !mac.isEmpty()) {
             cmd.add("-m");
-            cmd.add(cfg.mac);
+            cmd.add(mac);
         }
         cmd.add("-M");
         cmd.add(String.valueOf(cfg.mtu));
@@ -650,7 +791,7 @@ public class N2nVpnService extends VpnService {
         }
         nb.setSmallIcon(android.R.mipmap.sym_def_app_icon)
                 .setContentTitle("n2n")
-                .setContentText("community: " + cfg.community + " ip: " + cfg.ip)
+                .setContentText("community: " + cfg.community + " ip: " + attemptIp)
                 .setOngoing(true)
                 .setContentIntent(pi);
         return nb.build();
@@ -659,29 +800,7 @@ public class N2nVpnService extends VpnService {
     /** 停止并清理：结束 edge 进程、关闭 TUN；selfStop 为 true 时同时结束服务自身 */
     public void stopVpn(boolean selfStop) {
         running = false;
-        if (edgeProcess != null) {
-            edgeProcess.destroyForcibly();           // 强杀 edge 子进程
-            edgeProcess = null;
-        }
-        if (dupFd != null) {
-            try {
-                dupFd.close();                        // 关闭 fcntl 不可用时 dup 出的 TUN 副本
-            } catch (IOException e) {
-                // ignore
-            }
-            dupFd = null;
-        }
-        if (vpnFd != null) {
-            try {
-                vpnFd.close();                       // 关闭 TUN，内核自动回收虚拟网卡/路由
-            } catch (IOException e) {
-                // ignore
-            }
-            vpnFd = null;
-        }
-        if (tunFd >= 0) {
-            tunFd = -1;                          // fd 号仅供环境变量使用，TUN fd 由上方 vpnFd.close() 统一关闭
-        }
+        teardownEdge();
         if (selfStop) {
             stopForeground(true);
             stopSelf();

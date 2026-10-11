@@ -43,6 +43,7 @@ public class N2nSettingFragment extends BaseLazyFragment {
     private TextView tvCommunity;
     private TextView tvKey;
     private TextView tvSupernode;
+    private TextView tvIpMode;
     private TextView tvIp;
     private TextView tvMask;
     private TextView tvMtu;
@@ -85,6 +86,7 @@ public class N2nSettingFragment extends BaseLazyFragment {
         tvCommunity = findViewById(R.id.tv_n2n_community);
         tvKey = findViewById(R.id.tv_n2n_key);
         tvSupernode = findViewById(R.id.tv_n2n_supernode);
+        tvIpMode = findViewById(R.id.tv_n2n_ipmode);
         tvIp = findViewById(R.id.tv_n2n_ip);
         tvMask = findViewById(R.id.tv_n2n_mask);
         tvMtu = findViewById(R.id.tv_n2n_mtu);
@@ -104,7 +106,24 @@ public class N2nSettingFragment extends BaseLazyFragment {
         findViewById(R.id.ll_n2n_community).setOnClickListener(promptField(FIELD_COMMUNITY, "社区", InputType.TYPE_CLASS_TEXT));
         findViewById(R.id.ll_n2n_key).setOnClickListener(promptField(FIELD_KEY, "密钥", InputType.TYPE_CLASS_TEXT));
         findViewById(R.id.ll_n2n_supernode).setOnClickListener(promptField(FIELD_SUPERNODE, "服务器(host:port)", InputType.TYPE_CLASS_TEXT));
-        findViewById(R.id.ll_n2n_ip).setOnClickListener(promptField(FIELD_IP, "虚拟IP", InputType.TYPE_CLASS_TEXT));
+        // IP 获取方式：手动指定 / 自动获取（被超级节点拒绝时自动换址重试）
+        findViewById(R.id.ll_n2n_ipmode).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showIpModeDialog();
+            }
+        });
+        findViewById(R.id.ll_n2n_ip).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (cfg.autoIp) {
+                    Toast.makeText(mContext, "当前为自动获取，需固定 IP 请先把「IP获取方式」改为手动指定",
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
+                promptField(FIELD_IP, "虚拟IP", InputType.TYPE_CLASS_TEXT).onClick(v);
+            }
+        });
         findViewById(R.id.ll_n2n_mask).setOnClickListener(promptField(FIELD_MASK, "子网掩码", InputType.TYPE_CLASS_TEXT));
         findViewById(R.id.ll_n2n_mtu).setOnClickListener(promptField(FIELD_MTU, "MTU", InputType.TYPE_CLASS_NUMBER));
         findViewById(R.id.ll_n2n_route).setOnClickListener(promptField(FIELD_ROUTE, "额外路由(空格或逗号分隔)", InputType.TYPE_CLASS_TEXT));
@@ -173,6 +192,24 @@ public class N2nSettingFragment extends BaseLazyFragment {
         if (requestCode == REQUEST_VPN && resultCode == Activity.RESULT_OK) {
             doStart();
         }
+    }
+
+    /** IP 获取方式选择：手动指定（用下方虚拟IP）或自动获取（网段内随机，被占用自动更换） */
+    private void showIpModeDialog() {
+        final String[] items = new String[]{"手动指定", "自动获取（推荐，占用时自动换址）"};
+        new AlertDialog.Builder(mContext)
+                .setTitle("IP 获取方式")
+                .setSingleChoiceItems(items, cfg.autoIp ? 1 : 0, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        cfg.autoIp = (which == 1);
+                        cfg.save();
+                        refreshCfg();
+                        dialog.dismiss();
+                    }
+                })
+                .setNegativeButton("取消", null)
+                .show();
     }
 
     /** 生成配置行的点击事件：弹出输入框编辑 */
@@ -260,7 +297,13 @@ public class N2nSettingFragment extends BaseLazyFragment {
         tvCommunity.setText(cfg.community);
         tvKey.setText(cfg.key);
         tvSupernode.setText(cfg.supernode);
-        tvIp.setText(cfg.ip);
+        tvIpMode.setText(cfg.autoIp ? "自动获取" : "手动指定");
+        String actual = N2nVpnService.currentIp();
+        if (cfg.autoIp) {
+            tvIp.setText(actual != null ? "自动：" + actual : "自动获取（连接时选择）");
+        } else {
+            tvIp.setText(cfg.ip);
+        }
         tvMask.setText(cfg.mask);
         tvMtu.setText(String.valueOf(cfg.mtu));
         tvRoute.setText(cfg.extraRoute);
@@ -272,14 +315,24 @@ public class N2nSettingFragment extends BaseLazyFragment {
         boolean running = N2nVpnService.isRunning();
         String state = N2nVpnService.stateText();
         if (running && "已连接".equals(state)) {
-            // 已连接：展示分配到的虚拟 IP（静态配置即所获 IP）
-            tvStatus.setText("已连接  IP: " + cfg.ip);
+            // 已连接：展示本轮实际使用的虚拟 IP（自动模式下并非配置里的固定值）
+            String ip = N2nVpnService.currentIp();
+            tvStatus.setText("已连接  IP: " + (ip != null ? ip : cfg.ip));
             tvStatus.setTextColor(0xFF00E676);
         } else {
             tvStatus.setText(state);
             tvStatus.setTextColor(0xFFFFFFFF);
         }
         tvToggle.setText(running ? "断开" : "连接");
+        // 自动选址过程中实时刷新 IP 行，让用户看到当前尝试的地址
+        if (running && cfg.autoIp) {
+            String ip = N2nVpnService.currentIp();
+            if (ip != null) {
+                tvIp.setText("自动：" + ip);
+            }
+        } else if (!running) {
+            refreshCfg();
+        }
     }
 
     /** Ping 测试：目标默认为服务器地址（去掉端口），可手动输入虚拟网段内其他 IP */
