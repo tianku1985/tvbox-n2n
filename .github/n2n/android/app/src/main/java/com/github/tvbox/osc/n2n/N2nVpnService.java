@@ -373,10 +373,12 @@ public class N2nVpnService extends VpnService {
             cmd.add("-k");
             cmd.add(cfg.key);
         }
+        // 掩码必须用 -a <ip>/<prefix> 的 CIDR 形式传入：n2n 3.1.1 的 setOption 没有
+        // -s 分支（getopt 能识别 s: 但 switch 里无 case 's'），传 -s 会走 default
+        // 返回 2 → help(2) 打印用法后直接 exit(0)，表现为「edge 进程退出 rc=0」
+        // 且从未真正启动（日志止于「启动命令」，其后只有用法文本）。
         cmd.add("-a");
-        cmd.add(cfg.ip);
-        cmd.add("-s");
-        cmd.add(cfg.mask);
+        cmd.add(cfg.ip + "/" + N2nConfig.prefixLengthOfMask(cfg.mask));
         cmd.add("-l");
         cmd.add(cfg.supernode);
         if (cfg.mac != null && !cfg.mac.isEmpty()) {
