@@ -432,9 +432,13 @@ public class N2nVpnService extends VpnService {
                     int rc = process.waitFor();
                     Log.i(TAG, "edge exited rc=" + rc);
                     if (running && process == edgeProcess) {
+                        diag("trackProcess: edge 进程退出 rc=" + rc
+                                + "（running=" + running + "），触发 stopVpn");
                         sLastError = "edge 已退出(rc=" + rc + ")";
-                        diag("edge 进程退出，返回码 rc=" + rc + "（详见上方 edge 输出）");
                         stopVpn(true);
+                    } else {
+                        diag("trackProcess: edge 进程退出 rc=" + rc
+                                + "，但已非当前进程（换址重建中），忽略");
                     }
                 } catch (InterruptedException e) {
                     // ignore
@@ -491,6 +495,9 @@ public class N2nVpnService extends VpnService {
                         in.close();
                         String tail = new String(buf, 0, off, "UTF-8");
                         if (tail.contains("[OK] edge <<<")) {
+                            if (!sRegistered) {
+                                diag("watchEdgeLog 检测到 REGISTER_SUPER_ACK（[OK] edge <<<），标记已连接");
+                            }
                             sRegistered = true;
                             sEdgeWarn = "";
                             continue;
@@ -799,6 +806,11 @@ public class N2nVpnService extends VpnService {
 
     /** 停止并清理：结束 edge 进程、关闭 TUN；selfStop 为 true 时同时结束服务自身 */
     public void stopVpn(boolean selfStop) {
+        if (!running && !selfStop) {
+            return;
+        }
+        diag("stopVpn 被调用（selfStop=" + selfStop + "），running=" + running
+                + "，sRegistered=" + sRegistered);
         running = false;
         teardownEdge();
         if (selfStop) {
@@ -815,6 +827,7 @@ public class N2nVpnService extends VpnService {
 
     @Override
     public void onDestroy() {
+        diag("onDestroy: 服务被销毁，清理资源");
         stopVpn(false);
         instance = null;                             // 清除单例引用
         super.onDestroy();

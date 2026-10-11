@@ -154,6 +154,24 @@ public class N2nSettingFragment extends BaseLazyFragment {
 
         refreshCfg();
         refreshStatus();
+        // 启动状态轮询。BaseLazyFragment 的「真正可见」回调是 onFragmentResume，
+        // 但首次可见时 init() 在 dispatchUserVisibleHint 内被调用，onFragmentResume
+        // 紧接着也会被调用；此处双保险确保轮询一定启动（removeMessages 防止重复）。
+        startStatusPolling();
+    }
+
+    /** 启动 2 秒一次的状态轮询（已存在则先清除，避免重复） */
+    private void startStatusPolling() {
+        if (tvStatus == null) {
+            return;
+        }
+        mHandler.removeMessages(MSG_REFRESH);
+        mHandler.sendEmptyMessageDelayed(MSG_REFRESH, 500);
+    }
+
+    /** 停止状态轮询 */
+    private void stopStatusPolling() {
+        mHandler.removeMessages(MSG_REFRESH);
     }
 
     /** 连接/断开切换：已在运行则断开，否则先走 VPN 授权流程 */
@@ -451,22 +469,19 @@ public class N2nSettingFragment extends BaseLazyFragment {
                 .show();
     }
 
-    // 页面可见时开启状态轮询，不可见时停止。
-    // 注意：ViewPager 会预加载本页，onResume 时 init() 可能尚未执行（懒加载，
-    // 控件仍为 null），此时不能启动轮询，否则 refreshStatus() 会 NPE 闪退。
+    // BaseLazyFragment 用 dispatchUserVisibleHint 管理可见性，「真正可见/不可见」
+    // 回调是 onFragmentResume/onFragmentPause，而非系统的 onResume/onPause。
+    // 系统 onResume 可能在 init() 之前调用（ViewPager 预加载），此时 tvStatus 为 null，
+    // 若在 onResume 里启动轮询会被 null 守卫跳过，导致状态永远不刷新。
     @Override
-    public void onResume() {
-        super.onResume();
-        if (tvStatus == null) {
-            return;
-        }
-        mHandler.removeMessages(MSG_REFRESH);
-        mHandler.sendEmptyMessageDelayed(MSG_REFRESH, 500);
+    protected void onFragmentResume() {
+        super.onFragmentResume();
+        startStatusPolling();
     }
 
     @Override
-    public void onPause() {
-        super.onPause();
-        mHandler.removeMessages(MSG_REFRESH);
+    protected void onFragmentPause() {
+        super.onFragmentPause();
+        stopStatusPolling();
     }
 }
