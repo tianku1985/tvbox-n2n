@@ -608,6 +608,13 @@ public class N2nVpnService extends VpnService {
         cmd.add("-d");
         cmd.add("n2n0");
         cmd.add("-f");
+        // -E 必须显式传入：n2n 3.1.1 默认 drop_multicast=1（edge_utils.c
+        // edge_init_conf_defaults），在 edge_read_from_tap 与 RX 路径上把所有
+        // 广播/组播以太网帧（含 ARP 请求）直接丢弃。Android TUN 是三层设备，
+        // 内核不发 ARP，本项目的 tuntap_android.c 靠广播帧模拟 ARP——不开 -E
+        // 时 ARP 双向皆死（Tx「dropping Tx multicast」/Rx「dropping RX
+        // multicast」），表现为注册成功但 ping 不通任何对端。
+        cmd.add("-E");
         // n2n 3.1.1 启动时若系统存在 n2n/nobody 用户，会默认以其 uid/gid 作为降权目标
         // （Android 上 getpwnam("nobody") 命中，uid/gid=9999），随后 setgid(9999) 因无
         // CAP_SETGID 必然失败 → "unable to drop privileges" → exit(1)，edge 秒退(rc=1)。
