@@ -50,6 +50,7 @@ public class N2nVpnService extends VpnService {
     private Process edgeProcess;                       // edge 子进程
     private ParcelFileDescriptor vpnFd;                // VpnService 建立的 TUN 文件描述符
     private int tunFd = -1;                             // TUN fd 号（已清除 FD_CLOEXEC，可被子进程继承）
+    private ParcelFileDescriptor dupFd;                 // fcntl 不可用时 Os.dup 出的可继承副本，stopVpn 关闭
     private volatile boolean running;                  // 当前是否处于运行状态
     private volatile long startedAt;                   // edge 启动时间（用于区分"连接中/已连接"）
 
@@ -239,16 +240,15 @@ public class N2nVpnService extends VpnService {
         }
         diag("TUN 建立成功");
 
-        // 把 TUN fd 传给子进程：getFd() 取得 fd 号（PFD 仍持有所有权，由 stopVpn 统一 close），
-        // 再用 fcntl(F_SETFD, 0) 清除 FD_CLOEXEC，使 exec 后的 edge 子进程能继承该 fd；
-        // 子进程通过环境变量 N2N_TUN_FD 得知 fd 号。注意 Android 的 Os.dup/close 只有
-        // FileDescriptor 版本，不能对 detachFd 出来的裸 int fd 直接 dup/close（编译不过）。
-        // 此处必须 catch Throwable：此前只 catch Exception，一旦是 Error 闪退且日志无痕。
+        // 把 TUN fd 传给子进程，子进程通过环境变量 N2N_TUN_FD 得知 fd 号。
+        // 关键是让 fd 能被 exec 后的 edge 继承（即不能带 FD_CLOEXEC）。
+        // 注意 Android 的 Os.dup/close 只有 FileDescriptor 版本，没有 int 重载。
+        // 此处必须 catch Throwable：NoSuchMethodError 属于 Error，旧代码只 catch
+        // Exception，导致部分 ROM（Os 类无 fcntlInt 方法）在「TUN 建立成功」后直接闪退。
         try {
             tunFd = vpnFd.getFd();
             diag("取得 TUN fd=" + tunFd);
-            Os.fcntlInt(vpnFd.getFileDescriptor(), OsConstants.F_SETFD, 0);
-            diag("已清除 FD_CLOEXEC，子进程可继承");
+            tunFd = makeFdInheritable();
         } catch (Throwable t) {
             Log.e(TAG, "tun fd setup failed", t);
             fail("TUN fd 设置失败: " + t);
@@ -298,6 +298,35 @@ public class N2nVpnService extends VpnService {
         sLastError = reason;
         diag("失败: " + reason);
         stopVpn(true);
+    }
+
+    /**
+     * 返回可被 exec 后子进程继承的 TUN fd 号（需无 FD_CLOEXEC）。三级策略：
+     * 1. fcntl(F_SETFD, 0) 清除 FD_CLOEXEC —— 部分 ROM 的 android.system.Os 没有
+     *    fcntlInt 方法，调用直接抛 NoSuchMethodError（属 Error）；
+     * 2. 回退 Os.dup 复制一份 —— POSIX 规定 dup 出的新 fd 不带 FD_CLOEXEC，
+     *    副本存入 dupFd 由 stopVpn 统一关闭，原 vpnFd 仍保持 TUN 打开；
+     * 3. 都失败则直接用原 fd（若系统本就没设 CLOEXEC 依然可用），并在日志标注风险。
+     */
+    private int makeFdInheritable() throws Exception {
+        java.io.FileDescriptor raw = vpnFd.getFileDescriptor();
+        try {
+            Os.fcntlInt(raw, OsConstants.F_SETFD, 0);
+            diag("已通过 fcntl 清除 FD_CLOEXEC，子进程可继承");
+            return vpnFd.getFd();
+        } catch (Throwable t) {
+            diag("fcntl 清除 FD_CLOEXEC 失败: " + t + "，改用 Os.dup 复制");
+        }
+        try {
+            // fromFd 内部走 Os.dup 复制原 fd，POSIX 规定 dup 出的新 fd 不带 FD_CLOEXEC
+            dupFd = ParcelFileDescriptor.fromFd(raw);
+            int fd = dupFd.getFd();
+            diag("dup 得到可继承 TUN fd=" + fd + "，子进程将使用该 fd");
+            return fd;
+        } catch (Throwable t) {
+            diag("dup TUN fd 失败: " + t + "，回退原 fd（若系统未设 CLOEXEC 仍可继承）");
+            return vpnFd.getFd();
+        }
     }
 
     /** 拼接命令行参数（仅用于日志展示） */
@@ -549,6 +578,14 @@ public class N2nVpnService extends VpnService {
         if (edgeProcess != null) {
             edgeProcess.destroyForcibly();           // 强杀 edge 子进程
             edgeProcess = null;
+        }
+        if (dupFd != null) {
+            try {
+                dupFd.close();                        // 关闭 fcntl 不可用时 dup 出的 TUN 副本
+            } catch (IOException e) {
+                // ignore
+            }
+            dupFd = null;
         }
         if (vpnFd != null) {
             try {
