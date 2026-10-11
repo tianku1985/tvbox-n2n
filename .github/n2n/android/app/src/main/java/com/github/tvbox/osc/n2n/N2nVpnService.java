@@ -57,25 +57,32 @@ public class N2nVpnService extends VpnService {
     // 最近一次失败原因。用【静态】字段：服务在早期失败会立即 stopSelf 清空 instance，
     // 若错误存在实例字段里会随之丢失，页面又退化成"未连接"而无从排查。
     private static volatile String sLastError = "";
+    // edge 是否已收到超级节点的 REGISTER_SUPER_ACK（日志标记 [OK] edge <<<）。
+    // 不能只凭"edge 存活 N 秒"判定成功：被 NAK 拒绝时 edge 会一直重试且永不退出。
+    private static volatile boolean sRegistered = false;
+    // edge 侧最新告警（默认日志级别可见的关键英文标记 → 中文提示），供状态行展示
+    private static volatile String sEdgeWarn = "";
 
     /** 是否正在运行（供设置页状态展示） */
     public static boolean isRunning() {
         return instance != null && instance.running;
     }
 
-    /** 连接状态文字：未连接 / 已断开（原因） / 连接中… / 已连接 */
+    /** 连接状态文字：未连接 / 已断开（原因） / 连接中（原因） / 已连接 */
     public static String stateText() {
         N2nVpnService s = instance;
         if (s == null || !s.running) {
             return (sLastError == null || sLastError.isEmpty())
                     ? "未连接" : "已断开（" + sLastError + "）";
         }
-        Process p = s.edgeProcess;
-        if (p == null || !p.isAlive()) {
-            return "连接中…";
+        if (sRegistered) {
+            return "已连接";
         }
-        // edge 存活超过 3 秒视为连接成功（静态 IP 已配置到 TUN 上）
-        return System.currentTimeMillis() - s.startedAt < 3000 ? "连接中…" : "已连接";
+        // edge 活着但一直注册不上时，把超级节点的拒绝原因直接显示在状态行
+        if (!sEdgeWarn.isEmpty() && System.currentTimeMillis() - s.startedAt > 6000) {
+            return "连接中（" + sEdgeWarn + "）";
+        }
+        return "连接中…";
     }
 
     /** 启动 VPN 服务（API 26+ 使用 startForegroundService） */
@@ -182,6 +189,8 @@ public class N2nVpnService extends VpnService {
 
         // 新一轮连接：清空旧日志与错误，立即开始阶段记录（早于任何可能的 return）
         sLastError = "";
+        sRegistered = false;
+        sEdgeWarn = "";
         try {
             new FileOutputStream(logFile()).close();
         } catch (IOException e) {
@@ -291,6 +300,7 @@ public class N2nVpnService extends VpnService {
         running = true;
         diag("edge 进程已拉起，等待连接 supernode " + cfg.supernode);
         trackProcess(edgeProcess);
+        watchEdgeLog(edgeProcess);
     }
 
     /** 记录失败原因（同时写状态字段与日志），随后由调用方执行 stopVpn(true) */
@@ -361,6 +371,66 @@ public class N2nVpnService extends VpnService {
                 }
             }
         }, "n2n-wait").start();
+    }
+
+    /**
+     * 轮询 edge.log 识别真实注册状态。edge 被超级节点以 NAK 拒绝时不会退出，
+     * 而是每 4 秒重试一次，旧逻辑仅凭"进程存活 N 秒"就显示"已连接"，会一直误报。
+     * 匹配默认日志级别（TRACE_NORMAL/ERROR）即可见的标记：
+     *   成功：[OK] edge <<< ================ >>> supernode（首次收到 REGISTER_SUPER_ACK）
+     *   拒绝：authentication error, MAC or IP address already in use ...
+     *   无响应：supernode not responding, now trying
+     */
+    private void watchEdgeLog(final Process process) {
+        Thread t = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                while (running && process.isAlive()) {
+                    try {
+                        Thread.sleep(2000);
+                        File f = logFile();
+                        if (!f.exists()) {
+                            continue;
+                        }
+                        // 日志每轮连接都会清空重建，体积很小，直接读尾部 64KB 即可
+                        long len = f.length();
+                        int take = (int) Math.min(len, 64 * 1024);
+                        byte[] buf = new byte[take];
+                        java.io.FileInputStream in = new java.io.FileInputStream(f);
+                        long skipped = 0;
+                        while (len - take - skipped > 0) {
+                            long s = in.skip(len - take - skipped);
+                            if (s <= 0) break;
+                            skipped += s;
+                        }
+                        int off = 0;
+                        while (off < take) {
+                            int r = in.read(buf, off, take - off);
+                            if (r < 0) break;
+                            off += r;
+                        }
+                        in.close();
+                        String tail = new String(buf, 0, off, "UTF-8");
+                        if (tail.contains("[OK] edge <<<")) {
+                            sRegistered = true;
+                            sEdgeWarn = "";
+                        } else if (!sRegistered) {
+                            // NAK 拒绝优先于"超级节点无响应"（前者会同时触发后者告警）
+                            if (tail.contains("MAC or IP address already in use")) {
+                                sEdgeWarn = "IP/MAC被占用，请更换虚拟IP";
+                            } else if (sEdgeWarn.isEmpty()
+                                    && tail.contains("supernode not responding")) {
+                                sEdgeWarn = "超级节点无响应";
+                            }
+                        }
+                    } catch (Throwable ignored) {
+                        // 日志读取异常不影响连接主流程
+                    }
+                }
+            }
+        }, "n2n-edge-log");
+        t.setDaemon(true);
+        t.start();
     }
 
     /** 组装 edge 命令行参数；密钥/MAC 为空时不传对应参数（edge 不接受空值参数） */
