@@ -304,8 +304,9 @@ public class N2nVpnService extends VpnService {
      * 返回可被 exec 后子进程继承的 TUN fd 号（需无 FD_CLOEXEC）。三级策略：
      * 1. fcntl(F_SETFD, 0) 清除 FD_CLOEXEC —— 部分 ROM 的 android.system.Os 没有
      *    fcntlInt 方法，调用直接抛 NoSuchMethodError（属 Error）；
-     * 2. 回退 Os.dup 复制一份 —— POSIX 规定 dup 出的新 fd 不带 FD_CLOEXEC，
-     *    副本存入 dupFd 由 stopVpn 统一关闭，原 vpnFd 仍保持 TUN 打开；
+     * 2. 回退 ParcelFileDescriptor.dup(FileDescriptor) 复制一份 —— POSIX 规定 dup 出的
+     *    新 fd 不带 FD_CLOEXEC，副本存入 dupFd 由 stopVpn 统一关闭，
+     *    原 vpnFd 仍保持 TUN 打开；
      * 3. 都失败则直接用原 fd（若系统本就没设 CLOEXEC 依然可用），并在日志标注风险。
      */
     private int makeFdInheritable() throws Exception {
@@ -315,11 +316,12 @@ public class N2nVpnService extends VpnService {
             diag("已通过 fcntl 清除 FD_CLOEXEC，子进程可继承");
             return vpnFd.getFd();
         } catch (Throwable t) {
-            diag("fcntl 清除 FD_CLOEXEC 失败: " + t + "，改用 Os.dup 复制");
+            diag("fcntl 清除 FD_CLOEXEC 失败: " + t + "，改用 ParcelFileDescriptor.dup 复制");
         }
         try {
-            // fromFd 内部走 Os.dup 复制原 fd，POSIX 规定 dup 出的新 fd 不带 FD_CLOEXEC
-            dupFd = ParcelFileDescriptor.fromFd(raw);
+            // PFD.dup(FileDescriptor) 内部走 Os.dup 复制原 fd，POSIX 规定 dup 出的新 fd
+            // 不带 FD_CLOEXEC（注意 fromFd 的参数是 int 而非 FileDescriptor，编译不过）
+            dupFd = ParcelFileDescriptor.dup(raw);
             int fd = dupFd.getFd();
             diag("dup 得到可继承 TUN fd=" + fd + "，子进程将使用该 fd");
             return fd;
