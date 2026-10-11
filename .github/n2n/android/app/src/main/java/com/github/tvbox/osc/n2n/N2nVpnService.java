@@ -390,6 +390,16 @@ public class N2nVpnService extends VpnService {
         cmd.add("-d");
         cmd.add("n2n0");
         cmd.add("-f");
+        // n2n 3.1.1 启动时若系统存在 n2n/nobody 用户，会默认以其 uid/gid 作为降权目标
+        // （Android 上 getpwnam("nobody") 命中，uid/gid=9999），随后 setgid(9999) 因无
+        // CAP_SETGID 必然失败 → "unable to drop privileges" → exit(1)，edge 秒退(rc=1)。
+        // 显式传 -u 0 -g 0 使 userid/groupid 归零，整个降权分支被跳过，edge 继续以
+        // 应用自身 uid 运行；此前日志里 setuid(0) 的 "unable to become root" ERROR
+        // 只是探测失败，无害可忽略。
+        cmd.add("-u");
+        cmd.add("0");
+        cmd.add("-g");
+        cmd.add("0");
         return cmd.toArray(new String[0]);
     }
 
