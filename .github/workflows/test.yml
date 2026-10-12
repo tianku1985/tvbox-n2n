@@ -7,16 +7,12 @@ on:
     - cron: 59 6 * * *
   workflow_dispatch:
     inputs:
-      rebuild:
-        description: '忽略构建记录以重新构建'
-        required: false
-        type: boolean
       donotpublish:
         description: '构建后不提交发布新版'
         required: false
         type: boolean
 
-# 发布 Release / 推回 master 需要 contents:write；clean 清理 runs 需要 actions:write
+# 发布 Release 需要 contents:write；clean 清理 runs 需要 actions:write
 permissions:
   contents: write
   actions: write
@@ -25,133 +21,52 @@ jobs:
   build:
     needs: telegram-bot-api
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - userName: q215613905
-            repoName: TVBoxOS
-            branchName: main
-          - userName: takagen99
-            repoName: Box
-            branchName: main
-            java_ver: 17
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Check New Commit
+      - name: Build Tag
         run: |
-          upStream=https://github.com/${{ matrix.userName }}/${{ matrix.repoName }}
-          echo "upStream=$upStream" >> $GITHUB_ENV
-          commit=$(curl -sL $upStream/commits/${{ matrix.branchName }} |grep -o "/${{ matrix.userName }}/${{ matrix.repoName }}/commit/[a-z0-9]\+" |head -1 | cut -d\/ -f5)
-          if [[ -z "${commit}" ]]; then
-            commit=$(curl -s "https://api.github.com/repos/${{ matrix.userName }}/${{ matrix.repoName }}/commits/${{ matrix.branchName }}?per_page=1" | jq -r '.sha' )
-          fi
-          if ! grep -q "$commit" README.md || [ "${{ inputs.rebuild }}" == "true" ]; then
-            echo "commit=$commit" >> $GITHUB_ENV
-            echo "commitS=${commit:0:7}" >> $GITHUB_ENV
-          fi
-          echo "commit=$commit"
-      - name: Checkout Source Code
-        if: ${{ env.commit }}
-        run: |
-          git clone ${{ env.upStream }} TVBoxOSC
-          cd TVBoxOSC
-          git checkout ${{ env.commit }}
-          echo "tag=$(git log --date=format:'%Y%m%d-%H%M' --pretty=format:%cd ${{ env.commitS }} -1)" >> $GITHUB_ENV
+          # 源码已内化到本仓库（takagen99/Box @ 258a5fe），固定按构建时间打 tag
+          echo "tag=$(date +'%Y%m%d-%H%M')" >> $GITHUB_ENV
       - name: Extra Modify
-        if: ${{ env.commit }}
-        working-directory: TVBoxOSC
         run: |
           echo '修改VersionName'
-          if [ "${{ matrix.userName }}" == "takagen99" ]; then
-            # 进行 sed 修改
-            sed -i 's/\.concat(buildTime())/ +\"${{ env.tag }}\"/g' app/build.gradle 
-            # 目前关于页面没有合并我的分支
-            sed -i "/android:text=/s#=\"#=\"${{ env.tag }}\\\\n\\\\n#" app/src/main/res/layout/dialog_about.xml
-          else
-             sed -i "/versionName/s#[0-9a-zA-Z_\.\'\"-]\+\$#\'${{ env.tag }}\'#" app/build.gradle
-             sed -i "/android:text=/s#=\"#=\"${{ env.tag }}\\\\n\\\\n#" app/src/main/res/layout/dialog_about.xml
-          fi 
+          sed -i 's/\.concat(buildTime())/ +"${{ env.tag }}"/g' app/build.gradle
+          sed -i "/android:text=/s#=\"#=\"${{ env.tag }}\\\\n\\\\n#" app/src/main/res/layout/dialog_about.xml
           echo 'crosswalk源，防挂'
           if grep -q 'crosswalk' build.gradle; then
             sed -i "/crosswalk/a\        maven { url 'https://j4uq.github.io/crosswalk/releases/crosswalk/android/maven2' }" build.gradle
           else
             sed -i "/jitpack.io/a\        maven { url 'https://j4uq.github.io/crosswalk/releases/crosswalk/android/maven2' }" build.gradle
           fi
-      - name: 集成 n2n Edge
-        if: ${{ env.commit }}
+      - name: Compress Source
         run: |
-          python3 .github/n2n/apply.py TVBoxOSC
+          tar -cJf sourceCode-${{ env.tag }}.tar.xz --exclude=.git --exclude=.github --exclude=hin2n --exclude=docs app pyramid quickjs xwalk gradle build.gradle gradle.properties settings.gradle gradlew gradlew.bat LICENSE .gitignore
 
-      - name: 下载 n2n Edge 二进制
-        if: ${{ env.commit }}
-        run: |
-          # 拉取仓库中最新一份 n2n-edge 产物；没有则跳过（本次 APK 不含 n2n 功能）
-          ART_ID=$(curl -s "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?name=n2n-edge&per_page=1" | jq -r '.artifacts[0].id // empty')
-          if [ -z "$ART_ID" ]; then
-            echo "未找到 n2n-edge 产物，跳过下载"
-            exit 0
-          fi
-          curl -sL -H "Authorization: Bearer ${{ github.token }}" -o n2n-edge.zip \
-            "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$ART_ID/zip"
-          TMPD=$(mktemp -d)
-          unzip -o n2n-edge.zip -d "$TMPD"
-          # 扁平 edge-* 二进制 → assets/n2n（作为低版本/回退方案释放执行）
-          mkdir -p TVBoxOSC/app/src/main/assets/n2n
-          find "$TMPD" -maxdepth 1 -name 'edge-*' -type f -exec cp {} TVBoxOSC/app/src/main/assets/n2n/ \;
-          # jni/<abi>/liblegedge.so → jniLibs（Android 10+ W^X 下从 nativeLibraryDir 执行）
-          if [ -d "$TMPD/jni" ]; then
-            mkdir -p TVBoxOSC/app/src/main/jniLibs
-            cp -r "$TMPD/jni/"* TVBoxOSC/app/src/main/jniLibs/
-          fi
-          rm -rf "$TMPD"
-          echo "== assets/n2n =="; ls -l TVBoxOSC/app/src/main/assets/n2n
-          echo "== jniLibs =="; find TVBoxOSC/app/src/main/jniLibs -type f
-
-      - name: Compress Source Code
-        if: ${{ env.commit }}
-        working-directory: TVBoxOSC
-        run: |
-          #zip -q -x ".git/*" -x  ".github/*" -r sourceCode-${{ env.commitS }}.zip .
-          tar -cJf sourceCode-${{ env.commitS }}.tar.xz --exclude=.git --exclude=.github *
-      
       - name: Setup Python
-        #if: ${{ matrix.userName == 'q215613905' && env.commit }}
-        if: ${{ env.commit }}
         uses: actions/setup-python@v7
         with:
           python-version: '3.8'
 
       - name: Install Python dependencies
-        #if: ${{ matrix.userName == 'q215613905' && env.commit }}
-        if: ${{ env.commit }}
         run: |
           python -m pip install --upgrade pip
           pip install lxml ujson pyquery requests jsonpath cachetools pycryptodome beautifulsoup4
 
       - name: Modify pyramid——build.gradle
-        if: ${{ env.commit }}
-        working-directory: TVBoxOSC
         run: |
           # 替换Windows路径为系统Python路径
-          # sed -i "s|buildPython(\"D:/Programs/Python/Python38/python.exe\")|buildPython(\"/usr/bin/python3\")|g" pyramid/build.gradle
           sed -i '/buildPython.*python.exe/d' pyramid/build.gradle
           # pyquery 2.1.0 声明了并不存在的 cssselect>=1.5.0，Chaquopy 解析会失败；
           # 固定到 2.0.2（TVBoxOS 本身即 2.0.2），对已锁版本的仓库无影响。
           sed -i 's/install "pyquery"/install "pyquery==2.0.2"/g' pyramid/build.gradle
 
       - name: Setup Python local.properties
-        #if: ${{ matrix.userName == 'q215613905' && env.commit }}
-        if: ${{ env.commit }}
-        working-directory: TVBoxOSC
-        run: echo "" > local.properties 
-          
+        run: echo "" > local.properties
+
       - name: Release Apk Sign
-        if: ${{ env.commit }}
-        working-directory: TVBoxOSC
         run: |
           signingConfigs='ICAgIHNpZ25pbmdDb25maWdzIHtcCiAgICAgICAgaWYgKHByb2plY3QuaGFzUHJvcGVydHkoIlJFTEVBU0VfU1RPUkVfRklMRSIpKSB7XAogICAgICAgICAgICBteUNvbmZpZyB7XAogICAgICAgICAgICAgICAgc3RvcmVGaWxlIGZpbGUoUkVMRUFTRV9TVE9SRV9GSUxFKVwKICAgICAgICAgICAgICAgIHN0b3JlUGFzc3dvcmQgUkVMRUFTRV9TVE9SRV9QQVNTV09SRFwKICAgICAgICAgICAgICAgIGtleUFsaWFzIFJFTEVBU0VfS0VZX0FMSUFTXAogICAgICAgICAgICAgICAga2V5UGFzc3dvcmQgUkVMRUFTRV9LRVlfUEFTU1dPUkRcCiAgICAgICAgICAgICAgICB2MVNpZ25pbmdFbmFibGVkIHRydWVcCiAgICAgICAgICAgICAgICB2MlNpZ25pbmdFbmFibGVkIHRydWVcCiAgICAgICAgICAgICAgICBlbmFibGVWM1NpZ25pbmcgPSB0cnVlXAogICAgICAgICAgICAgICAgZW5hYmxlVjRTaWduaW5nID0gdHJ1ZVwKICAgICAgICAgICAgfVwKICAgICAgICB9XAogICAgfVwKXA=='
           signingConfig='ICAgICAgICAgICAgaWYgKHByb2plY3QuaGFzUHJvcGVydHkoIlJFTEVBU0VfU1RPUkVfRklMRSIpKSB7XAogICAgICAgICAgICAgICAgc2lnbmluZ0NvbmZpZyBzaWduaW5nQ29uZmlncy5teUNvbmZpZ1wKICAgICAgICAgICAgfVwK'
@@ -164,15 +79,11 @@ jobs:
           sed -i '$a\RELEASE_STORE_PASSWORD=TVBoxOSC'       ./gradle.properties
           sed -i '$a\RELEASE_KEY_PASSWORD=TVBoxOSC'         ./gradle.properties
       - uses: actions/setup-java@v6
-        if: ${{ matrix.java_ver }}
         with:
           distribution: temurin
-          java-version: ${{ matrix.java_ver }}
+          java-version: 17
       - uses: gradle/actions/setup-gradle@v6.2.0
-        if: ${{ env.commit }}
       - name: Build With Gradle
-        if: ${{ env.commit }}
-        working-directory: TVBoxOSC
         run: |
           chmod +x gradlew
           # 输出 tee 落盘，失败时把真正的编译错误行直接打在日志尾部，便于一眼看到
@@ -186,112 +97,67 @@ jobs:
             exit "$rc"
           fi
       - name: Prepare App
-        if: ${{ env.commit }}
-        working-directory: TVBoxOSC
         run: |
           rm -rf apk/
           mkdir -p apk/
           for file in `find ~ -name "*release*.apk" -print`; do
-            # 获取文件的基本名称
             base=$(basename "$file")
-            # 如果文件是 TVBox_ 开头
             if [[ "$base" == TVBox_* ]]; then
-              new_base=$(echo "$base" | sed "s/release/${{ matrix.userName }}_${{ env.tag }}/")
+              new_base=$(echo "$base" | sed "s/release/takagen99_${{ env.tag }}/")
             else
-              new_base="TVBox_${{ matrix.userName }}_${{ env.tag }}.apk"
+              new_base="TVBox_takagen99_${{ env.tag }}.apk"
             fi
-            # 移动并重命名文件
             mv "$file" "apk/$new_base"
           done
-          mv sourceCode-${{ env.commitS }}.* apk/
+          mv sourceCode-${{ env.tag }}.* apk/
       - name: Release Note
-        if: ${{ env.commit }}
-        working-directory: TVBoxOSC
         run: |
-          lastCommit=$(grep "${{ matrix.userName }}\/${{ matrix.repoName }}" ${{ github.workspace }}/README.md |grep -o '[a-z0-9]\{40\}')
           export LESSCHARSET=utf-8
-          echo -e "Credit: [${{ matrix.userName }}](${{ env.upStream }})\nCommit: ${{ env.commit }}\nChangelog:\n\`\`\`" > apk/${{ matrix.userName }}-Release.log
-          if [ "${{ env.commit }}" == "${lastCommit}" ]; then
-            git log --pretty=format:%B ${{ env.commitS }} -1 |sed -e "s# \{2,\}#\n#g" -e "/^Merge \(pull\|branch\|remote\)/d" -e '/^$/d' |cat -n |sort -k2,2 -k1,1n |uniq -f1 |sort -k1,1n |cut -f2- >> apk/${{ matrix.userName }}-Release.log
-          else
-            git log --pretty=format:%B ${{ env.commitS }}...${lastCommit:0:7} |sed -e "s# \{2,\}#\n#g" -e "/^Merge \(pull\|branch\|remote\)/d" -e '/^$/d' |cat -n |sort -k2,2 -k1,1n |uniq -f1 |sort -k1,1n |cut -f2- >> apk/${{ matrix.userName }}-Release.log
-          fi
-          echo -e '\n```' >> apk/${{ matrix.userName }}-Release.log
+          echo -e "Credit: [takagen99](https://github.com/takagen99/Box)\nBase: 258a5fef61578869ae905ca230bdde9e99fc19a8\nBuild: ${{ env.tag }}\nChanges:\n\`\`\`" > apk/takagen99-Release.log
+          git log --pretty=format:%B -10 | sed -e "/^Merge \(pull\|branch\|remote\)/d" -e '/^$/d' >> apk/takagen99-Release.log
+          echo -e '\n```' >> apk/takagen99-Release.log
       - name: Upload App To Artifact
         uses: actions/upload-artifact@v7
-        if: ${{ env.commit }}
         with:
-          name: ${{ matrix.userName }}-${{ matrix.repoName }}
+          name: takagen99-Box
           path: |
-            TVBoxOSC/apk/*
+            apk/*
       - name: Whether Or Not to Publish
-        if: ${{ inputs.donotpublish && env.commit }}
+        if: ${{ inputs.donotpublish }}
         run: |
-          echo "commit=" >> $GITHUB_ENV
+          echo "skip publish"
+          echo "tag=" >> $GITHUB_ENV
       - name: Release and Upload Assets
         uses: ncipollo/release-action@v1
-        if: ${{ env.commit }}
+        if: ${{ env.tag }}
         with:
           name: ${{ env.tag }}
           tag: ${{ env.tag }}
-          bodyFile: TVBoxOSC/apk/${{ matrix.userName }}-Release.log
+          bodyFile: apk/takagen99-Release.log
           allowUpdates: true
           removeArtifacts: true
           artifacts: |
-            TVBoxOSC/apk/*.apk
-            TVBoxOSC/apk/sourceCode-${{ env.commitS }}.*
+            apk/*.apk
+            apk/sourceCode-${{ env.tag }}.*
       - name: Download Telegram Bot API Binary
-        if: ${{ env.commit }}
+        if: ${{ env.tag }}
         uses: actions/download-artifact@v8
         with:
           name: telegram-bot-api-binary
-          path: TVBoxOSC
       - name: Post To Telegram
-        if: ${{ env.commit }}
-        working-directory: TVBoxOSC
+        if: ${{ env.tag }}
         env:
           CHAT_ID: -1001734684817
           TELEGRAM_TOKEN: ${{ secrets.BOT_TOKEN }}
         run: |
           if [ -n "${{ secrets.BOT_TOKEN }}" ]; then
-            sed -i -e '1s/\[\(.*\)\].*/#\1/' -e 's#\([&"\/]\)#\\\1#g' apk/${{ matrix.userName }}-Release.log
-            mv -f apk/${{ matrix.userName }}-Release.log caption.txt
+            sed -i -e '1s/\[\(.*\)\].*/#\1/' -e 's#\([&"\/]\)#\\\1#g' apk/takagen99-Release.log
+            mv -f apk/takagen99-Release.log caption.txt
             chmod +x telegram-bot-api-binary
             ./telegram-bot-api-binary --api-id=21724 --api-hash=3e0cb5efcd52300aec5994fdfc5bdc16 --local 2>&1 > /dev/null &
-            mv ../.github/scripts/upload.py ./
+            mv .github/scripts/upload.py ./
             python upload.py
           fi
-      - name: Push to master
-        if: ${{ env.commit }}
-        run: |
-          rm -rf TVBoxOSC
-          git reset --hard
-          sed -i '/url =/d' ./.git/config
-          git config --local user.name "github-actions[bot]"
-          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git remote set-url --add origin "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
-          git pull --rebase || true
-          sed -i "/${{ matrix.userName }}\/${{ matrix.repoName }}/s#Updated: [a-zA-Z0-9]*#Updated: ${{ env.commit }}#" README.md
-          rm -f n2n-edge.zip
-          git add --all
-          # rebuild 触发时 README 可能已经是同一个 commit，此时 git commit 会以
-          # "nothing to commit" 退出 1 直接把步骤标红，这里按需提交
-          if git diff --cached --quiet; then
-            echo "README 已是最新，无需提交"
-          else
-            git commit -m "${{ env.commit }}"
-          fi
-          # 两个矩阵 job 会并发推送同一分支，失败则重新拉取后重试
-          for i in 1 2 3; do
-            if git push -u -f origin HEAD; then
-              echo "推送成功"
-              exit 0
-            fi
-            echo "推送失败，5 秒后重试（$i/3）"
-            sleep 5
-            git pull --rebase || true
-          done
-          exit 1
 
   telegram-bot-api:
     name: Telegram Bot API

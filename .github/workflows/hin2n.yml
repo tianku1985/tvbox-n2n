@@ -1,0 +1,93 @@
+# hin2n 打包工作流
+#
+# hin2n 源码（switch-iot/hin2n dev 分支，含 n2n v1/v2s/v2/v3 全部 C 源码，
+# 原 git 子模块已实体化到 Hin2n_android/app/src/main/cpp/ 下）已内化到本仓库
+# hin2n/ 目录，并烘焙了两个功能补丁：配置页“静态路由”（多条 CIDR，空格分隔）
+# 与主界面侧边栏“Ping”。release 签名由环境变量驱动（复用本仓库
+# .github/workflows/TVBoxOSC.jks，别名 TVBoxOSC）。
+#
+# 触发方式：仅手动 —— Actions 页面选择 “hin2n” -> Run workflow（workflow_dispatch）。
+#
+# 产物：Artifacts 里的 hin2n-apk，以及 tag 为 hin2n-<run_number> 的 Release。
+#
+# 构建环境说明（与上游 Travis 对齐）：
+#   AGP 4.0.0 + Gradle 6.3 必须用 JDK 8；compileSdk 28 / build-tools 28.0.3；
+#   CMake 3.6.4111459；ndk-bundle 已下线，改用 ndk;21.4.7075529 并写 ndk.dir。
+#   上游 gradle.taskGraph.beforeTask 门控要求 UMENG_APPKEY/BUGLY_APPID 非空，
+#   这里传哑值绕过。
+
+name: hin2n
+
+on:
+  workflow_dispatch:
+
+# 发布 Release 需要 contents:write
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup JDK 8
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 8
+
+      - name: Install Android SDK components
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-28" "build-tools;28.0.3" "cmake;3.6.4111459" "ndk;21.4.7075529"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/21.4.7075529" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/21.4.7075529" >> $GITHUB_ENV
+
+      - name: Prepare signing and local.properties
+        working-directory: hin2n/Hin2n_android
+        run: |
+          cp -f ${{ github.workspace }}/.github/workflows/TVBoxOSC.jks app/TVBoxOSC.jks
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+          echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/21.4.7075529" >> local.properties
+
+      - name: Build With Gradle
+        working-directory: hin2n/Hin2n_android
+        env:
+          UMENG_APPKEY: dummy
+          BUGLY_APPID: dummy
+          RELEASE_STORE_FILE: ./TVBoxOSC.jks
+          RELEASE_STORE_PASSWORD: TVBoxOSC
+          RELEASE_KEY_ALIAS: TVBoxOSC
+          RELEASE_KEY_PASSWORD: TVBoxOSC
+        run: |
+          chmod +x gradlew
+          # flavor 为 channel=normal × arch=allarch，对应任务 assembleNormalAllarchRelease；
+          # 输出 tee 落盘，失败时把真正的编译错误行打在日志尾部
+          set +e
+          ./gradlew assembleNormalAllarchRelease --warning-mode all 2>&1 | tee gradle.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "===== 编译错误行（error: / e: ）====="
+            grep -nE "error:|^e: |Execution failed for task" gradle.log | tail -n 60 || true
+            exit "$rc"
+          fi
+          find app/build/outputs/apk -name "*.apk"
+
+      - name: Upload APK To Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: hin2n-apk
+          path: hin2n/Hin2n_android/app/build/outputs/apk/*/release/*.apk
+
+      - name: Release and Upload Assets
+        uses: ncipollo/release-action@v1
+        with:
+          name: hin2n-${{ github.run_number }}
+          tag: hin2n-${{ github.run_number }}
+          allowUpdates: true
+          removeArtifacts: true
+          artifacts: |
+            hin2n/Hin2n_android/app/build/outputs/apk/*/release/*.apk

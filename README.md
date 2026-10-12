@@ -8,16 +8,23 @@
 ## Credits
 This repo relies on the following third-party projects:
 - [CatVodTVOfficial/TVBoxOSC](https://github.com/CatVodTVOfficial/TVBoxOSC)
-- [q215613905/TVBoxOS](https://github.com/q215613905/TVBoxOS) (Updated: ab11d289e09963a9daf65ca7f6b7a9a8cbe184e1)
-- [takagen99/Box](https://github.com/takagen99/Box) (Updated: 258a5fef61578869ae905ca230bdde9e99fc19a8)
+- [takagen99/Box](https://github.com/takagen99/Box) (Vendored: 258a5fef61578869ae905ca230bdde9e99fc19a8)
+- [switch-iot/hin2n](https://github.com/switch-iot/hin2n) (dev 分支，已内化到 `hin2n/`)
 
-## N2N 组网
-本仓库在构建时会把 [ntop/n2n](https://github.com/ntop/n2n) 的 `edge` 客户端静态打包进 APK（v3.1.1，使用改写的 `tuntap_android.c` 在 Android `VpnService` 提供的 TUN 设备之上模拟 TAP，内置 ARP 缓存与应答），并在「设置 → 设置其他 → N2N 组网」中提供配置与连接界面。
+## 结构
+本仓库直接内置全部源码，GitHub Actions 只编译本仓库内容（不再克隆上游）：
+- 根目录：[takagen99/Box](https://github.com/takagen99/Box) 源码（已烘焙首页扩展与远程配置功能）
+- `hin2n/`：[switch-iot/hin2n](https://github.com/switch-iot/hin2n) 源码（n2n 子模块已实体化，已烘焙静态路由与 Ping 补丁）
 
-使用说明：
-1. 打开 TVBox → 设置 → 设置其他 → N2N 组网
-2. 填写服务器（`host:port`）、社区、密钥、虚拟 IP 与子网掩码（各端 IP 需唯一）
-3. 点击「连接」，首次会弹出 VPN 授权，允许后即可组网（仅转发虚拟子网，不劫持全部流量）
-4. 支持 MAC 自动生成、MTU 与额外路由（如 `192.168.8.0/24`，多个以空格或逗号分隔）
+## TVBox 定制功能
+- 开机启动开关（「设置 → 远程配置」）
+- 首页自定义入口：远程 JSON 接口可配置多个，点击拉起指定 App
+- 所有默认配置从 JSON 接口读取（公告 / 入口 / 开机启动默认值）
+- 首页底部滚动公告（酒店 IPTV 桌面风格）
+- 首页固定 hin2n 入口图标
 
-说明：两端需同一社区/密钥，且服务器能公网互通；默认不带 root 依赖。n2n 与 hin2n 均为 GPL-3.0 协议。
+## hin2n 定制功能
+- 配置页新增「静态路由」：支持多条 CIDR（空格分隔），VPN 建立时逐条注入
+- 主界面侧边栏新增「Ping」：后台执行 `ping -c 4` 并弹窗展示结果
+
+说明：n2n 与 hin2n 均为 GPL-3.0 协议。

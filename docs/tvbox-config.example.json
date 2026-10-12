@@ -1,0 +1,17 @@
+{
+  "notice": "欢迎使用 TVBox：本通知由远程 JSON 接口下发，修改接口内容即可全网更新。",
+  "bootStart": true,
+  "hin2nEntry": true,
+  "entries": [
+    {
+      "name": "hin2n",
+      "pkg": "wang.switchy.hin2n",
+      "icon": ""
+    },
+    {
+      "name": "文件管理",
+      "pkg": "com.android.documentsui",
+      "icon": ""
+    }
+  ]
+}
