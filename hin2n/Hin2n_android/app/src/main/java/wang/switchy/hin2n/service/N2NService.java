@@ -141,6 +141,16 @@ public class N2NService extends VpnService {
 
         String session = getResources().getStringArray(R.array.vpn_session_name)[mN2nSettingInfo.getVersion()];
         cmd = new EdgeCmd(mN2nSettingInfo, vpnServiceFd, getExternalFilesDir("log") + "/" + session + ".log");
+
+        // hin2n-patch: 配置了静态路由时，自动开启 allowRouting + 关闭 dropMuticast
+        // 让 edge 能转发非本机 IP 的包，且 ARP 广播帧能跨越 n2n 隧道传播
+        String hin2nAutoRoutes = getSharedPreferences("Hin2n", Context.MODE_PRIVATE).getString("hin2n_static_routes", "");
+        if (hin2nAutoRoutes != null && !hin2nAutoRoutes.trim().isEmpty()) {
+            cmd.allowRouting = true;
+            cmd.dropMuticast = false;
+            Log.d("N2NService", "static routes configured -> auto enable allowRouting, disable dropMuticast");
+        }
+
         mFileObserver = new LogFileObserver(cmd.logPath);
         mFileObserver.stopWatching();
         IOUtils.clearLogTxt(cmd.logPath);
