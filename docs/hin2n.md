@@ -1,5 +1,7 @@
 # hin2n 打包集成
 
+> 完整开发文档见 [hin2n-dev.md](file:///f:/tvbox-n2n/docs/hin2n-dev.md)
+
 hin2n 源码（[switch-iot/hin2n](https://github.com/switch-iot/hin2n) dev 分支）已内化到本仓库 `hin2n/` 目录：
 
 - 原 git 子模块（n2n_meyerd / n2n_ntop_v2 / n2n_ntop_v3）已按锁定 commit 实体化到
