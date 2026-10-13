@@ -354,7 +354,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_below="@id/til_dns_server_ip"
-                    android:hint="静态路由(如 192.168.0.0/24,多条空格分隔)">
+                    android:hint="静态路由(如 192.168.8.0/24 10.0.0.13,网关可选)">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/tie_static_routes"

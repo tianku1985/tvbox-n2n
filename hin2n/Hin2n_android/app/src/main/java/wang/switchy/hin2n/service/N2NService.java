@@ -81,18 +81,31 @@ public class N2NService extends VpnService {
             builder.addRoute("128.0.0.0", 1);
         }
 
-        // hin2n-patch: 自定义静态路由（SharedPreferences "Hin2n" 键 hin2n_static_routes，空格分隔 CIDR）
+        // hin2n-patch: 自定义静态路由（SharedPreferences "Hin2n" 键 hin2n_static_routes）
+        // 格式: CIDR 网关IP（网关可选），多条空格分隔
+        // 带 / 的是 CIDR（如 192.168.8.0/24），不带 / 的是网关 IP（如 10.0.0.13）
+        // 例: 192.168.8.0/24 10.0.0.13 192.168.9.0/24 10.0.0.13
         String hin2nStaticRoutes = getSharedPreferences("Hin2n", Context.MODE_PRIVATE).getString("hin2n_static_routes", "");
         if (hin2nStaticRoutes != null && !hin2nStaticRoutes.trim().isEmpty()) {
-            for (String hin2nRoute : hin2nStaticRoutes.trim().split("\\s+")) {
-                try {
-                    String[] hin2nParts = hin2nRoute.split("/");
-                    if (hin2nParts.length == 2) {
-                        builder.addRoute(hin2nParts[0], Integer.parseInt(hin2nParts[1]));
-                        Log.d("N2NService", "add static route: " + hin2nRoute);
+            String[] hin2nTokens = hin2nStaticRoutes.trim().split("\\s+");
+            String hin2nCidr = null;
+            String hin2nGateway = null;
+            for (int hi = 0; hi <= hin2nTokens.length; hi++) {
+                if (hi < hin2nTokens.length && hin2nTokens[hi].contains("/")) {
+                    // 先处理上一条
+                    if (hin2nCidr != null) {
+                        addHin2nRoute(builder, hin2nCidr, hin2nGateway);
+                        hin2nGateway = null;
                     }
-                } catch (Exception e) {
-                    Log.e("N2NService", "invalid static route: " + hin2nRoute, e);
+                    hin2nCidr = hin2nTokens[hi];
+                } else if (hi < hin2nTokens.length) {
+                    // 不含 / 的是网关 IP
+                    hin2nGateway = hin2nTokens[hi];
+                } else {
+                    // 最后一条
+                    if (hin2nCidr != null) {
+                        addHin2nRoute(builder, hin2nCidr, hin2nGateway);
+                    }
                 }
             }
         }
@@ -141,16 +154,6 @@ public class N2NService extends VpnService {
 
         String session = getResources().getStringArray(R.array.vpn_session_name)[mN2nSettingInfo.getVersion()];
         cmd = new EdgeCmd(mN2nSettingInfo, vpnServiceFd, getExternalFilesDir("log") + "/" + session + ".log");
-
-        // hin2n-patch: 配置了静态路由时，自动开启 allowRouting + 关闭 dropMuticast
-        // 让 edge 能转发非本机 IP 的包，且 ARP 广播帧能跨越 n2n 隧道传播
-        String hin2nAutoRoutes = getSharedPreferences("Hin2n", Context.MODE_PRIVATE).getString("hin2n_static_routes", "");
-        if (hin2nAutoRoutes != null && !hin2nAutoRoutes.trim().isEmpty()) {
-            cmd.allowRouting = true;
-            cmd.dropMuticast = false;
-            Log.d("N2NService", "static routes configured -> auto enable allowRouting, disable dropMuticast");
-        }
-
         mFileObserver = new LogFileObserver(cmd.logPath);
         mFileObserver.stopWatching();
         IOUtils.clearLogTxt(cmd.logPath);
@@ -241,6 +244,24 @@ public class N2NService extends VpnService {
             }
         });
         return (true);
+    }
+
+    // hin2n-patch: 添加静态路由到 VpnService builder
+    private void addHin2nRoute(Builder builder, String cidr, String gateway) {
+        try {
+            String[] parts = cidr.split("/");
+            if (parts.length == 2) {
+                builder.addRoute(parts[0], Integer.parseInt(parts[1]));
+                String msg = "add route: " + cidr;
+                if (gateway != null && !gateway.isEmpty()) {
+                    msg += " via " + gateway;
+                    builder.addRoute(gateway, 32);
+                }
+                Log.d("N2NService", msg);
+            }
+        } catch (Exception e) {
+            Log.e("N2NService", "invalid route: " + cidr, e);
+        }
     }
 
     @Override
