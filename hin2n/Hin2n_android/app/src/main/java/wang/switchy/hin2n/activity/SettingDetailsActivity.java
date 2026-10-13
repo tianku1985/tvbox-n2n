@@ -851,8 +851,8 @@ public class SettingDetailsActivity extends BaseActivity implements View.OnClick
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void onErrorEvent(ErrorEvent event) {
         new SweetAlertDialog(this, SweetAlertDialog.ERROR_TYPE)
-                .setTitleText("Oops...")
-                .setContentText("Something went wrong!")
+                .setTitleText("出错了")
+                .setContentText("发生异常！")
                 .show();
     }
 }

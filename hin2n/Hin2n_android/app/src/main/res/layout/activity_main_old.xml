@@ -38,7 +38,7 @@
             android:layout_height="wrap_content"
             android:layout_centerHorizontal="true"
             android:layout_marginTop="15dp"
-            android:text="Note : Disconnect from the supernode."/>
+            android:text="注意：已断开与 supernode 的连接。"/>
 
         <RelativeLayout
             android:id="@+id/rl_current_setting"
@@ -55,7 +55,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_centerVertical="true"
-                android:text="Current Setting : "
+                android:text="当前配置："
                 android:textSize="18dp"/>
 
             <RelativeLayout
@@ -95,7 +95,7 @@
             android:layout_marginLeft="30dp"
             android:layout_marginRight="30dp"
             android:layout_marginTop="30dp"
-            android:text="Start"
+            android:text="启动"
             android:visibility="invisible"/>
 
     </RelativeLayout>

@@ -43,7 +43,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="N2N version"/>
+                    android:text="N2N 版本"/>
                 <RadioGroup
                     android:id="@+id/rg_version"
                     android:layout_width="match_parent"
@@ -140,7 +140,7 @@
                     android:layout_height="wrap_content"
                     android:layout_centerVertical="true"
                     android:layout_toRightOf="@id/get_ip_from_supernode_check_box"
-                    android:text="Get IP from supernode"/>
+                    android:text="从 supernode 获取 IP"/>
             </RelativeLayout>
 
             <com.google.android.material.textfield.TextInputLayout
@@ -206,7 +206,7 @@
                     android:layout_height="wrap_content"
                     android:layout_centerVertical="true"
                     android:layout_toRightOf="@id/more_setting_check_box"
-                    android:text="More settings"/>
+                    android:text="更多设置"/>
             </RelativeLayout>
 
             <RelativeLayout
@@ -227,7 +227,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Encryption method"/>
+                        android:text="加密方式"/>
 
                     <Spinner
                         android:id="@+id/til_encryption_mode"
@@ -301,7 +301,7 @@
                     android:id="@+id/check_box_local_ip"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Automatically detect local IP"/>
+                    android:text="自动检测本地 IP"/>
 
                 <com.google.android.material.textfield.TextInputLayout
                     android:layout_marginTop="5dp"
@@ -398,7 +398,7 @@
                         android:layout_height="wrap_content"
                         android:layout_centerVertical="true"
                         android:layout_toRightOf="@id/resove_super_node_ip_check_box"
-                        android:text="Supernodes are running dynamic IPs"/>
+                        android:text="Supernode 使用动态 IP"/>
                 </RelativeLayout>
 
 
@@ -420,7 +420,7 @@
                         android:layout_height="wrap_content"
                         android:layout_centerVertical="true"
                         android:layout_toRightOf="@id/allow_routing_check_box"
-                        android:text="Enable packet forwarding"/>
+                        android:text="允许包转发"/>
                 </RelativeLayout>
 
                 <!--boolean-->
@@ -441,7 +441,7 @@
                         android:layout_height="wrap_content"
                         android:layout_centerVertical="true"
                         android:layout_toRightOf="@id/accept_muticast_check_box"
-                        android:text="Accept multicast MAC addresses"/>
+                        android:text="接收多播 MAC 地址"/>
                 </RelativeLayout>
 
                 <!--boolean-->
@@ -462,7 +462,7 @@
                         android:layout_height="wrap_content"
                         android:layout_centerVertical="true"
                         android:layout_toRightOf="@id/header_enc_check_box"
-                        android:text="Enable full header encryption"/>
+                        android:text="启用完整头部加密"/>
                 </RelativeLayout>
 
                 <RelativeLayout
@@ -483,7 +483,7 @@
                         android:layout_height="wrap_content"
                         android:layout_centerVertical="true"
                         android:layout_toRightOf="@id/use_http_tunnel_check_box"
-                        android:text="Use http tunnel"/>
+                        android:text="使用 HTTP 隧道"/>
                 </RelativeLayout>
                 <RelativeLayout
                     android:layout_marginTop="5dp"
@@ -496,7 +496,7 @@
                         android:id="@+id/tv_trace_level"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Trace level : "/>
+                        android:text="日志级别："/>
 
                     <Spinner
                         android:layout_toRightOf="@id/tv_trace_level"

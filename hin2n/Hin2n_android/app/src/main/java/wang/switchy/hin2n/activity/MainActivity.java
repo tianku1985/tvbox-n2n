@@ -155,7 +155,7 @@ public class MainActivity extends BaseActivity {
             @Override
             public void onClick(View view) {
                 if (mCurrentSettingName.getText().equals(getResources().getString(R.string.no_setting))) {
-                    Toast.makeText(mContext, "no setting selected", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(mContext, "未选择配置", Toast.LENGTH_SHORT).show();
                     return;
                 }
 
@@ -229,20 +229,20 @@ public class MainActivity extends BaseActivity {
                         final String host = input.getText().toString().trim();
                         if (host.isEmpty() || host.contains(" ") || host.contains(";")
                                 || host.contains("&") || host.contains("|")) {
-                            Toast.makeText(MainActivity.this, "invalid host", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(MainActivity.this, "无效的主机地址", Toast.LENGTH_SHORT).show();
                             return;
                         }
                         doPing(host);
                     }
                 })
-                .setNegativeButton("Cancel", null)
+                .setNegativeButton("取消", null)
                 .show();
     }
 
     private void doPing(final String host) {
         final android.app.AlertDialog waiting = new android.app.AlertDialog.Builder(this)
                 .setTitle("Ping")
-                .setMessage("ping " + host + " ...")
+                .setMessage("正在 ping " + host + " ...")
                 .create();
         waiting.show();
         new Thread(new Runnable() {
@@ -278,9 +278,9 @@ public class MainActivity extends BaseActivity {
                     public void run() {
                         waiting.dismiss();
                         new android.app.AlertDialog.Builder(MainActivity.this)
-                                .setTitle("Ping " + host + (exitCode == 0 ? " success" : " failed"))
-                                .setMessage(sb.length() == 0 ? "(no output)" : sb.toString())
-                                .setPositiveButton("OK", null)
+                                .setTitle("Ping " + host + (exitCode == 0 ? " 成功" : " 失败"))
+                                .setMessage(sb.length() == 0 ? "(无输出)" : sb.toString())
+                                .setPositiveButton("确定", null)
                                 .show();
                     }
                 });
@@ -311,7 +311,7 @@ public class MainActivity extends BaseActivity {
                             .onDenied(new Action<List<String>>() {
                                 @Override
                                 public void onAction(List<String> data) {
-                                    Toast.makeText(MainActivity.this, "I NEED PERMISSIONS!", Toast.LENGTH_SHORT).show();
+                                    Toast.makeText(MainActivity.this, "需要权限！", Toast.LENGTH_SHORT).show();
                                 }
                             }).start();
                 } else {

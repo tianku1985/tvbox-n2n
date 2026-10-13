@@ -132,19 +132,19 @@ public class WebViewActivity extends BaseActivity {
 
         switch (webViewType) {
             case TYPE_WEB_VIEW_ABOUT:
-                mCommonTitleTemplate.setTitleText("About");
+                mCommonTitleTemplate.setTitleText("关于");
                 mWebView.loadUrl(ABOUT_URL);
                 break;
             case TYPE_WEB_VIEW_FEEDBACK:
-                mCommonTitleTemplate.setTitleText("Feedback");
+                mCommonTitleTemplate.setTitleText("反馈");
                 mWebView.loadUrl(FEEDBACK_URL);
                 break;
             case TYPE_WEB_VIEW_SHARE:
-                mCommonTitleTemplate.setTitleText("Share");
+                mCommonTitleTemplate.setTitleText("分享");
                 mWebView.loadUrl(SHARE_URL);
                 break;
             case TYPE_WEB_VIEW_CONTACT:
-                mCommonTitleTemplate.setTitleText("Contact");
+                mCommonTitleTemplate.setTitleText("联系我们");
                 mWebView.loadUrl(CONTACT_URL);
                 break;
             default:
