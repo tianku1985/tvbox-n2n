@@ -32,11 +32,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup JDK 8
+      # runner 自带的新版 sdkmanager (cmdline-tools) 由 Java 17 编译（class 61.0），
+      # 必须先用 JDK 17 运行它装完 SDK 组件；AGP 4.0.0/Gradle 6.3 构建时再切回 JDK 8。
+      - name: Setup JDK 17 (for sdkmanager)
         uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: 8
+          java-version: 17
 
       - name: Install Android SDK components
         run: |
@@ -51,6 +53,12 @@ jobs:
           "$SDKMGR" "platforms;android-28" "build-tools;28.0.3" "cmake;3.6.4111459" "ndk;21.4.7075529"
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/21.4.7075529" >> $GITHUB_ENV
           echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/21.4.7075529" >> $GITHUB_ENV
+
+      - name: Setup JDK 8 (for AGP 4.0.0 / Gradle 6.3 build)
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 8
 
       - name: Prepare signing and local.properties
         working-directory: hin2n/Hin2n_android
