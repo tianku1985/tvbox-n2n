@@ -18,7 +18,6 @@ import com.github.tvbox.osc.base.BaseLazyFragment;
 import com.github.tvbox.osc.ui.adapter.SettingMenuAdapter;
 import com.github.tvbox.osc.ui.adapter.SettingPageAdapter;
 import com.github.tvbox.osc.ui.fragment.ModelSettingFragment;
-import com.github.tvbox.osc.ui.fragment.ConfigFragment;
 import com.github.tvbox.osc.util.AppManager;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.orhanobut.hawk.Hawk;
@@ -115,19 +114,16 @@ public class SettingActivity extends BaseActivity {
         dnsOpt = Hawk.get(HawkConfig.DOH_URL, 0);
         List<String> sortList = new ArrayList<>();
         sortList.add("设置其他");
-        sortList.add("远程配置");
         sortAdapter.setNewData(sortList);
         initViewPager();
     }
 
     private void initViewPager() {
+        // 远程配置已内嵌到「设置其他」页的「配置地址」下方，不再单独成页
         fragments.add(ModelSettingFragment.newInstance());
-        fragments.add(ConfigFragment.newInstance());
         pageAdapter = new SettingPageAdapter(getSupportFragmentManager(), fragments);
         mViewPager.setAdapter(pageAdapter);
-        mViewPager.setCurrentItem(getIntent() != null
-                && getIntent().getBooleanExtra("n2n_go", false)
-                ? fragments.size() - 1 : 0);
+        mViewPager.setCurrentItem(0);
     }
 
     private final Runnable mDataRunnable = new Runnable() {

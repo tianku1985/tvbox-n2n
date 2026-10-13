@@ -1,10 +1,13 @@
 package com.github.tvbox.osc.ui.fragment;
 
+import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.os.Bundle;
+import android.text.InputType;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -17,6 +20,7 @@ import com.github.tvbox.osc.api.ApiConfig;
 import com.github.tvbox.osc.base.BaseActivity;
 import com.github.tvbox.osc.base.BaseLazyFragment;
 import com.github.tvbox.osc.bean.SourceBean;
+import com.github.tvbox.osc.n2n.RemoteConfig;
 import com.github.tvbox.osc.player.thirdparty.Kodi;
 import com.github.tvbox.osc.player.thirdparty.MXPlayer;
 import com.github.tvbox.osc.player.thirdparty.ReexPlayer;
@@ -87,6 +91,11 @@ public class ModelSettingFragment extends BaseLazyFragment {
     private TextView tvDns;
     private TextView tvFastSearchText;
 
+    // Remote Config Section（内嵌于「配置地址」下方）
+    private TextView tvRcUrl;
+    private TextView tvRcBoot;
+    private TextView tvRcSync;
+
     public static ModelSettingFragment newInstance() {
         return new ModelSettingFragment().setArguments();
     }
@@ -141,6 +150,9 @@ public class ModelSettingFragment extends BaseLazyFragment {
         tvDns.setText(OkGoHelper.dnsHttpsList.get(Hawk.get(HawkConfig.DOH_URL, 0)));
         tvHomeDefaultShow = findViewById(R.id.tvHomeDefaultShow);
         tvHomeDefaultShow.setText(Hawk.get(HawkConfig.HOME_DEFAULT_SHOW, false) ? "开启" : "关闭");
+
+        // 远程配置（内嵌在「配置地址」下方）
+        initRemoteConfig();
 
         //takagen99 : Set HomeApi as default
         findViewById(R.id.llHomeApi).requestFocus();
@@ -818,6 +830,97 @@ public class ModelSettingFragment extends BaseLazyFragment {
             }
         };
 
+    }
+
+    /**
+     * 远程配置区初始化：配置接口地址 / 开机启动 / 立即同步。
+     * 公告、首页自定义入口、各入口下载地址等默认值均来自该 JSON 接口（见 RemoteConfig）。
+     */
+    private void initRemoteConfig() {
+        tvRcUrl = findViewById(R.id.tvRcUrl);
+        tvRcBoot = findViewById(R.id.tvRcBoot);
+        tvRcSync = findViewById(R.id.tvRcSync);
+
+        // 开机启动开关（默认值可由远程 JSON 下发，用户点击后以用户选择为准）
+        findViewById(R.id.llRcBoot).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                FastClickCheckUtil.check(v);
+                boolean now = !RemoteConfig.bootStartEnabled();
+                Hawk.put(RemoteConfig.K_BOOT, now);
+                refreshRemoteConfig();
+                Toast.makeText(mContext, now ? "已开启：开机后自动启动" : "已关闭开机启动",
+                        Toast.LENGTH_SHORT).show();
+            }
+        });
+        // 配置接口地址：编辑后立即拉取一次
+        findViewById(R.id.llRcUrl).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                FastClickCheckUtil.check(v);
+                final EditText et = new EditText(mContext);
+                et.setText(RemoteConfig.url());
+                et.setSelection(et.getText().length());
+                et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+                new AlertDialog.Builder(mContext)
+                        .setTitle("远程配置接口地址（JSON）")
+                        .setView(et)
+                        .setPositiveButton("确定", new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                String u = et.getText() == null ? "" : et.getText().toString().trim();
+                                Hawk.put(RemoteConfig.K_URL, u);
+                                refreshRemoteConfig();
+                                if (!u.isEmpty()) {
+                                    syncRemoteConfig();
+                                }
+                            }
+                        })
+                        .setNegativeButton("取消", null)
+                        .show();
+            }
+        });
+        // 立即同步
+        findViewById(R.id.llRcSync).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                FastClickCheckUtil.check(v);
+                syncRemoteConfig();
+            }
+        });
+
+        refreshRemoteConfig();
+    }
+
+    /** 把当前远程配置回显到界面 */
+    private void refreshRemoteConfig() {
+        if (tvRcBoot == null) {
+            return;
+        }
+        tvRcBoot.setText(RemoteConfig.bootStartEnabled() ? "开" : "关");
+        String u = RemoteConfig.url();
+        tvRcUrl.setText(u.isEmpty() ? "未设置" : u);
+    }
+
+    /** 立即从远程配置接口同步（公告/首页入口/下载地址等），结果回显到行尾 */
+    private void syncRemoteConfig() {
+        if (RemoteConfig.url().isEmpty()) {
+            Toast.makeText(mContext, "请先设置「配置接口」地址", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        tvRcSync.setText("同步中…");
+        RemoteConfig.fetch(mContext, new RemoteConfig.Callback() {
+            @Override
+            public void onDone(boolean success) {
+                if (tvRcSync == null) {
+                    return;
+                }
+                refreshRemoteConfig();
+                tvRcSync.setText(success ? "同步成功" : "同步失败（检查接口地址/网络）");
+                Toast.makeText(mContext, success ? "远程配置已更新" : "远程配置拉取失败",
+                        Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 
     @Override

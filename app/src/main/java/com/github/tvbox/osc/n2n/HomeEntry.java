@@ -1,7 +1,10 @@
 package com.github.tvbox.osc.n2n;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.content.Intent;
+import android.net.Uri;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -37,7 +40,7 @@ public class HomeEntry {
             tvHin2n.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    launchApp(act, HIN2N_PKG, "hin2n");
+                    launchApp(act, HIN2N_PKG, "hin2n", RemoteConfig.hin2nUrl());
                 }
             });
         }
@@ -96,24 +99,55 @@ public class HomeEntry {
             iv.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    launchApp(act, e.pkg, e.name);
+                    launchApp(act, e.pkg, e.name, e.url);
                 }
             });
             bar.addView(iv);
         }
     }
 
-    /** 按包名拉起第三方 App，未安装则提示 */
-    private static void launchApp(Activity act, String pkg, String name) {
+    /** 按包名拉起第三方 App；未安装则弹窗提示并从接口给出的下载地址引导安装 */
+    private static void launchApp(Activity act, String pkg, String name, final String url) {
         try {
             Intent it = act.getPackageManager().getLaunchIntentForPackage(pkg);
             if (it != null) {
                 act.startActivity(it);
             } else {
-                Toast.makeText(act, "未安装 " + name, Toast.LENGTH_SHORT).show();
+                showInstallDialog(act, name, url);
             }
         } catch (Throwable t) {
             Toast.makeText(act, "打开 " + name + " 失败: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /** 未安装提示：展示下载地址，并提供「立即下载」直接跳转 */
+    private static void showInstallDialog(final Activity act, String name, final String url) {
+        boolean hasUrl = url != null && !url.trim().isEmpty();
+        AlertDialog.Builder b = new AlertDialog.Builder(act);
+        b.setTitle("未安装「" + name + "」");
+        if (hasUrl) {
+            b.setMessage("是否前往下载安装？\n\n下载地址：\n" + url.trim());
+            b.setPositiveButton("立即下载", new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface dialog, int which) {
+                    openUrl(act, url.trim());
+                }
+            });
+        } else {
+            b.setMessage("未安装「" + name + "」。\n请在「设置 → 配置地址」下方的远程配置接口中补充下载地址。");
+        }
+        b.setNegativeButton("取消", null);
+        b.show();
+    }
+
+    /** 用系统浏览器/应用商店打开下载地址；无可用应用时再回退为文本提示 */
+    private static void openUrl(Activity act, String url) {
+        try {
+            Intent it = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            act.startActivity(it);
+        } catch (Throwable t) {
+            Toast.makeText(act, "无法打开下载页，请手动访问：\n" + url, Toast.LENGTH_LONG).show();
         }
     }
 }

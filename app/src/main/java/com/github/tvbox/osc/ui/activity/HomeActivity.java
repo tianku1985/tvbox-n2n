@@ -343,12 +343,11 @@ public class HomeActivity extends BaseActivity {
             }
         });
         // Button : Settings >> To go into Settings --------------------
-        // 远程配置入口（收藏/应用与设置之间），直达设置页远程配置子页
+        // 远程配置入口（收藏/应用与设置之间），直达设置页「设置其他」的远程配置卡片
         tvN2n.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 Intent n2nIntent = new Intent(HomeActivity.this, SettingActivity.class);
-                n2nIntent.putExtra("n2n_go", true);
                 startActivity(n2nIntent);
             }
         });

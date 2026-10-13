@@ -2,16 +2,19 @@
   "notice": "欢迎使用 TVBox：本通知由远程 JSON 接口下发，修改接口内容即可全网更新。",
   "bootStart": true,
   "hin2nEntry": true,
+  "hin2nUrl": "https://github.com/tianku1985/tvbox-n2n/releases/latest/download/hin2n.apk",
   "entries": [
     {
       "name": "hin2n",
       "pkg": "wang.switchy.hin2n",
-      "icon": ""
+      "icon": "https://raw.githubusercontent.com/tianku1985/tvbox-n2n/main/docs/icons/hin2n.png",
+      "url": "https://github.com/tianku1985/tvbox-n2n/releases/latest/download/hin2n.apk"
     },
     {
       "name": "文件管理",
       "pkg": "com.android.documentsui",
-      "icon": ""
+      "icon": "",
+      "url": ""
     }
   ]
 }

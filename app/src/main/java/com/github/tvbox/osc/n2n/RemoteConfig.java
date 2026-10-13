@@ -22,13 +22,17 @@ import java.util.List;
  *
  * JSON 结构（所有字段可选，缺省保持本地现状）：
  * {
- *   "notice":   "首页底部滚动公告文本",
+ *   "notice":    "首页底部滚动公告文本",
  *   "bootStart": true,                                  // 「开机启动」开关的默认值（用户手动改过后不再覆盖）
  *   "hin2nEntry": true,                                 // 首页是否显示 hin2n 固定入口
- *   "entries": [ {"name":"文件管理", "pkg":"com.android.documentsui", "icon":"https://.../icon.png"} ]
+ *   "hin2nUrl":  "https://.../hin2n.apk",               // hin2n 未安装时提示的下载地址
+ *   "entries": [
+ *     {"name":"文件管理", "pkg":"com.android.documentsui",
+ *      "icon":"https://.../icon.png", "url":"https://.../app.apk"}
+ *   ]                                                   // url 为未安装时提示的下载地址（可选）
  * }
  *
- * 覆盖规则：notice/entries/hin2nEntry 每次拉取成功即更新；bootStart 只在
+ * 覆盖规则：notice/entries/hin2nEntry/hin2nUrl 每次拉取成功即更新；bootStart 只在
  * 远端尚未写入过默认值时作为「默认值」写入，之后以用户开关为准。
  */
 public class RemoteConfig {
@@ -38,6 +42,7 @@ public class RemoteConfig {
     public static final String K_NOTICE = "rc_notice";
     public static final String K_ENTRIES = "rc_entries";       // JSON 数组字符串
     public static final String K_HIN2N = "rc_hin2n_entry";
+    public static final String K_HIN2N_URL = "rc_hin2n_url";   // hin2n 未安装时的下载地址
     public static final String K_BOOT = "n2n_boot_start";      // 开机启动开关（用户值优先）
     public static final String K_BOOT_REMOTE_SET = "n2n_boot_remote_set"; // 远端默认值是否已写入过
 
@@ -53,6 +58,7 @@ public class RemoteConfig {
         public String name;
         public String pkg;
         public String icon;
+        public String url;   // 未安装时的下载地址（可选）
     }
 
     public interface Callback {
@@ -70,6 +76,11 @@ public class RemoteConfig {
 
     public static boolean hin2nEntryEnabled() {
         return Hawk.get(K_HIN2N, true);
+    }
+
+    /** hin2n 未安装时提示的下载地址（远端下发，可为空） */
+    public static String hin2nUrl() {
+        return Hawk.get(K_HIN2N_URL, "");
     }
 
     public static boolean bootStartEnabled() {
@@ -94,6 +105,7 @@ public class RemoteConfig {
                 e.name = o.optString("name", "");
                 e.pkg = o.optString("pkg", "");
                 e.icon = o.optString("icon", "");
+                e.url = o.optString("url", "");
                 if (!e.pkg.isEmpty()) {
                     list.add(e);
                 }
@@ -178,6 +190,9 @@ public class RemoteConfig {
         }
         if (j.has("hin2nEntry")) {
             Hawk.put(K_HIN2N, j.optBoolean("hin2nEntry", true));
+        }
+        if (j.has("hin2nUrl")) {
+            Hawk.put(K_HIN2N_URL, j.optString("hin2nUrl", ""));
         }
         // 开机启动：远端默认值只写一次，之后以用户开关为准
         if (j.has("bootStart") && !Hawk.get(K_BOOT_REMOTE_SET, false)) {
