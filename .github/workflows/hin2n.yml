@@ -40,8 +40,15 @@ jobs:
 
       - name: Install Android SDK components
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platforms;android-28" "build-tools;28.0.3" "cmake;3.6.4111459" "ndk;21.4.7075529"
+          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/cmdline-tools/current/bin:$ANDROID_SDK_ROOT/tools/bin:$PATH"
+          SDKMGR=$(which sdkmanager 2>/dev/null || echo "")
+          if [ -z "$SDKMGR" ]; then
+            # fallback: find sdkmanager anywhere under SDK root
+            SDKMGR=$(find "$ANDROID_SDK_ROOT" -name sdkmanager -type f 2>/dev/null | head -1)
+          fi
+          echo "Using sdkmanager: $SDKMGR"
+          yes | "$SDKMGR" --licenses > /dev/null || true
+          "$SDKMGR" "platforms;android-28" "build-tools;28.0.3" "cmake;3.6.4111459" "ndk;21.4.7075529"
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/21.4.7075529" >> $GITHUB_ENV
           echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/21.4.7075529" >> $GITHUB_ENV
 
