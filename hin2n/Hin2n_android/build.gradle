@@ -2,20 +2,27 @@
 
 buildscript {
     repositories {
-        jcenter()
+        // jcenter 已永久关停（2022），老依赖（baoyz/wang.avi/yanzhenjie 等）走阿里云 jcenter 镜像
+        maven { url 'https://maven.aliyun.com/repository/public' }
+        maven { url 'https://maven.aliyun.com/repository/jcenter' }
+        maven { url 'https://maven.aliyun.com/repository/google' }
         google()
+        mavenCentral()
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:4.0.0'
         classpath 'org.greenrobot:greendao-gradle-plugin:3.3.0'
-        // NOTE: Do not place your application dependencies here; they belong
+        // NOTE: Do not place your application dependencies here. They belong
         // in the individual module build.gradle files
     }
 }
 
 allprojects {
     repositories {
-        jcenter()
+        // jcenter 已永久关停（2022），老依赖走阿里云 jcenter 镜像
+        maven { url 'https://maven.aliyun.com/repository/public' }
+        maven { url 'https://maven.aliyun.com/repository/jcenter' }
+        maven { url 'https://maven.aliyun.com/repository/google' }
         mavenCentral()
         google()
         maven { url "https://jitpack.io" }
