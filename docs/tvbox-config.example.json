@@ -1,4 +1,6 @@
 {
+  "version": "20261015",
+  "apkUrl": "https://github.com/tianku1985/tvbox-n2n/releases/latest/download/TVBox.apk",
   "notice": {
     "text": "欢迎使用 TVBox：本通知由远程 JSON 接口下发，修改接口内容即可全网更新。",
     "position": "bottom",
@@ -37,11 +39,16 @@
     "ice": []
   },
   "theme": "violet",
+  "themes": [
+    { "name": "红色", "alias": "red", "style": 0,
+      "color": "#FF2A2A", "dark": "#8C1418", "bgStart": "#3D0A0D", "bgEnd": "#FF2A2A" },
+    { "name": "薄荷", "alias": "mint",
+      "color": "#3DDC97", "dark": "#1E7A55", "bgStart": "#0B2E22", "bgEnd": "#3DDC97" }
+  ],
   "api": "",
   "live": "",
   "epg": "",
   "proxy": "",
-  "version": "3",
   "checkInterval": 30,
   "ua": "",
   "bootStart": true,
@@ -61,4 +68,5 @@
       "url": ""
     }
   ]
+
 }

@@ -427,12 +427,12 @@ public class VodActivity extends BaseActivity {
         }
     }
 
-    /** 重新加载当前源分类 */
+    /** 重新加载当前源分类（切换源后强制绕过 homeContent 缓存重新拉取） */
     void reloadHome() {
         showLoading();
         currentSelected = 0;
         sortFocused = 0;
         String key = ApiConfig.get().getHomeSourceBean() != null ? ApiConfig.get().getHomeSourceBean().getKey() : "";
-        sourceViewModel.getSort(key);
+        sourceViewModel.getSort(key, true);
     }
 }

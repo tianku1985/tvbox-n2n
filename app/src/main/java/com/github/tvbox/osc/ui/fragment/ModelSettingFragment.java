@@ -1,6 +1,5 @@
 package com.github.tvbox.osc.ui.fragment;
 
-import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.os.Bundle;
@@ -837,10 +836,6 @@ public class ModelSettingFragment extends BaseLazyFragment {
         tvRcUrl = findViewById(R.id.tvRcUrl);
         tvRcBoot = findViewById(R.id.tvRcBoot);
         tvRcSync = findViewById(R.id.tvRcSync);
-        // 远程下发的外观：输入框/按钮背景色（home.inputBgColor / home.buttonBgColor）
-        com.github.tvbox.osc.n2n.HomeEntry.styleInput(tvRcUrl);
-        com.github.tvbox.osc.n2n.HomeEntry.styleButton(tvRcBoot);
-        com.github.tvbox.osc.n2n.HomeEntry.styleButton(tvRcSync);
 
         // 开机启动开关（默认值可由远程 JSON 下发，用户点击后以用户选择为准）
         findViewById(R.id.llRcBoot).setOnClickListener(new View.OnClickListener() {
@@ -854,32 +849,12 @@ public class ModelSettingFragment extends BaseLazyFragment {
                         Toast.LENGTH_SHORT).show();
             }
         });
-        // 配置接口地址：编辑后立即拉取一次
+        // 配置接口地址：弹出主题化输入框，保存后立即拉取一次
         findViewById(R.id.llRcUrl).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 FastClickCheckUtil.check(v);
-                final EditText et = new EditText(mContext);
-                et.setText(RemoteConfig.url());
-                et.setSelection(et.getText().length());
-                et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-                com.github.tvbox.osc.n2n.HomeEntry.styleInput(et);
-                new AlertDialog.Builder(mContext)
-                        .setTitle("远程配置接口地址（JSON，支持 http/https）")
-                        .setView(et)
-                        .setPositiveButton("确定", new DialogInterface.OnClickListener() {
-                            @Override
-                            public void onClick(DialogInterface dialog, int which) {
-                                String u = et.getText() == null ? "" : et.getText().toString().trim();
-                                Hawk.put(RemoteConfig.K_URL, u);
-                                refreshRemoteConfig();
-                                if (!u.isEmpty()) {
-                                    syncRemoteConfig();
-                                }
-                            }
-                        })
-                        .setNegativeButton("取消", null)
-                        .show();
+                showRcUrlDialog();
             }
         });
         // 立即同步
@@ -894,14 +869,50 @@ public class ModelSettingFragment extends BaseLazyFragment {
         refreshRemoteConfig();
     }
 
-    /** 把当前远程配置回显到界面 */
+    /** 远程配置接口地址输入弹窗：自定义主题布局（dialog_rc_url），跟随当前主题配色 */
+    private void showRcUrlDialog() {
+        final com.github.tvbox.osc.ui.dialog.BaseDialog dlg =
+                new com.github.tvbox.osc.ui.dialog.BaseDialog(mContext);
+        dlg.setContentView(R.layout.dialog_rc_url);
+        dlg.setCanceledOnTouchOutside(true);
+        final EditText et = dlg.findViewById(R.id.etRcUrl);
+        et.setText(RemoteConfig.url());
+        et.setSelection(et.getText() == null ? 0 : et.getText().length());
+        et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        // 远程下发的输入框底色（home.inputBgColor）
+        com.github.tvbox.osc.n2n.HomeEntry.styleInput(et);
+        dlg.findViewById(R.id.btnRcOk).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String u = et.getText() == null ? "" : et.getText().toString().trim();
+                Hawk.put(RemoteConfig.K_URL, u);
+                refreshRemoteConfig();
+                dlg.dismiss();
+                if (!u.isEmpty()) {
+                    syncRemoteConfig();
+                }
+            }
+        });
+        dlg.findViewById(R.id.btnRcCancel).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                dlg.dismiss();
+            }
+        });
+        dlg.show();
+    }
+
+    /** 把当前远程配置回显到界面（单行紧凑布局，只显示状态短文案） */
     private void refreshRemoteConfig() {
         if (tvRcBoot == null) {
             return;
         }
         tvRcBoot.setText(RemoteConfig.bootStartEnabled() ? "开" : "关");
         String u = RemoteConfig.url();
-        tvRcUrl.setText(u.isEmpty() ? "未设置" : u);
+        tvRcUrl.setText(u.isEmpty() ? "未设置" : "已设置");
+        if (tvRcSync != null && !"同步中…".equals(tvRcSync.getText().toString())) {
+            tvRcSync.setText("立即同步");
+        }
     }
 
     /** 立即从远程配置接口同步（公告/首页入口/下载地址等），结果回显到行尾 */
@@ -918,7 +929,7 @@ public class ModelSettingFragment extends BaseLazyFragment {
                     return;
                 }
                 refreshRemoteConfig();
-                tvRcSync.setText(success ? "同步成功" : "同步失败（检查接口地址/网络/JSON格式）");
+                tvRcSync.setText(success ? "同步成功" : "同步失败");
                 Toast.makeText(mContext, success ? "远程配置已更新" : "远程配置拉取失败",
                         Toast.LENGTH_SHORT).show();
             }

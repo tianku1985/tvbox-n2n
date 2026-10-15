@@ -121,10 +121,23 @@ public class SourceViewModel extends ViewModel {
     };
     // homeContent
     public void getSort(final String sourceKey) {
+        getSort(sourceKey, false);
+    }
+
+    /**
+     * @param force true = 切换源等场景强制重新拉取 homeContent，绕过 homeContent 缓存
+     *              （否则切回之前访问过的源会直接命中 sortCache，列表不刷新）
+     */
+    public void getSort(final String sourceKey, boolean force) {
         LOG.i("echo--getSort-start");
         if (sourceKey == null) {
             sortResult.postValue(null);
             return;
+        }
+
+        // 强制刷新：先丢弃该源的缓存
+        if (force) {
+            sortCache.remove(sourceKey);
         }
 
         // 优先检查缓存

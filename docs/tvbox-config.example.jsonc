@@ -18,12 +18,13 @@
 //      想手动刷新时，点「同步配置」即可立即拉取。
 //
 // 【覆盖规则】
-//   · notice / notice 样式 / home 外观 / tkp2p / theme / entries / hin2nEntry /
-//     hin2nUrl / checkInterval / ua：每次拉取成功都覆盖为新值；
+//   · notice / notice 样式 / home 外观 / tkp2p / theme / themes / entries / hin2nEntry /
+//     hin2nUrl / apkUrl / checkInterval / ua：每次拉取成功都覆盖为新值；
 //   · api / live / epg / proxy（点播/直播/EPG/代理地址）：仅当你「尚未在 tvbox 内配置」
 //     （当前值为空）时才作为默认值写入；一旦你在 tvbox 设置里配置过某个接口，
 //     JSON 即不再覆盖该接口（四个接口互不影响，可只交给 JSON 管其中几个）；
-//   · version：与 App 本地版本号不同即视为一次升级，应用后提示「已升级至 vX」；
+//   · version：日期版本号（yyyyMMdd），大于 App 内置本地配置版本号且 apkUrl 有效时，
+//     自动在 TVBox 内下载新 APK 并拉起安装（每个版本只自动触发一次）；
 //   · bootStart：仅作为「默认值」写入一次，之后以用户在界面上的开关为准，
 //     重复拉取不会把用户手动改过的值改回去。
 //   · 所有字段均为可选：接口里没写或值为空的字段，保持 App 本地现状不变。
@@ -137,9 +138,31 @@
   // ==================== 主题一键切换 ====================
   // 首页顶栏的调色板图标可一键循环切换主题，切换后立即生效。
   // 此处可下发默认主题；支持 索引（0 起）/ 中文名 / 英文别名。
-  // 中文名：奈飞 哆啦 百事 鸣人 小黄 八神 樱花 翡翠 深海 紫罗兰 暗金
-  // 英文别名：netflix dorae pepsi naruto minion yagami sakura emerald ocean violet amber
+  // 中文名：红色 蓝色 深蓝 橙色 黄色 品红 粉色 翠绿 青色 紫色 琥珀 靛蓝 玫红 石墨
+  // 英文别名：red blue darkblue orange yellow magenta pink emerald teal violet amber indigo rose graphite
   "theme": "violet",
+
+  // ==================== 主题清单（覆盖内置主题 / 新建自定义主题） ====================
+  // 14 个内置主题的完整配色已内置在 assets/tvbox-config.json 的 themes 中，
+  // 远程接口可下发同名数组进行覆盖或追加；落盘后重启依然生效。
+  // 每项字段：
+  //   style  ：内置主题序号 0..13（见上面别名顺序）。填了表示「覆盖该内置主题」；
+  //            不写 style 表示「追加一个自定义主题」（可在调色板里循环到）。
+  //   name   ：主题显示名（覆盖时也可用 alias 定位而不改名字）
+  //   alias  ：英文别名（主题切换/去重定位用，自定义主题建议填，全小写）
+  //   color  ：主色 #RRGGBB（按钮/标题/代码取色用，自定义主题以此色为准）
+  //   dark   ：深色基色（暗色描边/渐变辅助）
+  //   bgStart/bgEnd：全局渐变背景的深/浅两端颜色
+  // 说明：受 Android 机制限制，drawable 里的 ?attr/color_theme 只能套用最近的内置
+  //       XML 主题配色，自定义主题会自动匹配 RGB 距离最近的内置样式。
+  "themes": [
+    // 例 1：覆盖 0 号「红色」主题，换成自定义红色
+    { "name": "红色", "alias": "red", "style": 0,
+      "color": "#FF2A2A", "dark": "#8C1418", "bgStart": "#3D0A0D", "bgEnd": "#FF2A2A" },
+    // 例 2：追加一个全新的自定义主题「薄荷」（不写 style）
+    { "name": "薄荷", "alias": "mint",
+      "color": "#3DDC97", "dark": "#1E7A55", "bgStart": "#0B2E22", "bgEnd": "#3DDC97" }
+  ],
 
   // ==================== 点播 / 直播 / EPG / 代理地址 ====================
   // 默认从本 JSON 读取：当你未在 tvbox 设置里配置对应接口（当前值为空）时，
@@ -150,10 +173,15 @@
   "epg": "",      // EPG 接口地址
   "proxy": "",    // 代理地址
 
-  // ==================== JSON 版本检查升级 ====================
-  // 每次拉取到的 version 与本机不同即视为一次「配置升级」，
-  // App 会应用新配置并提示「远程配置已升级至 vX」。留空则不检查。
-  "version": "3",
+  // ==================== 日期版本检查 + APK 自动更新 ====================
+  // version 为「日期版本号」，取前 8 位数字按 yyyyMMdd 比较：
+  //   支持 "20261015"、"2026-10-15"、"20261015_1200"、"1.0.20261015" 等写法。
+  // 当远程 version 日期「大于」App 内置本地配置（assets/tvbox-config.json）的版本日期，
+  // 且 apkUrl 为有效 APK 直链时，App 自动后台下载 APK 并拉起系统安装界面，
+  // 每个新版本只自动触发一次（安装确认仍需用户在系统弹窗点击）。
+  // 本地兜底配置不会触发自动更新；apkUrl 留空则只记录版本不下载。
+  "version": "20261015",
+  "apkUrl": "https://github.com/tianku1985/tvbox-n2n/releases/latest/download/TVBox.apk",
 
   // ==================== 定时检查 ====================
   // App 每隔多少分钟自动拉取一次本 JSON 接口并刷新公告/入口/外观；

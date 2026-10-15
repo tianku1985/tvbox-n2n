@@ -1,10 +1,12 @@
 package com.github.tvbox.osc.n2n;
 
+import android.app.Activity;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 import android.widget.Toast;
 
+import com.github.tvbox.osc.util.AppManager;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.orhanobut.hawk.Hawk;
 
@@ -17,6 +19,8 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 远程配置接口：App 启动/首页可见时从可配置的 HTTP(S) 接口拉取一份 JSON，
@@ -58,7 +62,14 @@ import java.util.List;
  *   "epg":   "https://.../epg.xml",                   // EPG 接口（同上）
  *   "proxy": "http://127.0.0.1:9978/proxy?do=live",   // 代理地址（同上）
  *   "theme": "violet",                                // 主题：索引 / 中文名 / 英文别名（emerald/ocean/violet/amber…）
- *   "version": "3",                                   // JSON 版本号：与本地不同即触发一次「版本升级」提示
+ *   "themes": [                                       // 自定义/覆盖主题（可选，详见 ThemeManager）
+ *     {"name":"红色","alias":"red","style":0,"color":"#D81F26","dark":"#8C1418",
+ *      "bgStart":"#3D0A0D","bgEnd":"#D81F26"}         // style 0..13 覆盖内置主题；省略 style 追加自定义主题
+ *   ],
+ *   "version": "20261015",                            // 日期版本号（yyyyMMdd / yyyy-MM-dd）：
+ *                                                     // 大于内置本地 json 的版本号且 apkUrl 有效时，
+ *                                                     // 自动在 TVBox 内下载 APK 并拉起安装（每个版本只触发一次）
+ *   "apkUrl": "https://.../tvbox_20261015.apk",       // 新版本 APK 下载地址（配合 version 做自动更新）
  *   "hin2nEntry": true,                               // 首页是否显示 hin2n 固定入口
  *   "hin2nUrl":  "https://.../hin2n.apk",             // hin2n 未安装时后台下载的地址
  *   "entries": [
@@ -67,12 +78,12 @@ import java.util.List;
  *   ]                                                 // url 为未安装时后台下载的地址（可选）
  * }
  *
- * 覆盖规则：notice/home/tkp2p/entries/hin2nEntry/hin2nUrl/checkInterval/ua 每次拉取成功即更新；
+ * 覆盖规则：notice/home/tkp2p/entries/themes/hin2nEntry/hin2nUrl/checkInterval/ua 每次拉取成功即更新；
  * bootStart 只在远端尚未写入过默认值时作为「默认值」写入，之后以用户开关为准；
  * api/live/epg/proxy 仅在用户尚未在 tvbox 内配置（当前值为空）时作为默认值写入，
  * 用户一旦配置过某接口，JSON 即不再覆盖该接口；
  * 远程接口地址支持 http:// 与 https://（未写协议时自动补 http://）；
- * 远程未设置或无法访问时，自动读取 assets/tvbox-config.json 作为本地兜底配置。
+ * 远程未设置或无法访问时，自动读取 assets/tvbox-config.json 作为本地兜底配置（本地配置不触发自动更新）。
  */
 public class RemoteConfig {
 
@@ -89,7 +100,11 @@ public class RemoteConfig {
     public static final String K_HIN2N_URL = "rc_hin2n_url";   // hin2n 未安装时的下载地址
     public static final String K_BOOT = "n2n_boot_start";      // 开机启动开关（用户值优先）
     public static final String K_BOOT_REMOTE_SET = "n2n_boot_remote_set"; // 远端默认值是否已写入过
-    public static final String K_VERSION = "rc_version";       // 远程 JSON 版本号（用于版本检查升级）
+    public static final String K_VERSION = "rc_version";       // 远程 JSON 版本号（日期版本，用于自动更新）
+    public static final String K_APK_URL = "rc_apk_url";       // 新版本 APK 下载地址
+    public static final String K_UPDATE_DONE = "rc_update_done"; // 已自动处理过的最新版本号（每版本只下载一次）
+    public static final String K_PENDING_UPDATE_URL = "rc_pending_update_url";  // 待安装 APK 地址
+    public static final String K_PENDING_UPDATE_VER = "rc_pending_update_ver";  // 待安装版本号
 
     /** 远程「未设置 / 无法访问」时读取的本地兜底配置（app/src/main/assets/ 下） */
     private static final String LOCAL_ASSET = "tvbox-config.json";
@@ -282,7 +297,10 @@ public class RemoteConfig {
                             bos.write(buf, 0, n);
                         }
                         in.close();
-                        apply(app, parseLoose(new String(bos.toByteArray(), "UTF-8")));
+                        JSONObject cfg = parseLoose(new String(bos.toByteArray(), "UTF-8"));
+                        apply(app, cfg);
+                        // 仅「远程」拉取成功才做日期版本检查与自动更新；本地兜底配置不触发
+                        checkRemoteUpdate(app, cfg);
                         ok = true;
                     }
                     conn.disconnect();
@@ -420,6 +438,15 @@ public class RemoteConfig {
         if (j.has("hin2nUrl")) {
             Hawk.put(K_HIN2N_URL, j.optString("hin2nUrl", ""));
         }
+        // 新版本 APK 下载地址（配合 version 做日期版本检查与自动更新）
+        if (j.has("apkUrl")) {
+            Hawk.put(K_APK_URL, j.optString("apkUrl", "").trim());
+        }
+        // 主题清单：内置主题可被覆盖、也可追加自定义主题（ThemeManager 负责解析与落盘）
+        JSONArray themes = j.optJSONArray("themes");
+        if (themes != null && themes.length() > 0) {
+            ThemeManager.updateThemes(themes);
+        }
         // 开机启动：远端默认值只写一次，之后以用户开关为准
         if (j.has("bootStart") && !Hawk.get(K_BOOT_REMOTE_SET, false)) {
             Hawk.put(K_BOOT, j.optBoolean("bootStart", false));
@@ -438,16 +465,11 @@ public class RemoteConfig {
                 Hawk.put(HawkConfig.THEME_SELECT, ti);
             }
         }
-        // JSON 版本检查升级：远端 version 与本地不一致即视为一次升级
+        // 日期版本号落盘（自动更新检查只在「远程拉取成功」时由 checkRemoteUpdate 执行，
+        // 本地兜底配置不会触发更新）
         String ver = j.optString("version", "").trim();
         if (!ver.isEmpty()) {
-            String old = Hawk.get(K_VERSION, "");
-            if (!ver.equals(old)) {
-                Hawk.put(K_VERSION, ver);
-                if (!old.isEmpty()) {
-                    toastLater(ctx, "远程配置已升级至 v" + ver);
-                }
-            }
+            Hawk.put(K_VERSION, ver);
         }
     }
 
@@ -470,6 +492,154 @@ public class RemoteConfig {
         }
         Hawk.put(hawkKey, v);
         toastLater(app, label + "已从远程配置读取，重启后生效");
+    }
+
+    // ---------------- 日期版本校验 + APK 自动下载安装 ----------------
+
+    private static long sLocalVersion = -1L;
+
+    /**
+     * 远程配置拉取成功后调用：以「日期版本号」比较远程配置与内置本地配置；
+     * 远程版本更新且 apkUrl 有效时（每个版本仅自动处理一次），
+     * 自动在 TVBox 内下载 APK 并拉起系统安装界面。
+     */
+    private static void checkRemoteUpdate(final Context app, JSONObject j) {
+        if (app == null || j == null) {
+            return;
+        }
+        final String ver = j.optString("version", "").trim();
+        final long remote = parseDateVersion(ver);
+        if (remote <= 0) {
+            return;
+        }
+        long local = readLocalVersion(app);
+        if (local > 0 && remote <= local) {
+            return;
+        }
+        String apkUrl = j.optString("apkUrl", "").trim();
+        if (apkUrl.isEmpty()) {
+            apkUrl = Hawk.get(K_APK_URL, "");
+        }
+        if (apkUrl == null || apkUrl.trim().isEmpty()) {
+            return;
+        }
+        if (ver.equals(Hawk.get(K_UPDATE_DONE, ""))) {
+            return; // 该版本已自动处理过，不重复下载
+        }
+        Hawk.put(K_UPDATE_DONE, ver);
+        Hawk.put(K_PENDING_UPDATE_URL, apkUrl.trim());
+        Hawk.put(K_PENDING_UPDATE_VER, ver);
+        toastLater(app, "发现新版本 v" + ver + "，开始下载安装");
+        MAIN.post(new Runnable() {
+            @Override
+            public void run() {
+                Activity act = currentActivitySafe();
+                if (act != null) {
+                    startPendingInstall(act);
+                }
+                // 此刻没有前台页面则挂起，由 BaseActivity.onResume 的 tryPendingUpdate 补触发
+            }
+        });
+    }
+
+    /** 页面 onResume 时补触发挂起的新版本下载（远程拉取完成时可能没有前台页面）。 */
+    public static void tryPendingUpdate(Activity act) {
+        if (act == null || act.isFinishing() || act.isDestroyed()) {
+            return;
+        }
+        startPendingInstall(act);
+    }
+
+    private static void startPendingInstall(Activity act) {
+        String url = Hawk.get(K_PENDING_UPDATE_URL, "");
+        if (url == null || url.trim().isEmpty()) {
+            return;
+        }
+        String ver = Hawk.get(K_PENDING_UPDATE_VER, "");
+        Hawk.put(K_PENDING_UPDATE_URL, "");
+        Hawk.put(K_PENDING_UPDATE_VER, "");
+        ApkInstaller.downloadAndInstall(act, "TVBox" + (ver.isEmpty() ? "" : " v" + ver), url.trim());
+    }
+
+    private static Activity currentActivitySafe() {
+        try {
+            Activity act = AppManager.getInstance().currentActivity();
+            if (act == null || act.isFinishing() || act.isDestroyed()) {
+                return null;
+            }
+            return act;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * 把版本字符串解析为可比较的日期数字（yyyyMMdd）。
+     * 优先取字符串中第一个「合法日期」的连续 8 位数字段，支持 "20261015"、
+     * "2026-10-15"（拼接后得到日期）、"20261015_1200"、"1.0.20261015" 等形式；
+     * 找不到合法日期时返回 0。
+     */
+    static long parseDateVersion(String s) {
+        if (s == null) {
+            return 0L;
+        }
+        try {
+            Matcher m = Pattern.compile("\\d+").matcher(s);
+            StringBuilder concat = new StringBuilder();
+            while (m.find()) {
+                String g = m.group();
+                if (g.length() >= 8 && isValidDate8(g.substring(0, 8))) {
+                    return Long.parseLong(g.substring(0, 8));
+                }
+                concat.append(g);
+            }
+            if (concat.length() >= 8 && isValidDate8(concat.substring(0, 8))) {
+                return Long.parseLong(concat.substring(0, 8));
+            }
+        } catch (NumberFormatException ignored) {
+        }
+        return 0L;
+    }
+
+    /** 粗略校验 yyyyMMdd（2000-2099 年、月 01-12、日 01-31），避免取到无关长数字 */
+    private static boolean isValidDate8(String d) {
+        try {
+            int y = Integer.parseInt(d.substring(0, 4));
+            int mo = Integer.parseInt(d.substring(4, 6));
+            int da = Integer.parseInt(d.substring(6, 8));
+            return y >= 2000 && y <= 2099 && mo >= 1 && mo <= 12 && da >= 1 && da <= 31;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    /** 读取内置 assets/tvbox-config.json 的日期版本号（本地兜底基准，只读一次）。 */
+    private static synchronized long readLocalVersion(Context app) {
+        if (sLocalVersion >= 0) {
+            return sLocalVersion;
+        }
+        sLocalVersion = 0L;
+        InputStream in = null;
+        try {
+            in = app.getAssets().open(LOCAL_ASSET);
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            byte[] buf = new byte[2048];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                bos.write(buf, 0, n);
+            }
+            JSONObject j = parseLoose(new String(bos.toByteArray(), "UTF-8"));
+            sLocalVersion = parseDateVersion(j.optString("version", ""));
+        } catch (Throwable ignored) {
+        } finally {
+            if (in != null) {
+                try {
+                    in.close();
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+        return sLocalVersion;
     }
 
     private static void toastLater(final Context app, final String msg) {

@@ -344,7 +344,8 @@ public class HomeActivity extends BaseActivity {
         }
 
         if (dataInitOk && jarInitOk) {
-            sourceViewModel.getSort(ApiConfig.get().getHomeSourceBean().getKey());
+            boolean forceSortRefresh = getIntent() != null && getIntent().getBooleanExtra("forceSortRefresh", false);
+            sourceViewModel.getSort(ApiConfig.get().getHomeSourceBean().getKey(), forceSortRefresh);
             if (hasPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
                 LOG.e("有");
             } else {
@@ -650,6 +651,8 @@ public class HomeActivity extends BaseActivity {
         intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK);
         Bundle bundle = new Bundle();
         bundle.putBoolean("useCache", true);
+        // 切换源 / 配置重载后重建首页：强制重新拉取当前源 homeContent，绕过 sortCache
+        bundle.putBoolean("forceSortRefresh", true);
         intent.putExtras(bundle);
         HomeActivity.this.startActivity(intent);
         finish();
