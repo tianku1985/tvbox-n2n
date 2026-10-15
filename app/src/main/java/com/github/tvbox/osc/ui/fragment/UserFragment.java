@@ -109,10 +109,13 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         return R.layout.fragment_user;
     }
     private ImgUtil.Style style;
+    /** 首页「点播」入口（FongMi 风格，位于直播入口之前） */
+    private android.view.View tvVod;
     @Override
     protected void init() {
         EventBus.getDefault().register(this);
         tvDrive = findViewById(R.id.tvDrive);
+        tvVod = findViewById(R.id.tvVod);
         tvLive = findViewById(R.id.tvLive);
         tvSearch = findViewById(R.id.tvSearch);
         tvSetting = findViewById(R.id.tvSetting);
@@ -120,6 +123,7 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         tvHistory = findViewById(R.id.tvHistory);
         tvPush = findViewById(R.id.tvPush);
         tvDrive.setOnClickListener(this);
+        tvVod.setOnClickListener(this);
         tvLive.setOnClickListener(this);
         tvSearch.setOnClickListener(this);
         tvSetting.setOnClickListener(this);
@@ -127,6 +131,7 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         tvPush.setOnClickListener(this);
         tvCollect.setOnClickListener(this);
         tvDrive.setOnFocusChangeListener(focusChangeListener);
+        tvVod.setOnFocusChangeListener(focusChangeListener);
         tvLive.setOnFocusChangeListener(focusChangeListener);
         tvSearch.setOnFocusChangeListener(focusChangeListener);
         tvSetting.setOnFocusChangeListener(focusChangeListener);
@@ -350,7 +355,10 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         HawkConfig.hotVodDelete = false;
 
         FastClickCheckUtil.check(v);
-        if (v.getId() == R.id.tvLive) {
+        if (v.getId() == R.id.tvVod) {
+            // 点播入口：打开独立点播界面（分类/影片网格已自首页迁移）
+            jumpActivity(VodActivity.class);
+        } else if (v.getId() == R.id.tvLive) {
             jumpActivity(LivePlayActivity.class);
         } else if (v.getId() == R.id.tvSearch) {
             jumpActivity(SearchActivity.class);

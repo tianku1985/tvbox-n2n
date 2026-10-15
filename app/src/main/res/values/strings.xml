@@ -14,6 +14,7 @@
     <string name="hm_date1">dd MMM</string>
     <string name="hm_date2">EE HH:mm</string>
     <string name="hm_hist">History</string>
+    <string name="hm_vod">VOD</string>
     <string name="hm_live">LiveTV</string>
     <string name="hm_search">Search</string>
     <string name="hm_push">Push</string>

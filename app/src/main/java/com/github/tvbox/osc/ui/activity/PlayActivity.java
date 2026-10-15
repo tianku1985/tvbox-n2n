@@ -191,6 +191,8 @@ public class PlayActivity extends BaseActivity {
         initViewModel();
         initData();
         initDanmuView();
+        // 滚动公告：可由远程 JSON 配置是否在点播界面显示（notice.show.vod）
+        com.github.tvbox.osc.n2n.NoticeBar.show(this, com.github.tvbox.osc.n2n.NoticeBar.SCREEN_VOD);
     }
     private void initDanmuView() {
         mDanmuView  = findViewById(R.id.danmaku);
@@ -1304,6 +1306,7 @@ public class PlayActivity extends BaseActivity {
         Thunder.stop(false); // 停止磁力下载
         Jianpian.finish();//停止p2p下载
         App.getInstance().setDashData(null);
+        com.github.tvbox.osc.n2n.NoticeBar.hide(this, com.github.tvbox.osc.n2n.NoticeBar.SCREEN_VOD);
     }
 
     private VodInfo mVodInfo;

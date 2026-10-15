@@ -1263,6 +1263,11 @@ public class VodController extends BaseController {
                 isPaused = false;
                 mPauseImg.setImageDrawable(getResources().getDrawable(R.drawable.v_pause));
                 startProgress();
+                // 开始播放自动进入全屏：隐藏底部控制条（按键可再呼出）
+                try {
+                    hideBottom();
+                } catch (Throwable ignored) {
+                }
                 break;
             case VideoView.STATE_PAUSED:
                 isPaused = true;

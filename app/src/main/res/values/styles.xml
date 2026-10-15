@@ -11,16 +11,15 @@
         <item name="android:windowActionBar">false</item>
         <item name="android:windowNoTitle">true</item>
         <item name="windowActionBar">false</item>
-        <item name="android:windowFullscreen">true</item>//全屏即无通知栏
-        <item name="android:windowContentOverlay">@null</item>//是否有遮盖
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowContentOverlay">@null</item>
         <item name="windowNoTitle">true</item>
-        <!--        <item name="android:keepScreenOn">true</item>-->
-        <!--        <item name="android:windowBackground">@drawable/app_bg</item>-->
         <item name="android:windowBackground">@android:color/transparent</item>
     </style>
 
-    <!-- Alternative Themes -->
-    <style name="NetfxTheme" parent="AppTheme.NoActionBar">
+    <!-- ============ 颜色主题（ThemeManager.java 中的 STYLES 数组顺序必须与此一致） ============ -->
+    <!-- 1. 红色 Red -->
+    <style name="RedTheme" parent="AppTheme.NoActionBar">
         <item name="color_theme">#D81F26</item>
         <item name="color_theme_80">#CCD81F26</item>
         <item name="color_theme_70">#B3D81F26</item>
@@ -29,7 +28,8 @@
         <item name="color_theme_40">#66D81F26</item>
         <item name="color_theme_dark_70">#B38C1418</item>
     </style>
-    <style name="DoraeTheme" parent="AppTheme.NoActionBar">
+    <!-- 2. 蓝色 Blue -->
+    <style name="BlueTheme" parent="AppTheme.NoActionBar">
         <item name="color_theme">#18A2E7</item>
         <item name="color_theme_80">#CC18A2E7</item>
         <item name="color_theme_70">#B318A2E7</item>
@@ -38,7 +38,8 @@
         <item name="color_theme_40">#6618A2E7</item>
         <item name="color_theme_dark_70">#B3106D9C</item>
     </style>
-    <style name="PepsiTheme" parent="AppTheme.NoActionBar">
+    <!-- 3. 深蓝 DarkBlue -->
+    <style name="DarkBlueTheme" parent="AppTheme.NoActionBar">
         <item name="color_theme">#004B93</item>
         <item name="color_theme_80">#CC004B93</item>
         <item name="color_theme_70">#B3004B93</item>
@@ -47,7 +48,8 @@
         <item name="color_theme_40">#66004B93</item>
         <item name="color_theme_dark_70">#B3002547</item>
     </style>
-    <style name="NarutoTheme" parent="AppTheme.NoActionBar">
+    <!-- 4. 橙色 Orange -->
+    <style name="OrangeTheme" parent="AppTheme.NoActionBar">
         <item name="color_theme">#FF7439</item>
         <item name="color_theme_80">#CCFF7439</item>
         <item name="color_theme_70">#B3FF7439</item>
@@ -56,7 +58,8 @@
         <item name="color_theme_40">#66FF7439</item>
         <item name="color_theme_dark_70">#B3B35127</item>
     </style>
-    <style name="MinionTheme" parent="AppTheme.NoActionBar">
+    <!-- 5. 黄色 Yellow -->
+    <style name="YellowTheme" parent="AppTheme.NoActionBar">
         <item name="color_theme">#FFD55E</item>
         <item name="color_theme_80">#CCFFD55E</item>
         <item name="color_theme_70">#B3FFD55E</item>
@@ -65,7 +68,8 @@
         <item name="color_theme_40">#66FFD55E</item>
         <item name="color_theme_dark_70">#B3B39542</item>
     </style>
-    <style name="YagamiTheme" parent="AppTheme.NoActionBar">
+    <!-- 6. 品红 Magenta -->
+    <style name="MagentaTheme" parent="AppTheme.NoActionBar">
         <item name="color_theme">#FF2F70</item>
         <item name="color_theme_80">#CCFF2F70</item>
         <item name="color_theme_70">#B3FF2F70</item>
@@ -74,7 +78,8 @@
         <item name="color_theme_40">#66FF2F70</item>
         <item name="color_theme_dark_70">#B3B3204E</item>
     </style>
-    <style name="SakuraTheme" parent="AppTheme.NoActionBar">
+    <!-- 7. 粉色 Pink -->
+    <style name="PinkTheme" parent="AppTheme.NoActionBar">
         <item name="color_theme">#FD9BDB</item>
         <item name="color_theme_80">#CCFD9BDB</item>
         <item name="color_theme_70">#B3FD9BDB</item>
@@ -82,6 +87,76 @@
         <item name="color_theme_50">#80FD9BDB</item>
         <item name="color_theme_40">#66FD9BDB</item>
         <item name="color_theme_dark_70">#B3B06B98</item>
+    </style>
+    <!-- 8. 翠绿 Emerald -->
+    <style name="EmeraldTheme" parent="AppTheme.NoActionBar">
+        <item name="color_theme">#00C08B</item>
+        <item name="color_theme_80">#CC00C08B</item>
+        <item name="color_theme_70">#B300C08B</item>
+        <item name="color_theme_60">#9900C08B</item>
+        <item name="color_theme_50">#8000C08B</item>
+        <item name="color_theme_40">#6600C08B</item>
+        <item name="color_theme_dark_70">#B3007A58</item>
+    </style>
+    <!-- 9. 青色 Teal -->
+    <style name="TealTheme" parent="AppTheme.NoActionBar">
+        <item name="color_theme">#17B9B0</item>
+        <item name="color_theme_80">#CC17B9B0</item>
+        <item name="color_theme_70">#B317B9B0</item>
+        <item name="color_theme_60">#9917B9B0</item>
+        <item name="color_theme_50">#8017B9B0</item>
+        <item name="color_theme_40">#6617B9B0</item>
+        <item name="color_theme_dark_70">#B30E7A74</item>
+    </style>
+    <!-- 10. 紫色 Violet -->
+    <style name="VioletTheme" parent="AppTheme.NoActionBar">
+        <item name="color_theme">#9A6BF2</item>
+        <item name="color_theme_80">#CC9A6BF2</item>
+        <item name="color_theme_70">#B39A6BF2</item>
+        <item name="color_theme_60">#999A6BF2</item>
+        <item name="color_theme_50">#809A6BF2</item>
+        <item name="color_theme_40">#669A6BF2</item>
+        <item name="color_theme_dark_70">#B36747A8</item>
+    </style>
+    <!-- 11. 琥珀 Amber -->
+    <style name="AmberTheme" parent="AppTheme.NoActionBar">
+        <item name="color_theme">#F5A524</item>
+        <item name="color_theme_80">#CCF5A524</item>
+        <item name="color_theme_70">#B3F5A524</item>
+        <item name="color_theme_60">#99F5A524</item>
+        <item name="color_theme_50">#80F5A524</item>
+        <item name="color_theme_40">#66F5A524</item>
+        <item name="color_theme_dark_70">#B3A86E12</item>
+    </style>
+    <!-- 12. 靛蓝 Indigo -->
+    <style name="IndigoTheme" parent="AppTheme.NoActionBar">
+        <item name="color_theme">#5B5BD6</item>
+        <item name="color_theme_80">#CC5B5BD6</item>
+        <item name="color_theme_70">#B35B5BD6</item>
+        <item name="color_theme_60">#995B5BD6</item>
+        <item name="color_theme_50">#805B5BD6</item>
+        <item name="color_theme_40">#665B5BD6</item>
+        <item name="color_theme_dark_70">#B32E2E90</item>
+    </style>
+    <!-- 13. 玫红 Rose -->
+    <style name="RoseTheme" parent="AppTheme.NoActionBar">
+        <item name="color_theme">#E11D48</item>
+        <item name="color_theme_80">#CCE11D48</item>
+        <item name="color_theme_70">#B3E11D48</item>
+        <item name="color_theme_60">#99E11D48</item>
+        <item name="color_theme_50">#80E11D48</item>
+        <item name="color_theme_40">#66E11D48</item>
+        <item name="color_theme_dark_70">#B3700E24</item>
+    </style>
+    <!-- 14. 石墨 Graphite -->
+    <style name="GraphiteTheme" parent="AppTheme.NoActionBar">
+        <item name="color_theme">#6B7280</item>
+        <item name="color_theme_80">#CC6B7280</item>
+        <item name="color_theme_70">#B36B7280</item>
+        <item name="color_theme_60">#996B7280</item>
+        <item name="color_theme_50">#806B7280</item>
+        <item name="color_theme_40">#666B7280</item>
+        <item name="color_theme_dark_70">#B33D4250</item>
     </style>
 
     <!-- 自定义dialog样式 -->

@@ -1,21 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 常态用 color_theme_80 让主题色清晰常显（一键切换主题立即可见），聚焦加白色描边高亮 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_focused="true" android:state_pressed="true">
         <shape>
             <corners android:radius="@dimen/vs_30" />
-            <solid android:color="?attr/color_theme_40" />
+            <solid android:color="?attr/color_theme_80" />
         </shape>
     </item>
     <item android:state_focused="false" android:state_pressed="true">
         <shape>
             <corners android:radius="@dimen/vs_30" />
-            <solid android:color="?attr/color_theme_40" />
+            <solid android:color="?attr/color_theme_80" />
         </shape>
     </item>
     <item android:state_focused="true">
         <shape>
             <corners android:radius="@dimen/vs_30" />
-            <solid android:color="?attr/color_theme_40" />
+            <solid android:color="?attr/color_theme_80" />
 	    <!--添加选中外边框-->
 	    <stroke android:width="2mm" android:color="@android:color/white" />
         </shape>
@@ -23,7 +24,7 @@
     <item android:state_focused="false" android:state_pressed="false">
         <shape>
             <corners android:radius="@dimen/vs_30" />
-            <solid android:color="@android:color/transparent" />
+            <solid android:color="?attr/color_theme_80" />
         </shape>
     </item>
 </selector>

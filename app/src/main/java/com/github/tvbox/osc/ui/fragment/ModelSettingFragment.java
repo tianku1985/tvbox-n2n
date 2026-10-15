@@ -117,6 +117,7 @@ public class ModelSettingFragment extends BaseLazyFragment {
         tvDebugOpen.setText(Hawk.get(HawkConfig.DEBUG_OPEN, false) ? "开启" : "关闭");
         tvApi = findViewById(R.id.tvApi);
         tvApi.setText(Hawk.get(HawkConfig.API_URL, ""));
+        com.github.tvbox.osc.n2n.HomeEntry.styleInput(tvApi);
         // Home Section
         tvHomeApi = findViewById(R.id.tvHomeApi);
         tvHomeApi.setText(ApiConfig.get().getHomeSourceBean().getName());
@@ -762,13 +763,9 @@ public class ModelSettingFragment extends BaseLazyFragment {
                 FastClickCheckUtil.check(v);
                 int defaultPos = Hawk.get(HawkConfig.THEME_SELECT, 0);
                 ArrayList<Integer> types = new ArrayList<>();
-                types.add(0);
-                types.add(1);
-                types.add(2);
-                types.add(3);
-                types.add(4);
-                types.add(5);
-                types.add(6);
+                for (int i = 0; i < com.github.tvbox.osc.n2n.ThemeManager.count(); i++) {
+                    types.add(i);
+                }
                 SelectDialog<Integer> dialog = new SelectDialog<>(mActivity);
                 dialog.setTip(getString(R.string.dia_theme));
                 dialog.setAdapter(null, new SelectDialogAdapter.SelectDialogInterface<Integer>() {
@@ -840,6 +837,10 @@ public class ModelSettingFragment extends BaseLazyFragment {
         tvRcUrl = findViewById(R.id.tvRcUrl);
         tvRcBoot = findViewById(R.id.tvRcBoot);
         tvRcSync = findViewById(R.id.tvRcSync);
+        // 远程下发的外观：输入框/按钮背景色（home.inputBgColor / home.buttonBgColor）
+        com.github.tvbox.osc.n2n.HomeEntry.styleInput(tvRcUrl);
+        com.github.tvbox.osc.n2n.HomeEntry.styleButton(tvRcBoot);
+        com.github.tvbox.osc.n2n.HomeEntry.styleButton(tvRcSync);
 
         // 开机启动开关（默认值可由远程 JSON 下发，用户点击后以用户选择为准）
         findViewById(R.id.llRcBoot).setOnClickListener(new View.OnClickListener() {
@@ -862,8 +863,9 @@ public class ModelSettingFragment extends BaseLazyFragment {
                 et.setText(RemoteConfig.url());
                 et.setSelection(et.getText().length());
                 et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+                com.github.tvbox.osc.n2n.HomeEntry.styleInput(et);
                 new AlertDialog.Builder(mContext)
-                        .setTitle("远程配置接口地址（JSON）")
+                        .setTitle("远程配置接口地址（JSON，支持 http/https）")
                         .setView(et)
                         .setPositiveButton("确定", new DialogInterface.OnClickListener() {
                             @Override
@@ -916,7 +918,7 @@ public class ModelSettingFragment extends BaseLazyFragment {
                     return;
                 }
                 refreshRemoteConfig();
-                tvRcSync.setText(success ? "同步成功" : "同步失败（检查接口地址/网络）");
+                tvRcSync.setText(success ? "同步成功" : "同步失败（检查接口地址/网络/JSON格式）");
                 Toast.makeText(mContext, success ? "远程配置已更新" : "远程配置拉取失败",
                         Toast.LENGTH_SHORT).show();
             }
@@ -956,21 +958,7 @@ public class ModelSettingFragment extends BaseLazyFragment {
     }
 
     String getThemeView(int type) {
-        if (type == 0) {
-            return "奈飞";
-        } else if (type == 1) {
-            return "哆啦";
-        } else if (type == 2) {
-            return "百事";
-        } else if (type == 3) {
-            return "鸣人";
-        } else if (type == 4) {
-            return "小黄";
-        } else if (type == 5) {
-            return "八神";
-        } else {
-            return "樱花";
-        }
+        return com.github.tvbox.osc.n2n.ThemeManager.name(type);
     }
 
     void reloadActivity() {

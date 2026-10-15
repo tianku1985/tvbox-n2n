@@ -63,6 +63,8 @@ public class App extends MultiDexApplication {
         super.onCreate();
         SubtitleHelper.initSubtitleColor(this);
         initParams();
+        // 启动即加载远程配置 JSON：远程未设置或无法访问时自动读取 assets 本地兜底配置
+        com.github.tvbox.osc.n2n.RemoteConfig.bootstrap(this);
         // takagen99 : Initialize Locale
         initLocale();
         // OKGo

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<!--
+  TVBox tkp2p:// 内置 P2P 播放页
+  用法（由 LiveWebViewPlayer 生成查询串）：
+    file:///android_asset/tkp2p/tkp2p.html?src=<urlencode 流地址>&eng=<auto|hls|media>
+        &announce=<urlencode JSON数组>&token=<...>&zone=<eu|hk|us|cn>&ice=<urlencode JSON数组>
+  引擎选择：
+    - m3u8/HLS  → p2p-media-loader (WebRTC DataChannel，hls.js 加载)
+    - mp4/webm/mp3 等 → media-p2p-engine（SwarmCloud，ServiceWorker + WebRTC）
+    - 任一引擎不可用时自动回退为直连播放，保证能看。
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<style>
+  html,body{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden;}
+  video{width:100%;height:100%;object-fit:contain;background:#000;}
+  #tip{position:absolute;left:0;right:0;top:45%;text-align:center;color:#9EE493;
+       font:14px/1.6 sans-serif;text-shadow:0 1px 2px #000;pointer-events:none;}
+</style>
+</head>
+<body>
+<video id="v" autoplay playsinline webkit-playsinline x5-playsinline></video>
+<div id="tip">P2P 播放页加载中…</div>
+<script src="hls.min.js"></script>
+<script src="p2p-media-loader-hlsjs.iife.min.js"></script>
+<script src="media-p2p-engine.min.js"></script>
+<script>
+(function () {
+  var qs = {};
+  location.search.replace(/^\?/, '').split('&').forEach(function (kv) {
+    var p = kv.split('='); if (p.length > 1) qs[decodeURIComponent(p[0])] = decodeURIComponent(p.slice(1).join('='));
+  });
+  var src = qs.src || '';
+  var eng = qs.eng || 'auto';
+  var tip = document.getElementById('tip');
+  function say(m) { if (tip) tip.textContent = m; try { console.log('[tkp2p] ' + m); } catch (e) {} }
+  function json(q) { try { return JSON.parse(q || '[]'); } catch (e) { return []; } }
+
+  var video = document.getElementById('v');
+  var engine = null;      // p2pml engine
+  var swEngine = null;    // swarmcloud engine
+  var hls = null;
+  var started = false;
+
+  function isHls(u) { return /\.m3u8(\?|$)/i.test(u) || /\.m3u8$/i.test(u.split('?')[0]) || /m3u8/i.test(u.split('?')[0].slice(-12)); }
+
+  // ---------- p2p-media-loader + hls.js ----------
+  function playHls() {
+    var PmlHls = window.p2pml && window.p2pml.hlsjs && window.p2pml.hlsjs.HlsJsP2PEngine;
+    var useP2p = PmlHls && eng !== 'media';
+    var cfg = {
+      manifestLoadingTimeOut: 12000,
+      manifestLoadingMaxRetry: 3,
+      levelLoadingTimeOut: 12000,
+      fragLoadingTimeOut: 20000,
+      fragLoadingMaxRetry: 6
+    };
+    if (useP2p) {
+      try {
+        var coreCfg = {};
+        var ann = json(qs.announce);
+        if (ann.length) coreCfg.announceTrackers = ann;
+        var ice = json(qs.ice);
+        if (ice.length) coreCfg.rtcConfig = { iceServers: ice };
+        var HlsWithP2P = PmlHls.injectMixin(window.Hls);
+        hls = new HlsWithP2P({ p2p: { core: coreCfg }, manifestLoadingTimeOut: cfg.manifestLoadingTimeOut });
+        say('HLS 走 p2p-media-loader（P2P 已启用）');
+      } catch (e) {
+        say('p2p-media-loader 初始化失败，回退直连：' + e);
+        hls = new window.Hls(cfg);
+      }
+    } else {
+      say('HLS 直连播放（P2P 引擎不可用）');
+      hls = new window.Hls(cfg);
+    }
+    hls.on(window.Hls.Events.MANIFEST_PARSED, function () { try { video.play(); } catch (e) {} });
+    hls.on(window.Hls.Events.ERROR, function (evt, data) {
+      if (data && data.fatal) {
+        if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR && hls.startLoad) hls.startLoad();
+        else if (hls.recoverMediaError) hls.recoverMediaError();
+        else say('HLS 致命错误: ' + (data.details || ''));
+      }
+    });
+    hls.loadSource(src);
+    hls.attachMedia(video);
+  }
+
+  // ---------- media-p2p-engine (SwarmCloud) ----------
+  function playMedia() {
+    var P2pEngineMedia = window.P2pEngineMedia;
+    var canSw = P2pEngineMedia && P2pEngineMedia.isSupported && P2pEngineMedia.isSupported();
+    if (!canSw || eng === 'hls') {
+      say('MP4 直连播放（media-p2p-engine 不可用）');
+      video.src = src; return;
+    }
+    try {
+      var cfg = {
+        mediaElem: video,
+        swFile: 'media-proxy.js',
+        swScope: './',
+        trackerZone: qs.zone || 'cn',
+        logLevel: 'warn'
+      };
+      if (qs.token) cfg.token = qs.token;
+      var ann = json(qs.announce);
+      if (ann.length) cfg.announce = ann.join(',').split(',')[0] || undefined;
+      swEngine = new P2pEngineMedia(cfg);
+      swEngine.getProxiedUrl(src).then(function (proxied) {
+        video.src = proxied;
+        say('MP4 走 media-p2p-engine（P2P 已启用）');
+        video.play();
+      })['catch'](function (e) {
+        say('media-p2p-engine 取流失败，回退直连：' + e);
+        video.src = src;
+      });
+    } catch (e) {
+      say('media-p2p-engine 初始化失败，回退直连：' + e);
+      video.src = src;
+    }
+  }
+
+  // ---------- start ----------
+  if (!window.Hls) { say('hls.js 加载失败'); return; }
+  if (isHls(src)) playHls(); else playMedia();
+
+  // 自动重试起播（WebView 自动播放策略兜底）
+  function kick() {
+    if (started) return;
+    var p = video.play();
+    if (p && p['catch']) p['catch'](function () {
+      video.muted = true;
+      var p2 = video.play();
+      if (p2 && p2['catch']) p2['catch'](function () {});
+      setTimeout(function () { video.muted = false; }, 800);
+    });
+  }
+  video.addEventListener('playing', function () { started = true; say(''); tip.style.display = 'none'; });
+  video.addEventListener('canplay', kick);
+  setTimeout(kick, 1500);
+  setTimeout(function () { if (!started) { say('起播较慢，请稍候或切台重试'); } }, 15000);
+
+  // 点击视频请求全屏（遥控器 OK 之外触屏兜底）
+  video.addEventListener('click', function () {
+    if (video.requestFullscreen) { try { video.requestFullscreen(); } catch (e) {} }
+  });
+})();
+</script>
+</body>
+</html>

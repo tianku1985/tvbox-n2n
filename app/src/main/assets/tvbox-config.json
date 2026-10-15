@@ -1,0 +1,55 @@
+{
+  "version": "1",
+
+  "notice": {
+    "text": "",
+    "position": "bottom",
+    "bgColor": "#B31B1B1B",
+    "fontColor": "#FFFFD54F",
+    "fontSize": 18,
+    "alpha": 100,
+    "duration": 0,
+    "timeStart": "",
+    "timeEnd": "",
+    "expire": "",
+    "speed": 60,
+    "show": {
+      "home": true,
+      "live": true,
+      "vod": true
+    }
+  },
+
+  "home": {
+    "bgImage": "",
+    "entryBgColor": "",
+    "iconColor": "",
+    "textColor": "",
+    "alpha": 100,
+    "inputBgColor": "",
+    "buttonBgColor": ""
+  },
+
+  "tkp2p": {
+    "engine": "auto",
+    "announce": [],
+    "token": "",
+    "zone": "cn",
+    "ice": []
+  },
+
+  "theme": "",
+
+  "api": "",
+  "live": "",
+  "epg": "",
+  "proxy": "",
+
+  "checkInterval": 30,
+  "ua": "",
+  "bootStart": false,
+  "hin2nEntry": true,
+  "hin2nUrl": "",
+
+  "entries": []
+}

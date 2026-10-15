@@ -7,6 +7,7 @@ import android.content.res.Resources;
 import android.content.res.TypedArray;
 import android.graphics.BitmapFactory;
 import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Looper;
@@ -80,22 +81,8 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
             th.printStackTrace();
         }
 
-        // takagen99 : Set Theme Color
-        if (Hawk.get(HawkConfig.THEME_SELECT, 0) == 0) {
-            setTheme(R.style.NetfxTheme);
-        } else if (Hawk.get(HawkConfig.THEME_SELECT, 0) == 1) {
-            setTheme(R.style.DoraeTheme);
-        } else if (Hawk.get(HawkConfig.THEME_SELECT, 0) == 2) {
-            setTheme(R.style.PepsiTheme);
-        } else if (Hawk.get(HawkConfig.THEME_SELECT, 0) == 3) {
-            setTheme(R.style.NarutoTheme);
-        } else if (Hawk.get(HawkConfig.THEME_SELECT, 0) == 4) {
-            setTheme(R.style.MinionTheme);
-        } else if (Hawk.get(HawkConfig.THEME_SELECT, 0) == 5) {
-            setTheme(R.style.YagamiTheme);
-        } else {
-            setTheme(R.style.SakuraTheme);
-        }
+        // takagen99 : Set Theme Color（主题索引与配色集中在 ThemeManager，支持 JSON 下发与一键切换）
+        com.github.tvbox.osc.n2n.ThemeManager.apply(this);
 
         super.onCreate(savedInstanceState);
         setContentView(getLayoutResID());
@@ -103,6 +90,11 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
         CutoutUtil.adaptCutoutAboveAndroidP(mContext, true);//设置刘海
         AppManager.getInstance().addActivity(this);
         init();
+        // 远程 JSON 的 home.bgImage 对所有页面统一生效（未配置时本方法内部直接跳过）
+        try {
+            com.github.tvbox.osc.n2n.HomeEntry.applyBackground(this);
+        } catch (Throwable ignored) {
+        }
         setScreenOn();
     }
 
@@ -316,20 +308,27 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
         return themeColor;
     }
 
-    protected static BitmapDrawable globalWp = null;
+    protected static GradientDrawable globalWp = null;
+
+    /** 重置全局渐变背景缓存，让下次 changeWallpaper 强制重新生成（主题切换时调用） */
+    public static void resetWallpaper() {
+        globalWp = null;
+    }
 
     public void changeWallpaper(boolean force) {
         if (!force && globalWp != null) {
-            getWindow().setBackgroundDrawable(globalWp);
+            try {
+                getWindow().setBackgroundDrawable(globalWp);
+            } catch (Throwable ignored) {}
             return;
         }
+        // 优先使用本地 /wp 文件
         try {
             File wp = new File(getFilesDir().getAbsolutePath() + "/wp");
             if (wp.exists()) {
                 BitmapFactory.Options opts = new BitmapFactory.Options();
                 opts.inJustDecodeBounds = true;
                 BitmapFactory.decodeFile(wp.getAbsolutePath(), opts);
-                // 从Options中获取图片的分辨率
                 int imageHeight = opts.outHeight;
                 int imageWidth = opts.outWidth;
                 int picHeight = 720;
@@ -338,20 +337,70 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
                 int scaleY = imageHeight / picHeight;
                 int scale = Math.max(Math.max(scaleX, scaleY), 1);
                 opts.inJustDecodeBounds = false;
-                // 采样率
                 opts.inSampleSize = scale;
-                globalWp = new BitmapDrawable(BitmapFactory.decodeFile(wp.getAbsolutePath(), opts));
+                android.graphics.Bitmap bmp = BitmapFactory.decodeFile(wp.getAbsolutePath(), opts);
+                if (bmp != null) {
+                    globalWp = new GradientDrawable();
+                    // 从 Bitmap 提取主色调作为渐变起点
+                    globalWp.setColors(extractGradientColors(bmp));
+                    globalWp.setOrientation(GradientDrawable.Orientation.TL_BR);
+                    bmp.recycle();
+                } else {
+                    globalWp = themeGradient();
+                }
             } else {
-                globalWp = null;
+                globalWp = themeGradient();
             }
         } catch (Throwable throwable) {
             throwable.printStackTrace();
-            globalWp = null;
+            globalWp = themeGradient();
         }
-        if (globalWp != null) {
+        try {
             getWindow().setBackgroundDrawable(globalWp);
-        } else {
-            getWindow().setBackgroundDrawableResource(R.drawable.app_bg);
-        }
+        } catch (Throwable ignored) {}
+    }
+
+    /** 根据当前主题生成从深色到浅色的对角渐变背景 */
+    private GradientDrawable themeGradient() {
+        GradientDrawable gd = new GradientDrawable();
+        try {
+            int[] pair = com.github.tvbox.osc.n2n.ThemeManager.currentBgPair();
+            gd.setColors(pair);
+            gd.setOrientation(GradientDrawable.Orientation.TL_BR);
+        } catch (Throwable ignored) {}
+        return gd;
+    }
+
+    /** 从 Bitmap 提取主色调生成渐变（起点深色、终点浅色） */
+    private int[] extractGradientColors(android.graphics.Bitmap bmp) {
+        try {
+            int w = Math.min(bmp.getWidth(), 64);
+            int h = Math.min(bmp.getHeight(), 64);
+            android.graphics.Bitmap scaled = android.graphics.Bitmap.createScaledBitmap(bmp, w, h, false);
+            int[] pixels = new int[w * h];
+            scaled.getPixels(pixels, 0, w, 0, 0, w, h);
+            scaled.recycle();
+            long r = 0, g = 0, b = 0, count = 0;
+            for (int px : pixels) {
+                int pr = (px >> 16) & 0xFF;
+                int pg = (px >> 8) & 0xFF;
+                int pb = px & 0xFF;
+                r += pr; g += pg; b += pb; count++;
+            }
+            int avgR = (int)(r / count);
+            int avgG = (int)(g / count);
+            int avgB = (int)(b / count);
+            // 起点：主色调的深色版本（0.4倍亮度）
+            int darkR = Math.max(0, (int)(avgR * 0.4f));
+            int darkG = Math.max(0, (int)(avgG * 0.4f));
+            int darkB = Math.max(0, (int)(avgB * 0.4f));
+            // 终点：主色调略亮
+            int lightR = Math.min(255, (int)(avgR * 1.1f));
+            int lightG = Math.min(255, (int)(avgG * 1.1f));
+            int lightB = Math.min(255, (int)(avgB * 1.1f));
+            return new int[]{0xFF000000 | (darkR << 16) | (darkG << 8) | darkB,
+                    0xFF000000 | (lightR << 16) | (lightG << 8) | lightB};
+        } catch (Throwable ignored) {}
+        return new int[]{0xFF1A1A2E, 0xFF16213E};
     }
 }

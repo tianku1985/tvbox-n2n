@@ -1,5 +1,49 @@
 {
-  "notice": "欢迎使用 TVBox：本通知由远程 JSON 接口下发，修改接口内容即可全网更新。",
+  "notice": {
+    "text": "欢迎使用 TVBox：本通知由远程 JSON 接口下发，修改接口内容即可全网更新。",
+    "position": "bottom",
+    "bgColor": "#66000000",
+    "fontColor": "#FFFFD54F",
+    "fontSize": 18,
+    "alpha": 100,
+    "duration": 0,
+    "timeStart": "00:00",
+    "timeEnd": "23:59",
+    "expire": "2027-12-31",
+    "speed": 60,
+    "show": {
+      "home": true,
+      "live": true,
+      "vod": true
+    }
+  },
+  "home": {
+    "bgImage": "https://example.com/bg.jpg",
+    "entryBgColor": "#33FFFFFF",
+    "iconColor": "",
+    "textColor": "#FFFFFFFF",
+    "alpha": 100,
+    "inputBgColor": "#26FFFFFF",
+    "buttonBgColor": "#334FC3F7"
+  },
+  "tkp2p": {
+    "engine": "auto",
+    "announce": [
+      "wss://tracker.openwebtorrent.com",
+      "wss://tracker.webtorrent.dev"
+    ],
+    "token": "",
+    "zone": "cn",
+    "ice": []
+  },
+  "theme": "violet",
+  "api": "",
+  "live": "",
+  "epg": "",
+  "proxy": "",
+  "version": "3",
+  "checkInterval": 30,
+  "ua": "",
   "bootStart": true,
   "hin2nEntry": true,
   "hin2nUrl": "https://github.com/tianku1985/tvbox-n2n/releases/latest/download/hin2n.apk",
