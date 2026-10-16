@@ -43,10 +43,12 @@ android {
 }
 
 dependencies {
-    // n2n 配置数据库
-    implementation 'org.greenrobot:greendao:3.2.0'
-    // 与主工程一致的 EventBus
-    implementation 'org.greenrobot:eventbus:3.3.1'
+    // n2n 配置数据库（DAO 类被 :app 直接调用 insert/delete/loadAll/count/update，
+    // 这些方法继承自 greenDAO AbstractDao，必须用 api 把 greenDAO 暴露给 :app 的编译 classpath）
+    api 'org.greenrobot:greendao:3.2.0'
+    // 与主工程一致的 EventBus（:app 也显式 implementation，但 hin2n 的公开 API 会在
+    // 参数/返回值里出现 EventBus 事件类型，用 api 保证 :app 编译时类型可解析）
+    api 'org.greenrobot:eventbus:3.3.1'
     // N2NService 使用 NotificationCompat；运行时由 :app 提供 appcompat（legacy 变体为 1.6.1）
     compileOnly 'androidx.appcompat:appcompat:1.6.1'
 }
