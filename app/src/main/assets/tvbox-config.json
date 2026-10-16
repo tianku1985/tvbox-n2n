@@ -1,46 +1,43 @@
 {
-  "version": "20261015",
-  "apkUrl": "",
-
+  // ============================ 公告（所有界面可显示，含直播） ============================
   "notice": {
-    "text": "",
-    "position": "bottom",
-    "bgColor": "#B31B1B1B",
-    "fontColor": "#FFFFD54F",
-    "fontSize": 18,
-    "alpha": 100,
-    "duration": 0,
-    "timeStart": "",
-    "timeEnd": "",
-    "expire": "",
-    "speed": 60,
-    "show": {
-      "home": true,
-      "live": true,
-      "vod": true
-    }
+    "text": "",                         // 公告内容，留空不显示
+    "position": "bottom",               // 显示位置：top | bottom
+    "bgColor": "#B31B1B1B",             // 背景色（含透明度）
+    "fontColor": "#FFFFD54F",           // 文字颜色
+    "fontSize": 18,                     // 文字大小（sp）
+    "alpha": 100,                       // 整条公告透明度 0-100
+    "duration": 0,                      // 显示多少秒后自动隐藏，0=一直显示
+    "timeStart": "",                    // 每日显示开始时间 "08:00"，空=不限
+    "timeEnd": "",                      // 每日显示结束时间 "22:00"
+    "expire": "",                       // 过期日期 "2026-12-31"，空=永不过期
+    "speed": 60,                        // 滚动速度（像素/秒），默认由右向左
+    "show": { "home": true, "live": true, "vod": true }  // 分别控制首页/直播/点播是否显示
   },
 
+  // ============================ 首页外观 ============================
   "home": {
-    "bgImage": "",
-    "entryBgColor": "",
-    "iconColor": "",
-    "textColor": "",
-    "alpha": 100,
-    "inputBgColor": "",
-    "buttonBgColor": ""
+    "bgImage": "",                      // 背景图片 URL，空=用主题渐变背景
+    "entryBgColor": "",                 // 入口卡片背景，空=随主题色
+    "iconColor": "",                    // 图标颜色，空=白色
+    "textColor": "",                    // 文字颜色，空=白色
+    "alpha": 100,                       // 入口卡片透明度 0-100
+    "inputBgColor": "",                 // 输入框背景，空=主题半透明色
+    "buttonBgColor": ""                 // 按钮背景，空=主题半透明色
   },
 
+  // ============================ tkp2p:// 原生 P2P 播放 ============================
   "tkp2p": {
-    "engine": "auto",
-    "announce": [],
-    "token": "",
-    "zone": "cn",
-    "ice": []
+    "engine": "auto",                   // auto | p2p-media-loader | media-p2p-engine
+    "announce": [],                     // tracker 地址列表
+    "token": "",                        // P2P 服务 token
+    "zone": "cn",                       // 区域
+    "ice": []                           // 自定义 ICE servers
   },
 
+  // ============================ 主题 ============================
+  // 启动默认主题：可填 themes 中的 style 数字、中文名或英文 alias；空=不强制
   "theme": "",
-
   "themes": [
     { "name": "红色", "alias": "red",      "style": 0,  "color": "#D81F26", "dark": "#8C1418", "bgStart": "#3D0A0D", "bgEnd": "#D81F26" },
     { "name": "蓝色", "alias": "blue",     "style": 1,  "color": "#18A2E7", "dark": "#106D9C", "bgStart": "#0A3D5C", "bgEnd": "#18A2E7" },
@@ -58,16 +55,69 @@
     { "name": "石墨", "alias": "graphite", "style": 13, "color": "#6B7280", "dark": "#3D4250", "bgStart": "#2A2E38", "bgEnd": "#6B7280" }
   ],
 
-  "api": "",
-  "live": "",
-  "epg": "",
-  "proxy": "",
+  // ============================ 各接口地址 ============================
+  // 仅当用户从未在 TVBox 内手动配置过该接口时作为默认值写入一次，手动配置后永不覆盖
+  "api": "",                           // 点播源接口
+  "live": "",                          // 直播源接口
+  "epg": "",                           // 节目单接口
+  "proxy": "",                         // 代理地址
 
-  "checkInterval": 30,
-  "ua": "",
-  "bootStart": false,
-  "hin2nEntry": true,
-  "hin2nUrl": "",
+  // ============================ 全局 ============================
+  "checkInterval": 30,                 // 界面定时刷新间隔（分钟）
+  "ua": "",                            // 全局 UA，空=内置浏览器 UA（webview 直播源同样使用）
+  "bootStart": false,                  // 开机自动启动 TVBox（在 设置-内置配置 中也可切换）
+  "hin2nEntry": true,                  // 首页是否显示「组网」入口
 
-  "entries": []
+  // ============================ hin2n 组网模块（内置模块，无需另装 APK） ============================
+  // 仅在应用首次启动（模块数据库为空）时播种一次；之后全部以用户在组网界面内的修改为准。
+  // 如需修改出厂配置，改源码本文件后重新编译即可。
+  "hin2n": {
+    "bootStart": false,                // 开机自动连接 n2n 组网（也可在组网页内切换；与上面的 bootStart 互不影响）
+    "staticRoutes": "",                // 静态路由，多条用空格分隔；"CIDR 网关IP" 成对，如 "192.168.8.0/24 10.0.0.13"
+    "configs": [
+      {
+        // ---- 基本配置 ----
+        "version": 3,                  // 协议版本：0=n2n_v1, 1=n2n_v2, 2=n2n_v2s, 3=n2n_v3
+        "name": "默认组网",             // 配置名称
+        "ipMode": 0,                   // IP 分配：0=手动填写 ip；1=由超节点分配（等价 "fromSupernode": true）
+        "ip": "10.0.0.6",              // 虚拟 IP（ipMode=0 时必填）
+        "netmask": "255.255.255.0",    // 子网掩码
+        "community": "mynet",          // 组网名称（community，最长 20 字符）
+        "password": "",                // 组网密钥
+        "devDesc": "tvbox",            // 设备描述（v2/v3）
+        "superNode": "supernode.ntop.org:7777", // 超节点 地址:端口
+                                         // 留空时按版本取默认：v1 hin2n.nton.eu.org:10082
+                                         // v2 hin2n.nton.eu.org:10086 / v2s :10088 / v3 supernode.ntop.org:7777
+        "selected": true,              // 是否作为当前配置（首条默认选中）
+
+        // ---- 高级配置（moreSettings=true 时界面展开；不填按默认） ----
+        "moreSettings": true,
+        "superNodeBackup": "",         // 备用超节点
+        "macAddr": "",                 // 虚拟 MAC，空=随机；格式 "AA:BB:CC:DD:EE:FF"
+        "mtu": 1328,                   // MTU，范围 46-1500
+        "localIP": "",                 // 本地 IP，"auto" 或留空=自动（等价 "localIpAuto": true，v2s/v3）
+        "holePunchInterval": 20,       // 打洞间隔（秒，v2s）
+        "resolveSupernodeIp": false,   // 预先解析超节点域名（v1/v2s）
+        "localPort": 0,                // 本地端口，0=随机
+        "allowRouting": false,         // 允许路由转发（-r）
+        "acceptMulticast": false,      // 接受组播/广播（-E，ARP 依赖它，ping 不通对端时尝试打开）
+                                         // 也可写反义字段 "dropMulticast": true
+        "httpTunnel": false,           // 优先 HTTP 隧道（-H）
+        "traceLevel": 2,               // 日志级别：0=错误 1=警告 2=普通 3=信息 4=调试
+        "gatewayIp": "",               // 虚拟网关（v2/v3）
+        "dnsServer": "",               // DNS 服务器（v2/v3）
+        "encryptionMode": "Twofish",   // 加密方式：Twofish | AES-CBC | ChaCha20 | Speck-CTR（v2/v3）
+        "headerEnc": false             // 启用包头加密（v2/v3）
+      }
+      // 需要内置多条配置时继续追加对象即可，例如：
+      // ,{ "version": 2, "name": "办公室", "ip": "10.1.0.6",
+      //    "community": "office", "superNode": "sn.example.com:5645", "selected": false }
+    ]
+  },
+
+  // ============================ 首页自定义入口（第三方 App） ============================
+  // 已安装直接打开；未安装且填了 url 时弹窗引导后台下载安装
+  "entries": [
+    // { "name": "文件管理", "pkg": "com.android.filemanager", "icon": "", "url": "https://example.com/app.apk" }
+  ]
 }

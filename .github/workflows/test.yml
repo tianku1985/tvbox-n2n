@@ -43,7 +43,8 @@ jobs:
           fi
       - name: Compress Source
         run: |
-          tar -cJf sourceCode-${{ env.tag }}.tar.xz --exclude=.git --exclude=.github --exclude=hin2n --exclude=docs app pyramid quickjs xwalk gradle build.gradle gradle.properties settings.gradle gradlew gradlew.bat LICENSE .gitignore
+          # hin2n 已作为内置 library 模块随主工程编译，源码必须打入源码包
+          tar -cJf sourceCode-${{ env.tag }}.tar.xz --exclude=.git --exclude=.github --exclude=docs app hin2n pyramid quickjs xwalk gradle build.gradle gradle.properties settings.gradle gradlew gradlew.bat LICENSE .gitignore
 
       - name: Setup Python
         uses: actions/setup-python@v7
@@ -82,6 +83,14 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+      - name: Install NDK and CMake
+        run: |
+          # hin2n 内置模块通过 CMake 编译 n2n C 源码：安装与模块 build.gradle 一致的 NDK r25b 与 CMake 3.22.1
+          # sdkmanager 在新版 JDK 下才能正常启动，故本步骤放在 setup-java 17 之后
+          set -e
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" "ndk;25.2.9519653" "cmake;3.22.1"
       - uses: gradle/actions/setup-gradle@v6.2.0
       - name: Build With Gradle
         run: |

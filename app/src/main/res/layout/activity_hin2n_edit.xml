@@ -1,0 +1,397 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- hin2n 配置编辑（TV 遥控器可操作）：复刻原 hin2n SettingDetailsActivity 全部字段与版本联动 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:paddingLeft="@dimen/vs_40"
+    android:paddingRight="@dimen/vs_40"
+    android:paddingTop="@dimen/vs_30"
+    android:paddingBottom="@dimen/vs_30">
+
+    <TextView
+        android:id="@+id/tvHin2nEditTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="新建配置"
+        android:textColor="@color/color_FFFFFF_90"
+        android:textSize="@dimen/ts_40"
+        android:textStyle="bold" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="@dimen/vs_20"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                style="@style/Hin2nLabel"
+                android:text="版本" />
+
+            <RadioGroup
+                android:id="@+id/rgHin2nVersion"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <RadioButton
+                    android:id="@+id/rbHin2nV1"
+                    style="@style/Hin2nCheck"
+                    android:text="v1" />
+
+                <RadioButton
+                    android:id="@+id/rbHin2nV2"
+                    style="@style/Hin2nCheck"
+                    android:checked="true"
+                    android:text="v2" />
+
+                <RadioButton
+                    android:id="@+id/rbHin2nV2s"
+                    style="@style/Hin2nCheck"
+                    android:text="v2s" />
+
+                <RadioButton
+                    android:id="@+id/rbHin2nV3"
+                    style="@style/Hin2nCheck"
+                    android:text="v3" />
+            </RadioGroup>
+
+            <TextView
+                style="@style/Hin2nLabel"
+                android:text="名称" />
+
+            <EditText
+                android:id="@+id/etHin2nName"
+                style="@style/Hin2nInput"
+                android:hint="请输入配置名称" />
+
+            <CheckBox
+                android:id="@+id/cbHin2nIpMode"
+                style="@style/Hin2nCheck"
+                android:text="从 supernode 获取 IP（DHCP，仅 v3）" />
+
+            <LinearLayout
+                android:id="@+id/llHin2nIp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    style="@style/Hin2nLabel"
+                    android:text="IP 地址" />
+
+                <EditText
+                    android:id="@+id/etHin2nIp"
+                    style="@style/Hin2nInput"
+                    android:inputType="text" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/llHin2nNetmask"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    style="@style/Hin2nLabel"
+                    android:text="子网掩码" />
+
+                <EditText
+                    android:id="@+id/etHin2nNetmask"
+                    style="@style/Hin2nInput"
+                    android:inputType="text" />
+            </LinearLayout>
+
+            <TextView
+                style="@style/Hin2nLabel"
+                android:text="Community（工作组，≤20 字符）" />
+
+            <EditText
+                android:id="@+id/etHin2nCommunity"
+                style="@style/Hin2nInput"
+                android:maxLength="20" />
+
+            <LinearLayout
+                android:id="@+id/llHin2nPassword"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    style="@style/Hin2nLabel"
+                    android:text="密码（v2/v3，可留空）" />
+
+                <EditText
+                    android:id="@+id/etHin2nPassword"
+                    style="@style/Hin2nInput"
+                    android:inputType="textPassword" />
+            </LinearLayout>
+
+            <TextView
+                style="@style/Hin2nLabel"
+                android:text="Supernode（主机:端口）" />
+
+            <EditText
+                android:id="@+id/etHin2nSuperNode"
+                style="@style/Hin2nInput" />
+
+            <LinearLayout
+                android:id="@+id/llHin2nBackup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    style="@style/Hin2nLabel"
+                    android:text="备用 Supernode（v2/v2s/v3，可选）" />
+
+                <EditText
+                    android:id="@+id/etHin2nSuperNodeBackup"
+                    style="@style/Hin2nInput" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/llHin2nDevDesc"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    style="@style/Hin2nLabel"
+                    android:text="设备描述（可选，仅 v3）" />
+
+                <EditText
+                    android:id="@+id/etHin2nDevDesc"
+                    style="@style/Hin2nInput" />
+            </LinearLayout>
+
+            <CheckBox
+                android:id="@+id/cbHin2nMore"
+                style="@style/Hin2nCheck"
+                android:text="展开更多设置（MAC / MTU / 加密 等）" />
+
+            <LinearLayout
+                android:id="@+id/llHin2nMore"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        style="@style/Hin2nLabel"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:text="MAC 地址（留空可点随机）" />
+
+                    <TextView
+                        android:id="@+id/btnHin2nRandomMac"
+                        android:layout_width="@dimen/vs_150"
+                        android:layout_height="@dimen/vs_60"
+                        android:background="@drawable/shape_hin2n_button"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:text="随机 MAC"
+                        android:textColor="@android:color/white"
+                        android:textSize="@dimen/ts_20" />
+                </LinearLayout>
+
+                <EditText
+                    android:id="@+id/etHin2nMacAddr"
+                    style="@style/Hin2nInput"
+                    android:hint="xx:xx:xx:xx:xx:xx" />
+
+                <TextView
+                    style="@style/Hin2nLabel"
+                    android:text="MTU（46-1500）" />
+
+                <EditText
+                    android:id="@+id/etHin2nMtu"
+                    style="@style/Hin2nInput"
+                    android:inputType="number" />
+
+                <LinearLayout
+                    android:id="@+id/llHin2nLocalIp"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <CheckBox
+                        android:id="@+id/cbHin2nLocalIpAuto"
+                        style="@style/Hin2nCheck"
+                        android:text="本地 IP 自动获取（勾选后保存为 auto）" />
+
+                    <TextView
+                        style="@style/Hin2nLabel"
+                        android:text="本地 IP（仅 v2s，一般留空）" />
+
+                    <EditText
+                        android:id="@+id/etHin2nLocalIp"
+                        style="@style/Hin2nInput" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/llHin2nHolePunch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/Hin2nLabel"
+                        android:text="打洞间隔（秒，10-120，仅 v2s）" />
+
+                    <EditText
+                        android:id="@+id/etHin2nHolePunch"
+                        style="@style/Hin2nInput"
+                        android:inputType="number" />
+                </LinearLayout>
+
+                <TextView
+                    style="@style/Hin2nLabel"
+                    android:text="本地端口（0 表示随机）" />
+
+                <EditText
+                    android:id="@+id/etHin2nLocalPort"
+                    style="@style/Hin2nInput"
+                    android:inputType="number" />
+
+                <CheckBox
+                    android:id="@+id/cbHin2nResolve"
+                    style="@style/Hin2nCheck"
+                    android:text="解析 supernode 域名（v1/v2s）" />
+
+                <CheckBox
+                    android:id="@+id/cbHin2nAllowRouting"
+                    style="@style/Hin2nCheck"
+                    android:text="允许路由转发（allow routing）" />
+
+                <CheckBox
+                    android:id="@+id/cbHin2nAcceptMulticast"
+                    style="@style/Hin2nCheck"
+                    android:text="接收组播（accept multicast）" />
+
+                <LinearLayout
+                    android:id="@+id/llHin2nGateway"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/Hin2nLabel"
+                        android:text="网关 IP（可选）" />
+
+                    <EditText
+                        android:id="@+id/etHin2nGatewayIp"
+                        style="@style/Hin2nInput" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/llHin2nDns"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/Hin2nLabel"
+                        android:text="DNS 服务器（可选）" />
+
+                    <EditText
+                        android:id="@+id/etHin2nDnsServer"
+                        style="@style/Hin2nInput" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/llHin2nEnc"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/Hin2nLabel"
+                        android:text="加密方式（v2/v3）" />
+
+                    <Spinner
+                        android:id="@+id/spHin2nEnc"
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/vs_70"
+                        android:entries="@array/encryption_modes" />
+                </LinearLayout>
+
+                <CheckBox
+                    android:id="@+id/cbHin2nHeaderEnc"
+                    style="@style/Hin2nCheck"
+                    android:text="启用包头加密（header encryption，v2/v3）" />
+
+                <TextView
+                    style="@style/Hin2nLabel"
+                    android:text="日志级别" />
+
+                <Spinner
+                    android:id="@+id/spHin2nTrace"
+                    android:layout_width="match_parent"
+                    android:layout_height="@dimen/vs_70"
+                    android:entries="@array/hin2n_trace_levels" />
+
+                <TextView
+                    style="@style/Hin2nLabel"
+                    android:text="静态路由（可选，每行一个：目标网段 网关IP）" />
+
+                <EditText
+                    android:id="@+id/etHin2nStaticRoutes"
+                    style="@style/Hin2nInput"
+                    android:gravity="top"
+                    android:hint="例如：192.168.8.0/24 10.0.0.13"
+                    android:minHeight="@dimen/vs_100"
+                    android:singleLine="false" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/vs_30"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/btnHin2nSave"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/vs_90"
+                    android:layout_weight="1"
+                    android:background="@drawable/button_hin2n_primary"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:text="保存"
+                    android:textColor="@android:color/white"
+                    android:textSize="@dimen/ts_28" />
+
+                <TextView
+                    android:id="@+id/btnHin2nCancel"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/vs_90"
+                    android:layout_marginLeft="@dimen/vs_20"
+                    android:layout_weight="1"
+                    android:background="@drawable/shape_hin2n_button"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:text="取消"
+                    android:textColor="@android:color/white"
+                    android:textSize="@dimen/ts_28" />
+            </LinearLayout>
+
+        </LinearLayout>
+    </ScrollView>
+
+</LinearLayout>

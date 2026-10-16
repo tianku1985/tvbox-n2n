@@ -55,7 +55,9 @@ public class HomeEntry {
             tvHin2n.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    launchApp(act, HIN2N_PKG, "hin2n", RemoteConfig.hin2nUrl());
+                    // hin2n 已内化为 TVBox 模块，直接打开 TV 引导页
+                    act.startActivity(new Intent(act,
+                            com.github.tvbox.osc.n2n.ui.Hin2nActivity.class));
                 }
             });
         }

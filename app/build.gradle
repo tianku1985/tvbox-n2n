@@ -145,6 +145,8 @@ dependencies {
     implementation 'com.google.android.material:material:1.12.0'
     implementation project(path: ':quickjs')
     pythonImplementation project(":pyramid")
+    // hin2n 组网模块（含 n2n native 库与 greenDAO 配置存储）
+    implementation project(path: ':hin2n')
     
     kapt 'androidx.room:room-compiler:2.6.1'
     implementation 'com.github.alidili:FlowLayout:v1.5'

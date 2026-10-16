@@ -1,0 +1,330 @@
+{
+  // ========================================================================
+  //  TVBox-N2N 点播接口配置文件（完整示例 + 字段说明）
+  //  放置方式：上传到服务器后，在 tvbox 的远程配置 tvbox-config.json 中填：
+  //           "api": "https://你的域名/vod.config.example.json"
+  //  或在 tvbox 设置 → 接口配置 → 点播接口里直接填这个 URL
+  // ========================================================================
+
+  // -------- 全局 Spider jar（可选） --------
+  // 所有 "api" 字段只写类名（如 "csp_DoubanAmns"）的 type=3 站点，
+  // 都从这个 jar 里加载对应的 Spider 类。
+  // 如果站点的 api 字段已经写了完整文件路径（如 "./js/xxx.js"），这里可以不填。
+  // 值可以是：本地相对路径 "./kjtw.jar"  或  远程 URL
+  "spider": "./kjtw.jar",
+
+  // -------- 全局 logo（可选） --------
+  // 首页顶栏/启动画面的 logo，通常是 gif 动图
+  "logo": "./dong.gif",
+
+  // -------- 免责声明（可选） --------
+  // 启动时显示在公告栏
+  "warningText": "声明：资源来自网络，无盈利，所有内容仅供学习测试使用，请勿用于违法及商业用途，请勿付费购买，测试之后请自行删除",
+
+  // ========================================================================
+  //  【核心字段】sites — 点播站点列表
+  //  type 值说明（决定用什么方式加载这个源）：
+  //    0 = Xml 格式接口（标准 MacCMS XMLTV 格式，比较老）
+  //    1 = Json 格式接口（标准 MacCMS JSON API，最通用）
+  //    3 = CatVod Spider（jar/js/py 三种实现，本项目主力类型）
+  //    4 = 带 filter 扩展的 Json（类似 1 但有额外参数）
+  //
+  //  type=3 时 api 字段的写法决定加载方式：
+  //    api 以 ".jar" 结尾         → JarLoader 加载 CatVod jar（normal/python flavor 都能用）
+  //    api 以 ".js"  结尾         → JsLoader 加载 QuickJS Spider（normal/python flavor 都能用）
+  //    api 以 ".py"  结尾         → pyLoader 加载 Python Spider（仅 python flavor 能用！normal flavor 里会被静默跳过）
+  //    api 只是类名（如 "csp_XXX"）→ 从上面 "spider" 字段指定的 jar 里找对应的类
+  // ========================================================================
+  "sites": [
+
+    // -------- ① type=3 从全局 jar 加载（只写类名） --------
+    // 这种写法的前提是上面 "spider" 字段指到了包含 csp_DoubanAmns 类的 jar
+    {
+      "name": "豆瓣热门",
+      "key": "Douban",
+      "type": 3,
+      "api": "csp_DoubanAmns",               // 类名，spider jar 里必须有这个类
+      "jar": "./js/aw.png",                  // 站点专属 jar（可选，覆盖全局 spider）；可以是远程 URL
+      "indexs": 1,                           // 首页推荐时的排序权重（可选）
+      "searchable": 0,                       // 1=可搜索  0=不可搜索
+      "quickSearch": 0,                      // 1=支持快速搜索（输入时实时搜）  0=回车才搜
+      "changeable": 1,                       // 1=允许切换线路/源  0=固定
+      "filterable": 1,                       // 1=有筛选条件（如地区/年份）  0=没有
+      "playerType": -1,                      // -1=跟随全局设置  0=系统播放器  1=Ijk  2=Exo  10=MXPlayer
+      "ext": "Douban"                        // 扩展参数，字符串/JSON 对象都可以，传给 Spider
+    },
+
+    // -------- ② type=3 QuickJS Spider（api 以 .js 结尾，两个 flavor 都能用） --------
+    {
+      "key": "cat_旺旺网",
+      "name": "旺旺视频",
+      "type": 3,
+      "api": "./js/旺旺.js",                 // QuickJS Spider 文件路径（相对 apk 内置或服务器路径）
+      "searchable": 1,
+      "quickSearch": 1,
+      "filterable": 1,
+      "changeable": 1,
+      "playerType": 2,
+      "ext": {                               // ext 可以是 JSON 对象
+        "host": "https://api.ztcgi.com",
+        "catesSet": "电影&电视剧&综艺&动漫",
+        "tabsSet": "极速蓝光"
+      },
+      // style：列表展示风格（可选）
+      "style": {
+        "type": "rect",                      // rect=横向卡片  list=纵向列表
+        "ratio": 1.597                       // 卡片宽高比（rect 时生效）
+      }
+    },
+
+    // -------- ③ type=3 Python Spider（api 以 .py 结尾，仅 python flavor 能用！） --------
+    {
+      "key": "py_周六影库",
+      "name": "周六影库",
+      "type": 3,
+      "api": "./py/周六影库.py",             // ⚠️ .py 后缀 → 只有 python flavor 的 APK 才能加载
+      "searchable": 1,
+      "changeable": 1,
+      "quickSearch": 1,
+      "filterable": 1,
+      "playerType": 2
+    },
+
+    // -------- ④ type=1 JSON API（标准 MacCMS 接口） --------
+    // 这种源直接请求 api 地址，返回 MacCMS 标准 JSON 格式即可
+    // 注意：首页加载 getSort() 只请求 api?ac=list，如果 MacCMS 原生接口不返回 "class" 字段，
+    //       需要在服务器端加一个代理合成（参考之前的 tvbox.php 方案）
+    {
+      "key": "电影天堂",
+      "name": "电影天堂（MacCMS）",
+      "type": 1,
+      "api": "http://caiji.dyttzyapi.com/api.php/provide/vod/from/dyttm3u8/at/json/?ac=list",
+      "searchable": 1,
+      "quickSearch": 0,
+      "filterable": 0,
+      "changeable": 0,
+      "playUrl": "",                         // 可选，远程 VIP 解析接口 URL
+      // categories：覆盖接口默认的分类，按这个顺序展示
+      "categories": [
+        "短剧", "动作片", "喜剧片", "爱情片", "科幻片", "恐怖片",
+        "国产剧", "香港剧", "韩国剧", "欧美剧", "记录片", "大陆综艺"
+      ]
+    },
+
+    // -------- ⑤ type=1 自建 MacCMS + tvbox.php 代理 --------
+    // 用之前给你的 tvbox.php 方案，自动把 MacCMS 的 ac=class 和 ac=list 合成
+    {
+      "key": "我的影院",
+      "name": "我的自建影院",
+      "type": 1,
+      "api": "https://你的域名/tvbox.php",
+      "searchable": 1,
+      "quickSearch": 1,
+      "filterable": 1,
+      "changeable": 1,
+      "playerType": -1
+    },
+
+    // -------- ⑥ type=3 网盘/聚合源（ext 很关键） --------
+    {
+      "key": "网盘虎斑",
+      "name": "网盘虎斑（4K）",
+      "type": 3,
+      "api": "csp_Mogg",
+      "jar": "./js/js.jpg",                  // jar 可以伪装成图片（.jpg 后缀），catvod 框架会识别
+      "playerType": 2,
+      "ext": {                               // 复杂 ext 用 JSON 对象
+        "site": "http://38.76.197.172:16969/",
+        "tyitoken": "http://127.0.0.1:9978/file/TVBox/tyitoken.txt",   // token/cookie 可指向本地代理文件
+        "dutoken": "http://127.0.0.1:9978/file/TVBox/dutoken.txt",
+        "token": "http://127.0.0.1:9978/file/TVBox/Altoken.txt",
+        "cookie": "http://127.0.0.1:9978/file/TVBox/qkcookie.txt"
+      }
+    },
+
+    // -------- ⑦ type=3 QuickJS + drpy2 框架 --------
+    // 很多现代 Spider 用 drpy2 框架，api 写 drpy2.min.js，ext 写具体规则脚本
+    {
+      "key": "腾腾",
+      "name": "腾腾影视",
+      "type": 3,
+      "jar": "./lib/jp.png",                 // 全局 jar（伪装成 png）
+      "api": "./js/drpy2.min.js",            // drpy2 引擎脚本
+      "ext": "./js/腾腾.js"                  // 具体站点规则
+    },
+
+    // -------- ⑧ 音乐源（酷狗） --------
+    // playerType=2 (Exo) 支持更多音频格式
+    {
+      "key": "csp_Kugou",
+      "name": "酷狗音乐",
+      "type": 3,
+      "api": "csp_Kugou",
+      "jar": "https://raw.giteeusercontent.com/twvip/jarR/raw/master/KG.jar",  // jar 可以是远程 URL
+      "playerType": 2,
+      "ext": {
+        "classes": [
+          {"type_name": "酷狗", "type_id": "kugou"}
+        ]
+      }
+    }
+
+    // -------- 常用字段速查 --------
+    // "key"          → 站点唯一标识（存储历史记录、收藏时用，必须唯一）
+    // "name"         → 站点显示名（会出现在首页源切换弹窗里）
+    // "type"         → 0=Xml  1=Json  3=Spider  4=Filter扩展
+    // "api"          → type=0/1 时填接口 URL；type=3 时填 Spider 文件路径或类名
+    // "jar"          → 站点专属 jar（覆盖顶层 spider 字段）；可以是本地路径或远程 URL；可以伪装成 .png/.jpg
+    // "ext"          → Spider 扩展参数，字符串/JSON 对象皆可，传给 Spider 的 homeContent/categoryContent 等
+    // "searchable"   → 1=可搜索  0=不可搜索
+    // "quickSearch"  → 1=实时搜索（输入就搜）  0=回车才搜
+    // "filterable"   → 1=有分类筛选  0=没有
+    // "changeable"   → 1=允许切源/切线路  0=固定
+    // "hide"         → 1=在源切换弹窗里隐藏  0=显示（默认）
+    // "playerType"   → -1=跟随设置  0=系统  1=Ijk  2=Exo  10=MXPlayer
+    // "playUrl"      → 远程 VIP 解析接口 URL（type=0/1 时生效）
+    // "categories"   → 覆盖接口默认分类的排序数组
+    // "style"        → {"type":"rect"|"list", "ratio": 宽高比} 控制卡片样式
+    // "ua"           → 自定义 User-Agent（某些源需要特定 UA）
+  ],
+
+  // ========================================================================
+  //  lives — 直播源列表（和点播 sites 并列）
+  //  type: 0=M3U/M3U8  1=TXT  2=直播 Spider
+  //  url:  直播源地址
+  //  epg:  EPG 节目单接口（支持 {name} {date} 模板）
+  //  logo: 频道 logo（支持 {name} 模板）
+  //  ua:   自定义 UA
+  //  header: 自定义请求头（JSON 对象）
+  //  timeout: 超时秒数
+  // ========================================================================
+  "lives": [
+    {
+      "name": "本地移动 IPTV",
+      "type": 0,                              // 0=M3U  1=TXT
+      "url": "http://iptv.ruyitv.cc/m3u/tv.txt",
+      "timeout": 10,
+      "playerType": 2,
+      "epg": "https://epg.112114.eu.org/?ch={name}&date={date}",
+      "logo": "https://epg.112114.eu.org/logo/{name}.png",
+      "ua": "okhttp/3.15,AptvPlayer/1.4.1,Mozilla/5.0"
+    },
+    {
+      "name": "带自定义请求头",
+      "type": 0,
+      "url": "http://iptv.4666888.xyz/FYTV.m3u",
+      "header": {                             // 自定义 HTTP 请求头
+        "User-Agent": "okhttp/5.1.0",
+        "Referer": "https://iptv.example.com/"
+      }
+    }
+  ],
+
+  // ========================================================================
+  //  parses — VIP 视频解析接口列表
+  //  当点播源返回的播放地址在 tvbox 内不能直接播放时，
+  //  会把 URL 丢给解析器嗅探真实视频流。
+  //  type: 0=JSON 解析  1=WebView 嗅探
+  //  url:  解析器入口 URL（播放地址会追加在后面）
+  //  flag: 可选，指定这个解析器只处理哪些 flag（如 "qq","腾讯" 表示只解析腾讯视频）
+  //  ext.header: 可选，给解析请求加自定义 UA
+  // ========================================================================
+  "parses": [
+    {
+      "name": "通用 JSON 解析",
+      "type": 0,
+      "url": "http://jx.abplayer.top/?url="
+    },
+    {
+      "name": "WebView 嗅探",
+      "type": 1,
+      "url": "https://yparse.ik9.cc/index.php?url=",
+      "ext": {
+        "flag": ["qq", "腾讯", "qiyi", "爱奇艺", "youku", "优酷", "mgtv", "芒果"],
+        "header": {"User-Agent": "okhttp/4.1.0"}
+      }
+    }
+  ],
+
+  // ========================================================================
+  //  flags — 需要 VIP 解析器处理的播放源 flag 列表
+  //  当点播源返回的 URL 包含这些字符串时，tvbox 会优先尝试 parses 里的解析器
+  // ========================================================================
+  "flags": [
+    "youku", "qq", "iqiyi", "qiyi", "letv", "sohu",
+    "tudou", "pptv", "mgtv", "wasu", "bilibili", "renrenmi"
+  ],
+
+  // ========================================================================
+  //  rules — M3U8 广告/干扰分片过滤规则
+  //  当播放的 M3U8 源包含广告或干扰分片时，用正则过滤掉
+  //  host/regex 模式：匹配 M3U8 里的 ts URL，命中则丢弃
+  // ========================================================================
+  "rules": [
+    {
+      "host": "www.iesdouyin.com",
+      "rule": ["playwm/?video_id="]
+    },
+    {
+      "name": "量子过滤",
+      "hosts": ["vip.lz", "hd.lz", ".cdnlz"],
+      "regex": [
+        "#EXT-X-DISCONTINUITY\\r*\\n*#EXTINF:7\\.166667,[\\s\\S]*?#EXT-X-DISCONTINUITY",
+        "#EXTINF.*?\\s+.*?08646.*?\\.ts"
+      ]
+    }
+  ],
+
+  // ========================================================================
+  //  ijk — IJKPlayer 自定义参数（软硬解码分别配）
+  //  group: 分组名（"软解码"/"硬解码"）
+  //  options: IJK 的 setOption 参数
+  //    category: 1=format  2=codec  4=player
+  //    name: 参数名（opensles/mediacodec/skip_loop_filter/fflags 等）
+  //    value: 参数值（字符串）
+  // ========================================================================
+  "ijk": [
+    {
+      "group": "硬解码",
+      "options": [
+        {"category": 4, "name": "mediacodec", "value": "1"},
+        {"category": 4, "name": "mediacodec-auto-rotate", "value": "1"},
+        {"category": 2, "name": "skip_loop_filter", "value": "48"},
+        {"category": 1, "name": "fflags", "value": "fastseek"}
+      ]
+    },
+    {
+      "group": "软解码",
+      "options": [
+        {"category": 4, "name": "mediacodec", "value": "0"},
+        {"category": 4, "name": "opensles", "value": "0"}
+      ]
+    }
+  ],
+
+  // ========================================================================
+  //  ads — 广告域名拦截列表
+  //  当播放请求命中这些域名时，直接丢弃（不发请求）
+  // ========================================================================
+  "ads": [
+    "mimg.0c1q0l.cn",
+    "www.googletagmanager.com",
+    "mc.usihnbcq.cn",
+    "mg.g1mm3d.cn",
+    "mscs.svaeuzh.cn",
+    "cnzz.hhttm.top"
+  ],
+
+  // ========================================================================
+  //  wallpaper — 全局壁纸地址（旧字段，本项目已改用 tvbox-config.json 的 home.bgImage）
+  // ========================================================================
+  "wallpaper": "https://example.com/bg.jpg"
+
+  // ========================================================================
+  //  本配置能直接加载的前提（非常重要！）：
+  //  1. spider 字段指向的 jar 文件必须存在（相对路径从 APK 内部文件系统或服务器根目录解析）
+  //  2. sites 里 .js / .py 后缀的文件必须存在于对应路径
+  //  3. 远程 jar/URL 能从你的安卓设备访问到（注意 GFW 问题，raw.githubusercontent.com 被墙）
+  //  4. .py 后缀的 Spider 只有 python flavor 的 APK 才能运行，normal flavor 会静默跳过
+  // ========================================================================
+}

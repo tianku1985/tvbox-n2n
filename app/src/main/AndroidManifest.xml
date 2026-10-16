@@ -163,6 +163,20 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+        <!-- hin2n 内置组网模块的 TV 引导页 / 配置管理 / 配置编辑（均不开放为桌面入口） -->
+        <activity
+            android:name=".n2n.ui.Hin2nActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+        <activity
+            android:name=".n2n.ui.Hin2nConfigListActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+        <activity
+            android:name=".n2n.ui.Hin2nConfigEditActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
     </application>
 
 </manifest>

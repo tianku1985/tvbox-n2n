@@ -213,4 +213,37 @@
     <style name="surfaceType_texture">
         <item name="surface_type">texture_view</item>
     </style>
+
+    <!-- ============ hin2n TV 引导页控件样式（颜色随主题，焦点高亮一致） ============ -->
+    <style name="Hin2nLabel">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">@dimen/vs_15</item>
+        <item name="android:textColor">@color/color_FFFFFF_90</item>
+        <item name="android:textSize">@dimen/ts_22</item>
+    </style>
+
+    <style name="Hin2nInput">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">@dimen/vs_70</item>
+        <item name="android:background">@drawable/shape_hin2n_field</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textColorHint">#80FFFFFF</item>
+        <item name="android:textSize">@dimen/ts_22</item>
+        <item name="android:paddingLeft">@dimen/vs_15</item>
+        <item name="android:paddingRight">@dimen/vs_15</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:gravity">center_vertical</item>
+    </style>
+
+    <style name="Hin2nCheck">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginRight">@dimen/vs_30</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textSize">@dimen/ts_22</item>
+        <!-- API21+ 走框架 tint；appcompat 版本保证 Android 4.4 上勾选框也是白色 -->
+        <item name="android:buttonTint">#FFFFFF</item>
+        <item name="buttonTint">#FFFFFF</item>
+    </style>
 </resources>

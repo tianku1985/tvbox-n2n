@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- hin2n 主操作按钮：跟随 TVBox 主题色 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape>
+            <corners android:radius="@dimen/vs_30" />
+            <solid android:color="?attr/color_theme_80" />
+            <stroke android:width="2mm" android:color="@android:color/white" />
+        </shape>
+    </item>
+    <item>
+        <shape>
+            <corners android:radius="@dimen/vs_30" />
+            <solid android:color="?attr/color_theme_70" />
+        </shape>
+    </item>
+</selector>

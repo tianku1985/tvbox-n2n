@@ -3,8 +3,10 @@ package com.github.tvbox.osc.ui.fragment;
 import android.content.Intent;
 import android.os.Bundle;
 import android.view.View;
+import android.view.ViewTreeObserver;
 import android.view.animation.BounceInterpolator;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.Toast;
 
 import com.chad.library.adapter.base.BaseQuickAdapter;
@@ -12,6 +14,8 @@ import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.api.ApiConfig;
 import com.github.tvbox.osc.base.BaseLazyFragment;
 import com.github.tvbox.osc.bean.Movie;
+import com.github.tvbox.osc.n2n.RemoteConfig;
+import com.github.tvbox.osc.n2n.ui.Hin2nActivity;
 import com.github.tvbox.osc.bean.VodInfo;
 import com.github.tvbox.osc.cache.RoomDataManger;
 import com.github.tvbox.osc.event.ServerEvent;
@@ -53,6 +57,8 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
     private LinearLayout tvHistory;
     private LinearLayout tvCollect;
     private LinearLayout tvPush;
+    /** hin2n 组网内置模块入口（随入口行一起滚动） */
+    private LinearLayout tvHin2nHome;
     public static HomeHotVodAdapter homeHotVodAdapter;
     private List<Movie.Video> homeSourceRec;
     public static TvRecyclerView tvHotListForGrid;
@@ -122,6 +128,8 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         tvCollect = findViewById(R.id.tvFavorite);
         tvHistory = findViewById(R.id.tvHistory);
         tvPush = findViewById(R.id.tvPush);
+        tvHin2nHome = findViewById(R.id.tvHin2nHome);
+        tvHin2nHome.setVisibility(RemoteConfig.hin2nEntryEnabled() ? View.VISIBLE : View.GONE);
         tvDrive.setOnClickListener(this);
         tvVod.setOnClickListener(this);
         tvLive.setOnClickListener(this);
@@ -130,6 +138,7 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         tvHistory.setOnClickListener(this);
         tvPush.setOnClickListener(this);
         tvCollect.setOnClickListener(this);
+        tvHin2nHome.setOnClickListener(this);
         tvDrive.setOnFocusChangeListener(focusChangeListener);
         tvVod.setOnFocusChangeListener(focusChangeListener);
         tvLive.setOnFocusChangeListener(focusChangeListener);
@@ -138,6 +147,10 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         tvHistory.setOnFocusChangeListener(focusChangeListener);
         tvPush.setOnFocusChangeListener(focusChangeListener);
         tvCollect.setOnFocusChangeListener(focusChangeListener);
+        tvHin2nHome.setOnFocusChangeListener(focusChangeListener);
+        // 焦点在入口行与下方内容列表之间移动时，外层 ScrollView 跟随滚动，
+        // 让「历史」一行入口随内容列表一起上/下滚动（D-pad 上下）。
+        installScrollFollow();
         tvHotListForLine = findViewById(R.id.tvHotListForLine);
         tvHotListForGrid = findViewById(R.id.tvHotListForGrid);
         tvHotListForGrid.setHasFixedSize(true);
@@ -338,6 +351,45 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         return result;
     }
 
+    /**
+     * 首页滚动联动：入口行（历史/点播/直播/…/组网）与下方内容列表同处一个 ScrollView。
+     * 横向 TvRecyclerView 内部移动焦点时 ScrollView 默认不会自动滚动，
+     * 这里监听全局焦点变化，把新聚焦视图滚动到可视区内（上下留出边距）。
+     */
+    private void installScrollFollow() {
+        View root = getView();
+        if (!(root instanceof ScrollView)) {
+            return;
+        }
+        final ScrollView sv = (ScrollView) root;
+        final int margin = (int) (24 * getResources().getDisplayMetrics().density);
+        sv.getViewTreeObserver().addOnGlobalFocusChangeListener(new ViewTreeObserver.OnGlobalFocusChangeListener() {
+            @Override
+            public void onGlobalFocusChanged(View oldFocus, View newFocus) {
+                if (newFocus == null || sv.getHeight() <= 0) {
+                    return;
+                }
+                // 只关心本 Fragment 内的视图
+                if (!sv.isShown()) {
+                    return;
+                }
+                int[] svPos = new int[2];
+                int[] fPos = new int[2];
+                sv.getLocationOnScreen(svPos);
+                newFocus.getLocationOnScreen(fPos);
+                int top = fPos[1] - svPos[1] + sv.getScrollY();
+                int bottom = top + newFocus.getHeight();
+                int visibleTop = sv.getScrollY();
+                int visibleBottom = visibleTop + sv.getHeight();
+                if (bottom > visibleBottom - margin) {
+                    sv.smoothScrollTo(0, bottom - sv.getHeight() + margin);
+                } else if (top < visibleTop + margin) {
+                    sv.smoothScrollTo(0, Math.max(0, top - margin));
+                }
+            }
+        });
+    }
+
     private final View.OnFocusChangeListener focusChangeListener = new View.OnFocusChangeListener() {
         @Override
         public void onFocusChange(View v, boolean hasFocus) {
@@ -372,6 +424,8 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
             jumpActivity(CollectActivity.class);
         } else if (v.getId() == R.id.tvDrive) {
             jumpActivity(DriveActivity.class);
+        } else if (v.getId() == R.id.tvHin2nHome) {
+            startActivity(new Intent(mContext, Hin2nActivity.class));
         }
     }
 

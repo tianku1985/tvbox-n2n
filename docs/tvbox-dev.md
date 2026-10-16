@@ -1,7 +1,8 @@
 # TVBox 开发使用文档
 
-> 基于 [takagen99/Box](https://github.com/takagen99/Box)（commit `258a5fe`）内化，已烘焙 5 项定制功能。  
-> 仓库地址：`tianku1985/tvbox-n2n`，根目录即 Box 源码。
+> 基于 [takagen99/Box](https://github.com/takagen99/Box)（commit `258a5fe`）内化。
+> 本仓库的定制重点：**hin2n 组网内置模块化**、**配置全部内置进 APK assets JSON（去除远程地址配置）**、**Android 4.4（API19）兼容**、首页入口行随列表滚动。
+> hin2n 模块的细节另见 [hin2n-dev.md](file:///f:/tvbox-n2n/docs/hin2n-dev.md)，配置字段 demo 见 [tvbox-config.example.jsonc](file:///f:/tvbox-n2n/docs/tvbox-config.example.jsonc)。
 
 ---
 
@@ -9,234 +10,131 @@
 
 ```
 tvbox-n2n/
-├── app/                    # TVBox 主模块（takagen99/Box 源码）
-├── pyramid/                # Python 引擎模块（Chaquopy）
+├── app/                    # TVBox 主模块（含 n2n/ 集成包、legacy 4.4 变体）
+├── hin2n/Hin2n_android/app # hin2n 内置 library（settings.gradle 以 :hin2n 引入）
+├── pyramid/                # Python 引擎模块（Chaquopy，仅 python flavor）
 ├── quickjs/                # QuickJS 引擎模块
-├── xwalk/                  # Crosswalk WebView 离线包（4 个 zip，~104MB）
-├── gradle/                 # Gradle wrapper
-├── hin2n/                  # hin2n 独立 App（见 hin2n-dev.md）
-├── docs/                   # 文档
-├── .github/workflows/      # CI 工作流
-│   ├── test.yml            # TVBox 构建工作流
-│   ├── hin2n.yml           # hin2n 构建工作流
-│   └── TVBoxOSC.jks        # 签名证书（别名 TVBoxOSC，密码 TVBoxOSC）
-├── build.gradle            # 根构建脚本
-├── settings.gradle
-└── gradle.properties
+├── xwalk/                  # Crosswalk WebView 离线包
+├── docs/                   # 文档与配置 demo
+├── .github/workflows/
+│   ├── test.yml            # 唯一构建工作流（含 NDK/CMake 安装）
+│   └── hin2n.yml           # 已停用的旧独立 hin2n 流水线（桩）
+└── settings.gradle         # include ':hin2n' + projectDir 指向
 ```
 
-## 2. 定制功能一览
+## 2. 构建变体（flavor）
 
-| # | 功能 | 入口 | 涉及文件 |
-|---|------|------|----------|
-| 1 | 开机启动开关 | 设置 → 设置其他 → 配置地址下方「远程配置」卡片 | `BootReceiver.java` `ModelSettingFragment.java` |
-| 2 | 首页自定义入口 | 首页顶栏 entryBar | `HomeEntry.java` `RemoteConfig.java` `activity_home.xml` |
-| 3 | 远程 JSON 配置 | 设置 → 设置其他 → 配置地址下方「远程配置」卡片 | `RemoteConfig.java` `ModelSettingFragment.java` |
-| 4 | 底部滚动公告 | 首页底部 | `HomeEntry.java` `activity_home.xml` |
-| 5 | hin2n 固定入口 | 首页顶栏 tvHin2n | `HomeEntry.java` `activity_home.xml` |
+三维 flavor（`flavorDimensions = ["abi","brand","mode"]`），共 2×2×3 = 12 个变体：
 
-## 3. 远程配置接口
-
-### 3.1 JSON 结构
-
-所有字段可选，缺省保持本地现状：
-
-```json
-{
-  "notice": "首页底部滚动公告文本",
-  "bootStart": true,
-  "hin2nEntry": true,
-  "hin2nUrl": "https://example.com/hin2n.apk",
-  "entries": [
-    {
-      "name": "hin2n",
-      "pkg": "wang.switchy.hin2n",
-      "icon": "",
-      "url": "https://example.com/hin2n.apk"
-    },
-    {
-      "name": "文件管理",
-      "pkg": "com.android.documentsui",
-      "icon": "https://example.com/icon.png",
-      "url": "https://example.com/app.apk"
-    }
-  ]
-}
-```
-
-| 字段 | 类型 | 说明 |
+| 维度 | 取值 | 说明 |
 |------|------|------|
-| `notice` | string | 公告文本，空或缺失则隐藏公告栏 |
-| `bootStart` | boolean | 开机启动默认值；仅在远端首次下发时写入，之后以用户开关为准 |
-| `hin2nEntry` | boolean | 是否在首页显示 hin2n 入口图标 |
-| `hin2nUrl` | string | hin2n 未安装时提示的下载地址（HTTP(S) 直链，可为空） |
-| `entries` | array | 自定义入口列表，每项含 `name`/`pkg`/`icon`/`url` |
-| `entries[].name` | string | 入口名称（用于图标 description 及未安装提示） |
-| `entries[].pkg` | string | 目标 App 包名，必填；为空则该项被忽略 |
-| `entries[].icon` | string | 图标 URL，空则用 `hm_drawer` 兜底图标 |
-| `entries[].url` | string | 未安装 `pkg` 时提示的下载地址（可选） |
+| abi | `armeabi` / `arm64` | 分别过滤 `armeabi-v7a` / `arm64-v8a` |
+| brand | `generic` / `hisense` | 通用包 / 海信定制 applicationId |
+| mode | `normal` / `python` / `legacy` | normal=Java 源(minSdk21, appcompat1.7.0)；python=Chaquopy(minSdk21)；**legacy=Android 4.4 兼容(minSdk19, appcompat1.6.1，复用 `src/normal/java`)** |
 
-### 3.2 覆盖规则
+构建工具：AGP 7.4.2 / Gradle 7.5 / **JDK 17** / compileSdk 34；Kotlin 1.8、kapt（Room 2.6.1）。
 
-- `notice`、`entries`、`hin2nEntry`、`hin2nUrl`：每次拉取成功即覆盖
-- `bootStart`：仅在远端首次下发时作为默认值写入（`K_BOOT_REMOTE_SET` 标记），之后以用户手动开关为准
-
-### 3.3 拉取时机与限频
-
-- **自动拉取**：`HomeEntry.refresh()` 在 `onCreate`/`onResume` 时触发 `fetchAuto()`，限频 5 分钟
-- **手动拉取**：设置 → 设置其他 → 配置地址下方「远程配置」卡片的「同步配置」调用 `fetch()`，不受限频
-
-### 3.4 配置接口地址
-
-在 **设置 → 设置其他 → 配置地址下方「远程配置」→「配置接口」** 中输入 JSON URL，保存后自动立即拉取一次。  
-地址存储在 Hawk key `rc_url`，默认为空（不拉取）。
-
-## 4. 代码架构
-
-### 4.1 包结构
-
-```
-com.github.tvbox.osc.n2n/
-├── RemoteConfig.java    # 远程配置：拉取、缓存、读取
-├── HomeEntry.java        # 首页扩展：hin2n 入口、自定义入口栏、公告
-├── BootReceiver.java    # 开机自启广播接收器
+```powershell
+.\gradlew.bat assembleArm64GenericLegacyDebug   # 4.4 兼容调试包
+.\gradlew.bat assemblerelease                   # 全部 release 变体（CI 同款）
 ```
 
-### 4.2 关键类说明
+输出名 `TVBox_<buildType>-<abi>-<brand>-<mode>.apk`（normal 显示为 java）。
 
-#### RemoteConfig
+## 3. 内置配置（assets JSON，已去远程化）
 
-- `K_URL` / `K_NOTICE` / `K_ENTRIES` / `K_HIN2N` / `K_HIN2N_URL` / `K_BOOT`：Hawk 键名常量
-- `url()` / `notice()` / `hin2nEntryEnabled()` / `hin2nUrl()` / `bootStartEnabled()`：读取缓存值
-- `entries()`：返回 `List<Entry>`，解析 `rc_entries` JSON 数组（含 `url` 下载地址）
-- `fetchAuto(ctx, cb)`：限频自动拉取（5 分钟间隔）
-- `fetch(ctx, cb)`：立即拉取（不受限频）
-- `apply(ctx, json)`：解析 JSON 并落盘（私有方法）
+### 3.1 设计
 
-#### HomeEntry
+TVBox 的所有定制配置统一来自 APK 内置文件：
+[app/src/main/assets/tvbox-config.json](file:///f:/tvbox-n2n/app/src/main/assets/tvbox-config.json)
 
-- `HIN2N_PKG = "wang.switchy.hin2n"`：hin2n 包名常量
-- `refresh(Activity)`：绑定视图 + 渲染缓存配置 + 后台拉取最新配置；幂等，可在 `onCreate`/`onResume` 重复调用
-- `populate(Activity)`：按缓存重建公告与入口栏（私有方法）
-- `launchApp(Activity, pkg, name, url)`：按包名拉起 App；未安装则弹窗提示调 `showInstallDialog`（私有方法）
-- `showInstallDialog(Activity, name, url)`：未安装提示，展示接口下发的下载地址并提供「立即下载」（私有方法）
-- `openUrl(Activity, url)`：用系统浏览器/应用商店打开下载地址（私有方法）
+- **没有远程地址、没有网络拉取、没有远程 APK 自动更新**。设置页原「远程配置」卡片改为「内置配置」卡片，只剩一个「开机启动」开关；原「配置接口」「同步配置」两行 UI 已删除。
+- 需要不同配置（本地定制或"远程"下发）时：**直接改源码里的 assets JSON，重新编译 APK**。
+- 文件支持 JSONC：`//` 行注释、`/* */` 块注释、尾逗号、UTF-8 BOM（解析器 `RemoteConfig.parseLoose`，注释不会穿透字符串，URL 安全）。
+- App 启动 `App.onCreate` 第一步 `RemoteConfig.bootstrap(this)` **同步**读取并应用（文件仅几 KB）。
 
-#### BootReceiver
+### 3.2 字段与覆盖规则
 
-- 监听 `BOOT_COMPLETED`，检查 `RemoteConfig.bootStartEnabled()`，为 true 时拉起 `HomeActivity`
-- 在 `AndroidManifest.xml` 中注册
+| 字段 | 落盘规则 |
+|------|----------|
+| `notice`（字符串或样式对象）/`home`/`tkp2p`/`entries`/`hin2nEntry`/`checkInterval`/`ua` | 每次启动用内置 JSON 覆盖缓存值 |
+| `theme` / `themes` | 每次启动应用（`ThemeManager.updateThemes`）；`theme` 支持序号/中文名/英文 alias |
+| `api` / `live` / `epg` / `proxy` | **仅当用户从未在 TVBox 内手动配置过该接口**（Hawk 值为空）时写入默认值；手动配置后永不覆盖，四个接口互不影响 |
+| `bootStart`（TVBox 开机自启） | 只作默认值写入**一次**（Hawk `n2n_boot_default_set` 标记），之后以用户开关为准 |
+| `hin2n.bootStart` / `hin2n.staticRoutes` / `hin2n.configs` | **仅首启且组网数据库为空时播种一次**（`Hin2nSeeder`），之后完全以组网界面里的用户操作为准 |
 
-#### ModelSettingFragment（远程配置 UI）
+`version` / `apkUrl` / `hin2nUrl` 三个旧字段已废弃（远程更新与外部 hin2n APK 下载均不存在）。
 
-- `BaseLazyFragment` 子类，布局 `fragment_model`（内嵌在「配置地址」下方）
-- 三个配置行：`llRcUrl` 配置接口地址 / `llRcBoot` 开机启动开关 / `llRcSync` 同步配置
-- `initRemoteConfig()`：绑定视图 + 注册点击 + `refreshRemoteConfig()`
-- `refreshRemoteConfig()`：回显接口地址与开机启动开关状态
-- `syncRemoteConfig()`：调用 `RemoteConfig.fetch()` 并回显「同步成功/失败」
+### 3.3 关键类（`com.github.tvbox.osc.n2n` 包）
 
-### 4.3 布局锚点
+| 类 | 职责 |
+|----|------|
+| [RemoteConfig.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/RemoteConfig.java) | 读 assets、parseLoose、apply/applyEndpoint；`fetchAuto/fetch/tryPendingUpdate` 保留空壳（立即成功回调），调用方无需改动；同时持有 Hawk 键常量 |
+| [Hin2nSeeder.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/Hin2nSeeder.java) | 首启播种 hin2n 配置；字段别名 `ipMode/fromSupernode`、`localIP/localIpAuto`、`acceptMulticast/dropMulticast`(反义) |
+| [HomeEntry.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/HomeEntry.java) | 首页：hin2n 固定入口、`entries` 第三方 App 入口栏（已装直开/未装引导下载）、公告条、外观/主题应用；定时 tick 只做界面刷新 |
+| [NoticeBar.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/NoticeBar.java) | 公告渲染（样式、时段、过期、滚动速度、home/live/vod 显隐） |
+| [BootReceiver.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/BootReceiver.java) | BOOT_COMPLETED：hin2n 自连 + 按开关拉起首页 |
 
-在 [activity_home.xml](file:///f:/tvbox-n2n/app/src/main/res/layout/activity_home.xml) 中：
+设置页：[ModelSettingFragment.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/fragment/ModelSettingFragment.java) 的 `initRemoteConfig()` 只绑定 `llRcBoot`（Hawk `n2n_boot_start`）；布局 `res/layout/fragment_model.xml` 与 `res/layout-v21/fragment_model.xml` 中的卡片标题为「内置配置」。
 
-| View ID | 用途 |
-|---------|------|
-| `tvN2n` | 远程配置入口图标（跳转设置页「设置其他」的远程配置卡片） |
-| `tvHin2n` | hin2n 固定入口图标 |
-| `entryBar` | 自定义入口容器（LinearLayout，HomeEntry 动态填充 ImageView） |
-| `tvNotice` | 底部滚动公告（TextView，marquee 模式） |
+## 4. hin2n 入口与 TV 界面
 
-### 4.4 HomeActivity 集成点
+- 首页「历史」入口行新增第 9 张卡片 `tvHin2nHome`（「组网」，图标 `hm_hin2n`），点击进 `Hin2nActivity`；可见性取 `RemoteConfig.hin2nEntryEnabled()`。
+- 首页顶栏保留 `tvHin2n` 图标（`HomeEntry` 绑定），同样直接进内置模块，不再做外部包检测/下载。
+- 三个 Activity（均 `exported=false`、横屏、无桌面图标）：
+  - `n2n.ui.Hin2nActivity` —— 引导页（连接/状态/日志/配置管理/新建/Ping/开机开关）；
+  - `n2n.ui.Hin2nConfigListActivity` —— 配置列表；
+  - `n2n.ui.Hin2nConfigEditActivity` —— 28 字段表单。
+- 界面颜色随 TVBox 主题：布局直接用 `?attr/color_theme*` 与主题 colorAccent；自定义控件样式 `Hin2nLabel/Hin2nInput/Hin2nCheck`（[styles.xml](file:///f:/tvbox-n2n/app/src/main/res/values/styles.xml)），勾选框同时给了 `android:buttonTint` 与 appcompat `buttonTint` 保证 API19 白色着色。
 
-- L103：`private ImageView tvN2n;` 字段声明
-- L170：`this.tvN2n = findViewById(R.id.tvN2n);` 绑定
-- L172：`HomeEntry.refresh(this);` 首次刷新
-- L347：`tvN2n.setOnClickListener(...)` 点击跳转设置页「设置其他」（远程配置卡片位于该页「配置地址」下方）
-- `onResume`：`super.onResume()` 后调 `HomeEntry.refresh(this)` 刷新
+## 5. 首页入口行随内容列表滚动
 
-### 4.5 SettingActivity 集成点
+「我的」页 [fragment_user.xml](file:///f:/tvbox-n2n/app/src/main/res/layout/fragment_user.xml) 根布局是单个 ScrollView，入口行（`tvUserHome` 9 张卡）与其下的 `tvHotListForGrid`、`tvHotListForLine` 是同一个垂直 LinearLayout 的子 View，结构上天然一起滚动；遥控器焦点移动到屏外时，[UserFragment.installScrollFollow()](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/fragment/UserFragment.java) 通过全局焦点监听按焦点 View 的屏幕坐标 `smoothScrollTo`（上下各留 24dp margin），保证 D-pad 浏览时入口行也会被带出/带回视口。
 
-- `sortList` 仅保留 "设置其他"（原独立「远程配置」页已移除）
-- `fragments` 仅添加 `ModelSettingFragment.newInstance()`
-- `setCurrentItem`：固定 `0`（远程配置已内嵌到「设置其他」页）
+## 6. 两个开机启动开关
 
-### 4.6 AndroidManifest 注册
+| 开关 | 存储 | 行为 |
+|------|------|------|
+| TVBox 开机启动 | Hawk `n2n_boot_start`（设置-内置配置卡片切换） | 开机拉起 HomeActivity |
+| hin2n 开机启动 | SP `Hin2n/start_at_boot`（引导页切换） | 开机自动连 n2n VpnService（未授权过 VPN 则跳过） |
 
-```xml
-<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-...
-<receiver android:name=".n2n.BootReceiver" android:enabled="true" android:exported="true">
-    <intent-filter>
-        <action android:name="android.intent.action.BOOT_COMPLETED" />
-    </intent-filter>
-</receiver>
-```
+两者独立；同一个 BootReceiver 顺序执行，全部 best-effort（Android 10+ 后台启动限制）。
 
-## 5. CI 构建
+## 7. Android 4.4（API19）黑屏修复
 
-### 5.1 触发方式
+根因：API19 在**资源预加载阶段**解析含主题属性引用（`?attr/color_theme*`）的 drawable XML（vector tint、shape solid 等）会直接崩溃 → 黑屏。布局文件里的 `?attr/` 在 View 渲染期解析，不受影响，无需改。
 
-| 方式 | 说明 |
-|------|------|
-| 定时 | 每天 06:59 UTC 自动触发 |
-| 手动 | Actions → Test → Run workflow，可勾选「构建后不提交发布新版」 |
+方案（双版本 drawable）：
 
-### 5.2 构建步骤（test.yml）
+1. `res/drawable/`：**28 个**含 `?attr/` 的 drawable 全部替换为蓝色主题固定色兜底：
+   `color_theme_dark_70→#B3106D9C`、`color_theme_80→#CC18A2E7`、`color_theme_70→#B318A2E7`、`color_theme_50→#8018A2E7`、`color_theme_40→#6618A2E7`、`color_theme→#FF18A2E7`；不含 `<ripple>`/elevation。
+2. `res/drawable-v21/`：同名文件保留 `?attr/` + ripple 原版（其中 23 个是从 drawable 补拷的，5 个原本就是 v21 ripple 版，3 个 hin2n 新建），API21+ 继续随主题换色与水波纹。
+3. `defaultConfig.vectorDrawables.generatedDensities = ['mdpi','hdpi','xhdpi','xxhdpi']`：为 legacy(minSdk19) 变体把矢量图生成 PNG（normal/python minSdk21 不生成）。
+4. legacy 变体 appcompat 锁 1.6.1；`src/legacy/AndroidManifest.xml` 用 `tools:overrideLibrary` 放行 minSdk21 的三方库（nextlib 等）。
 
-1. Checkout（fetch-depth: 0）
-2. 打 Tag：`YYYYMMDD-HHMM`
-3. Extra Modify：注入版本号、Crosswalk maven 源
-4. 压缩源码包：`sourceCode-<tag>.tar.xz`
-5. Python 3.8 + 依赖安装
-6. pyramid 模块适配（删 buildPython 行、锁 pyquery 2.0.2）
-7. 注入签名配置（base64 编码的 signingConfig 块，读 `RELEASE_*` 环境变量）
-8. JDK 17 + Gradle 构建：`./gradlew assembleRelease`
-9. APK 重命名：`TVBox_takagen99_<tag>.apk`
-10. Release 发布（含源码包）+ Artifact 上传
-11. Telegram 推送（如配置了 BOT_TOKEN）
+新增任何 drawable 时的检查清单：默认 `drawable/` 里**禁止** `?attr/`、`<ripple>`、`<vector>` 的 `android:tint="?attr/…"`；需要主题效果就在 `drawable-v21/` 放同名增强版。
 
-### 5.3 产物
+## 8. CI（test.yml）
 
-- **Artifact**：`takagen99-Box`（含 APK + 源码包 + Release Note）
-- **Release**：tag = `<日期时间>`，assets 含 APK 和源码包
+1. Checkout → 打时间 tag → 版本号/关于框注入、crosswalk maven 源；
+2. **Compress Source**：tar 包含 `hin2n/`（内置模块源码必须随包发布，符合 GPL）；
+3. Python 3.8 依赖 + pyramid 适配（删 buildPython、锁 pyquery 2.0.2）；
+4. 注入签名（TVBoxOSC.jks，base64 配置块）；
+5. **setup-java 17 → Install NDK and CMake**：`yes | sdkmanager --licenses` 后安装 `ndk;25.2.9519653`、`cmake;3.22.1`（sdkmanager 需在 JDK17 步骤之后运行）；
+6. `./gradlew assemblerelease --build-cache --parallel`，输出 tee 落盘，失败时 grep `error:` 汇总到日志尾部；
+7. 产物：Artifact `takagen99-Box`（12 个 APK + 源码包 + Release Note）；定时为每天 06:59 UTC，也可手动触发并勾选「构建后不提交发布新版」。
 
-### 5.4 签名
+kapt/runner 偶发抖动先直接 rerun；hin2n native 失败看 `externalNativeBuild*` 任务的 CMake/Clang 错误行。
 
-- 证书：`.github/workflows/TVBoxOSC.jks`
-- 别名：`TVBoxOSC`
-- 密码：`TVBoxOSC`
-- 环境变量：`RELEASE_STORE_FILE` / `RELEASE_STORE_PASSWORD` / `RELEASE_KEY_ALIAS` / `RELEASE_KEY_PASSWORD`（在 CI 的 `gradle.properties` 中注入）
+## 9. 本地构建要点
 
-## 6. 本地构建
+- JDK17（不要用更高）；SDK 需 platform android-34、build-tools（AGP 默认找 30.0.3，本机可用目录 junction 指向已装的新版）；
+- 编含 hin2n 的完整 APK 需要 NDK r25b + CMake 3.22.1；只验证 app 的 Java/资源可单跑 `:app:processXxxResources` / `:app:compileXxxJavaWithJavac`；
+- `local.properties` 写 `sdk.dir`（已 gitignore）；
+- ProGuard：`-keep class com.github.tvbox.osc.n2n.** { *; }`，另注意 greenDAO/EventBus/native JNI 相关类的 keep 规则。
 
-### 6.1 环境要求
+## 10. 配置示例
 
-- JDK 17（Temurin）
-- Android SDK（compileSdk 由 app/build.gradle 指定）
-- Python 3.8+（pyramid 模块依赖，需安装 `lxml ujson pyquery requests jsonpath cachetools pycryptodome beautifulsoup4`）
-
-### 6.2 步骤
-
-```bash
-cd f:\tvbox-n2n
-# 注入签名配置（可选，debug 构建不需要）
-# 修改 app/build.gradle 添加 signingConfig，或设置环境变量
-./gradlew assembleRelease
-```
-
-APK 输出路径：`app/build/outputs/apk/release/`
-
-## 7. ProGuard 规则
-
-`app/proguard-rules.pro` 中已添加：
-
-```
--keep class com.github.tvbox.osc.n2n.** { *; }
-```
-
-确保 `RemoteConfig`、`HomeEntry`、`BootReceiver` 等类不被混淆。
-
-## 8. 配置示例
-
-- 可直接部署的标准 JSON：[tvbox-config.example.json](file:///f:/tvbox-n2n/docs/tvbox-config.example.json)
-- 带中文注释与用法说明的参考版：[tvbox-config.example.jsonc](file:///f:/tvbox-n2n/docs/tvbox-config.example.jsonc)
+- [tvbox-config.example.jsonc](file:///f:/tvbox-n2n/docs/tvbox-config.example.jsonc)：带中文注释的全量 demo（推荐照此修改 assets 文件）
+- [tvbox-config.example.json](file:///f:/tvbox-n2n/docs/tvbox-config.example.json)：纯 JSON 版（无注释）
+- hin2n 组网使用/字段说明：[hin2n.md](file:///f:/tvbox-n2n/docs/hin2n.md)

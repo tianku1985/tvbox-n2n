@@ -24,7 +24,6 @@ import java.io.IOException;
 import org.greenrobot.eventbus.Subscribe;
 import org.greenrobot.eventbus.ThreadMode;
 import wang.switchy.hin2n.R;
-import wang.switchy.hin2n.activity.MainActivity;
 import wang.switchy.hin2n.event.*;
 import wang.switchy.hin2n.model.EdgeCmd;
 import wang.switchy.hin2n.model.EdgeStatus;
@@ -167,20 +166,13 @@ public class N2NService extends VpnService {
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            String CHANNEL_ONE_ID = "wang.switchy.hin2n";
-            String CHANNEL_ONE_NAME = "Channel One";
-            NotificationChannel notificationChannel = new NotificationChannel(CHANNEL_ONE_ID,
-                    CHANNEL_ONE_NAME, NotificationManager.IMPORTANCE_HIGH);
-            notificationChannel.enableLights(true);
-            notificationChannel.setLightColor(Color.RED);
-            notificationChannel.setShowBadge(true);
-            notificationChannel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
-            NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-            manager.createNotificationChannel(notificationChannel);
-
-            Intent i = new Intent(this, MainActivity.class);
-            PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, i, 0);
-            NotificationCompat.Builder notificationBuilder = new NotificationCompat.Builder(this,CHANNEL_ONE_ID)
+            // 通知渠道由 Hin2nCore.init 统一创建（R.string.notification_channel_id_default）
+            Intent i = getPackageManager().getLaunchIntentForPackage(getPackageName());
+            int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0;
+            PendingIntent pendingIntent = i != null
+                    ? PendingIntent.getActivity(this, 0, i, flags)
+                    : null;
+            NotificationCompat.Builder notificationBuilder = new NotificationCompat.Builder(this, getString(R.string.notification_channel_id_default))
                     .setTicker("Nature")
                     .setSmallIcon(R.mipmap.ic_launcher)
                     .setLargeIcon(BitmapFactory.decodeResource(getResources(), R.mipmap.ic_launcher))
@@ -351,8 +343,12 @@ public class N2NService extends VpnService {
                 mNotificationManager.cancel(sNotificationId);
                 break;
             case CMD_ADD_NOTIFICATION:
-                Intent mainIntent = new Intent(this, MainActivity.class);
-                PendingIntent mainPendingIntent = PendingIntent.getActivity(this, 0, mainIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+                Intent mainIntent = getPackageManager().getLaunchIntentForPackage(getPackageName());
+                int piFlags = PendingIntent.FLAG_UPDATE_CURRENT
+                        | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
+                PendingIntent mainPendingIntent = mainIntent != null
+                        ? PendingIntent.getActivity(this, 0, mainIntent, piFlags)
+                        : null;
 
                 NotificationCompat.Builder builder = new NotificationCompat.Builder(this, getString(R.string.notification_channel_id_default))
                         .setSmallIcon(R.mipmap.ic_launcher)
@@ -373,8 +369,12 @@ public class N2NService extends VpnService {
                 mNotificationManager.notify(sNotificationId, notification);
                 break;
             case CMD_UPDATE_NOTIFICATION:
-                Intent mainIntent1 = new Intent(this, MainActivity.class);
-                PendingIntent mainPendingIntent1 = PendingIntent.getActivity(this, 0, mainIntent1, PendingIntent.FLAG_UPDATE_CURRENT);
+                Intent mainIntent1 = getPackageManager().getLaunchIntentForPackage(getPackageName());
+                int piFlags1 = PendingIntent.FLAG_UPDATE_CURRENT
+                        | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
+                PendingIntent mainPendingIntent1 = mainIntent1 != null
+                        ? PendingIntent.getActivity(this, 0, mainIntent1, piFlags1)
+                        : null;
 
                 NotificationCompat.Builder builder2 = new NotificationCompat.Builder(this, getString(R.string.notification_channel_id_default))
                         .setSmallIcon(R.mipmap.ic_launcher)

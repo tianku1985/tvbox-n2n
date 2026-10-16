@@ -63,8 +63,14 @@ public class App extends MultiDexApplication {
         super.onCreate();
         SubtitleHelper.initSubtitleColor(this);
         initParams();
-        // 启动即加载远程配置 JSON：远程未设置或无法访问时自动读取 assets 本地兜底配置
+        // 加载 APK 内置配置 JSON（assets/tvbox-config.json，已移除远程地址配置）
         com.github.tvbox.osc.n2n.RemoteConfig.bootstrap(this);
+        // hin2n 内置组网模块：加载 n2n native 库、greenDAO、通知渠道、崩溃落盘
+        wang.switchy.hin2n.Hin2nCore.init(this);
+        wang.switchy.hin2n.Hin2nCore.installCrashLogger(this);
+        // 首启且 hin2n 配置为空时，把内置 JSON 的 hin2n.configs 作为种子配置写入
+        com.github.tvbox.osc.n2n.Hin2nSeeder.seed(this,
+                com.github.tvbox.osc.n2n.RemoteConfig.raw());
         // takagen99 : Initialize Locale
         initLocale();
         // OKGo

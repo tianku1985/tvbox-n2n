@@ -2,3 +2,6 @@ rootProject.name = "TVBox"
 include ':app'
 include ':quickjs'
 include ':pyramid'
+// hin2n 作为 TVBox 的内置模块（library），源码位于 hin2n/Hin2n_android/app
+include ':hin2n'
+project(':hin2n').projectDir = new File(rootDir, 'hin2n/Hin2n_android/app')

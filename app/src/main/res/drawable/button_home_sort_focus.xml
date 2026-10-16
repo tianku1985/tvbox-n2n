@@ -3,7 +3,7 @@
     <item android:state_focused="true">
         <shape>
             <corners android:radius="20mm"/>
-            <solid android:color="?attr/color_theme_50"/>
+            <solid android:color="#8018A2E7"/>
 	    <!--添加选中外边框-->
 	    <stroke android:width="2mm" android:color="@android:color/white" />
         </shape>

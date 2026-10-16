@@ -90,10 +90,8 @@ public class ModelSettingFragment extends BaseLazyFragment {
     private TextView tvDns;
     private TextView tvFastSearchText;
 
-    // Remote Config Section（内嵌于「配置地址」下方）
-    private TextView tvRcUrl;
+    // 内置配置区（远程地址配置已移除，仅保留 TVBox 开机启动开关）
     private TextView tvRcBoot;
-    private TextView tvRcSync;
 
     public static ModelSettingFragment newInstance() {
         return new ModelSettingFragment().setArguments();
@@ -829,108 +827,20 @@ public class ModelSettingFragment extends BaseLazyFragment {
     }
 
     /**
-     * 远程配置区初始化：配置接口地址 / 开机启动 / 立即同步。
-     * 公告、首页自定义入口、各入口下载地址等默认值均来自该 JSON 接口（见 RemoteConfig）。
+     * 内置配置区：远程地址配置已移除（所有配置在 APK 内置 assets/tvbox-config.json 修改），
+     * 这里仅保留 TVBox「开机启动」开关；hin2n 的开机自动连 VPN 在组网引导页内单独设置。
      */
     private void initRemoteConfig() {
-        tvRcUrl = findViewById(R.id.tvRcUrl);
         tvRcBoot = findViewById(R.id.tvRcBoot);
-        tvRcSync = findViewById(R.id.tvRcSync);
-
-        // 开机启动开关（默认值可由远程 JSON 下发，用户点击后以用户选择为准）
+        tvRcBoot.setText(RemoteConfig.bootStartEnabled() ? "开" : "关");
         findViewById(R.id.llRcBoot).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 FastClickCheckUtil.check(v);
                 boolean now = !RemoteConfig.bootStartEnabled();
                 Hawk.put(RemoteConfig.K_BOOT, now);
-                refreshRemoteConfig();
-                Toast.makeText(mContext, now ? "已开启：开机后自动启动" : "已关闭开机启动",
-                        Toast.LENGTH_SHORT).show();
-            }
-        });
-        // 配置接口地址：弹出主题化输入框，保存后立即拉取一次
-        findViewById(R.id.llRcUrl).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                FastClickCheckUtil.check(v);
-                showRcUrlDialog();
-            }
-        });
-        // 立即同步
-        findViewById(R.id.llRcSync).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                FastClickCheckUtil.check(v);
-                syncRemoteConfig();
-            }
-        });
-
-        refreshRemoteConfig();
-    }
-
-    /** 远程配置接口地址输入弹窗：自定义主题布局（dialog_rc_url），跟随当前主题配色 */
-    private void showRcUrlDialog() {
-        final com.github.tvbox.osc.ui.dialog.BaseDialog dlg =
-                new com.github.tvbox.osc.ui.dialog.BaseDialog(mContext);
-        dlg.setContentView(R.layout.dialog_rc_url);
-        dlg.setCanceledOnTouchOutside(true);
-        final EditText et = dlg.findViewById(R.id.etRcUrl);
-        et.setText(RemoteConfig.url());
-        et.setSelection(et.getText() == null ? 0 : et.getText().length());
-        et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        // 远程下发的输入框底色（home.inputBgColor）
-        com.github.tvbox.osc.n2n.HomeEntry.styleInput(et);
-        dlg.findViewById(R.id.btnRcOk).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                String u = et.getText() == null ? "" : et.getText().toString().trim();
-                Hawk.put(RemoteConfig.K_URL, u);
-                refreshRemoteConfig();
-                dlg.dismiss();
-                if (!u.isEmpty()) {
-                    syncRemoteConfig();
-                }
-            }
-        });
-        dlg.findViewById(R.id.btnRcCancel).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                dlg.dismiss();
-            }
-        });
-        dlg.show();
-    }
-
-    /** 把当前远程配置回显到界面（单行紧凑布局，只显示状态短文案） */
-    private void refreshRemoteConfig() {
-        if (tvRcBoot == null) {
-            return;
-        }
-        tvRcBoot.setText(RemoteConfig.bootStartEnabled() ? "开" : "关");
-        String u = RemoteConfig.url();
-        tvRcUrl.setText(u.isEmpty() ? "未设置" : "已设置");
-        if (tvRcSync != null && !"同步中…".equals(tvRcSync.getText().toString())) {
-            tvRcSync.setText("立即同步");
-        }
-    }
-
-    /** 立即从远程配置接口同步（公告/首页入口/下载地址等），结果回显到行尾 */
-    private void syncRemoteConfig() {
-        if (RemoteConfig.url().isEmpty()) {
-            Toast.makeText(mContext, "请先设置「配置接口」地址", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        tvRcSync.setText("同步中…");
-        RemoteConfig.fetch(mContext, new RemoteConfig.Callback() {
-            @Override
-            public void onDone(boolean success) {
-                if (tvRcSync == null) {
-                    return;
-                }
-                refreshRemoteConfig();
-                tvRcSync.setText(success ? "同步成功" : "同步失败");
-                Toast.makeText(mContext, success ? "远程配置已更新" : "远程配置拉取失败",
+                tvRcBoot.setText(now ? "开" : "关");
+                Toast.makeText(mContext, now ? "已开启：开机后自动启动 TVBox" : "已关闭开机启动",
                         Toast.LENGTH_SHORT).show();
             }
         });
