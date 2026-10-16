@@ -168,9 +168,10 @@ public class N2NService extends VpnService {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             // 通知渠道由 Hin2nCore.init 统一创建（R.string.notification_channel_id_default）
             Intent i = getPackageManager().getLaunchIntentForPackage(getPackageName());
-            int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0;
+            // onStartCommand 形参已叫 flags，这里改用 piFlags 避免重复定义
+            int piFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0;
             PendingIntent pendingIntent = i != null
-                    ? PendingIntent.getActivity(this, 0, i, flags)
+                    ? PendingIntent.getActivity(this, 0, i, piFlags)
                     : null;
             NotificationCompat.Builder notificationBuilder = new NotificationCompat.Builder(this, getString(R.string.notification_channel_id_default))
                     .setTicker("Nature")
