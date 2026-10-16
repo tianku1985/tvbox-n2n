@@ -130,6 +130,11 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         tvPush = findViewById(R.id.tvPush);
         tvHin2nHome = findViewById(R.id.tvHin2nHome);
         tvHin2nHome.setVisibility(RemoteConfig.hin2nEntryEnabled() ? View.VISIBLE : View.GONE);
+        // 入口图标按 hin2n 连接状态染色（拨号中=黄/已连接=绿/失败=红/未拨号=原色）
+        android.widget.ImageView hmHin2n = findViewById(R.id.hm_hin2n);
+        if (hmHin2n != null) {
+            com.github.tvbox.osc.n2n.HomeEntry.applyStateTint(hmHin2n);
+        }
         tvDrive.setOnClickListener(this);
         tvVod.setOnClickListener(this);
         tvLive.setOnClickListener(this);
@@ -432,6 +437,15 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void server(ServerEvent event) {
         if (event.type == ServerEvent.SERVER_CONNECTION) {
+        }
+    }
+
+    /** hin2n 连接状态变化：历史行「组网」卡片图标按状态染色 */
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void onHin2nStateChanged(com.github.tvbox.osc.n2n.Hin2nEntryState.ChangedEvent event) {
+        android.widget.ImageView hmHin2n = findViewById(R.id.hm_hin2n);
+        if (hmHin2n != null) {
+            com.github.tvbox.osc.n2n.HomeEntry.applyStateTint(hmHin2n);
         }
     }
 

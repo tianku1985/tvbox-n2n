@@ -142,8 +142,9 @@
   },
 
   // ==================== 首页第三方 App 自定义入口 ====================
-  // 已安装→直接打开；未安装且填了 url→弹窗确认后后台下载并拉起安装。
+  // 已安装→直接打开；未安装则点击无响应（hin2n 已内化为 TVBox 模块，不要在此配置 hin2n，
+  // 其固定入口走顶栏图标 + 历史行「组网」卡片，由 hin2nEntry 开关控制显隐）。
   "entries": [
-    // { "name": "文件管理", "pkg": "com.android.filemanager", "icon": "", "url": "https://example.com/app.apk" }
+    // { "name": "文件管理", "pkg": "com.android.filemanager", "icon": "" }
   ]
 }

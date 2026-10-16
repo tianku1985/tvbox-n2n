@@ -1,8 +1,6 @@
 package com.github.tvbox.osc.n2n;
 
 import android.app.Activity;
-import android.app.AlertDialog;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -12,7 +10,6 @@ import android.view.View;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import com.bumptech.glide.Glide;
 import com.bumptech.glide.request.target.SimpleTarget;
@@ -33,12 +30,11 @@ import java.util.List;
  *
  * 公告条渲染与滚动（含首页/直播/点播三处显示开关、由右向左方向）统一由 {@link NoticeBar} 负责；
  * 远程 JSON 的 notice/home 样式字段见 RemoteConfig 类注释；
- * 入口未安装 App 时通过 ApkInstaller 后台下载 APK 并拉起安装。
+ * hin2n 已内化为 TVBox 内置模块（:hin2n library），顶栏 tvHin2n 与历史行 tvHin2nHome
+ * 点击直接打开 {@link com.github.tvbox.osc.n2n.ui.Hin2nActivity}，图标颜色随拨号状态变化
+ * （{@link Hin2nEntryState}）。
  */
 public class HomeEntry {
-
-    /** hin2n 包名（switch-iot/hin2n，默认 applicationId） */
-    public static final String HIN2N_PKG = "wang.switchy.hin2n";
 
     private static final Handler TICKER = new Handler(Looper.getMainLooper());
     private static Runnable tickRun = null;
@@ -48,18 +44,18 @@ public class HomeEntry {
         if (act == null) {
             return;
         }
-        // ---- hin2n 固定入口 ----
+        // ---- hin2n 固定入口（内置模块，直接跳 TV 引导页；图标色随拨号状态） ----
         ImageView tvHin2n = act.findViewById(R.id.tvHin2n);
         if (tvHin2n != null) {
             tvHin2n.setVisibility(RemoteConfig.hin2nEntryEnabled() ? View.VISIBLE : View.GONE);
             tvHin2n.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    // hin2n 已内化为 TVBox 模块，直接打开 TV 引导页
                     act.startActivity(new Intent(act,
                             com.github.tvbox.osc.n2n.ui.Hin2nActivity.class));
                 }
             });
+            applyStateTint(tvHin2n);
         }
         // ---- 公告/入口/外观：先用缓存渲染，再后台拉取最新配置 ----
         populate(act);
@@ -100,6 +96,11 @@ public class HomeEntry {
         int margin = act.getResources().getDimensionPixelSize(R.dimen.vs_15);
         int pad = act.getResources().getDimensionPixelSize(R.dimen.vs_10);
         for (final RemoteConfig.Entry e : entries) {
+            // hin2n 已内化为内置模块（走顶栏/历史行固定入口），跳过第三方 App 入口渲染，
+            // 防止历史 Hawk 缓存里残留的 hin2n 条目再被 point 出"未安装"弹窗
+            if (e.pkg != null && e.pkg.startsWith("wang.switchy.hin2n")) {
+                continue;
+            }
             ImageView iv = new ImageView(act);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(size, size);
             lp.setMarginStart(margin);
@@ -118,50 +119,35 @@ public class HomeEntry {
             iv.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    launchApp(act, e.pkg, e.name, e.url);
+                    try {
+                        Intent it = v.getContext().getPackageManager()
+                                .getLaunchIntentForPackage(e.pkg);
+                        if (it != null) {
+                            v.getContext().startActivity(it);
+                        }
+                    } catch (Throwable ignored) {
+                    }
                 }
             });
             bar.addView(iv);
         }
         // 外观：入口配色对动态生成的图标同样生效
         applyHomeStyleToEntries(act);
+        // applyHomeStyleToEntries 里 iconColor=0 时会 clearColorFilter，把状态色抹掉；
+        // populate 末尾重新按 hin2n 连接状态给 tvHin2n 染色，保证拨号中/已连接/失败颜色不被覆盖
+        applyStateTint((ImageView) act.findViewById(R.id.tvHin2n));
     }
 
-    /** 按包名拉起第三方 App；未安装则后台下载 APK 并拉起安装 */
-    private static void launchApp(Activity act, String pkg, String name, final String url) {
-        try {
-            Intent it = act.getPackageManager().getLaunchIntentForPackage(pkg);
-            if (it != null) {
-                act.startActivity(it);
-            } else {
-                showInstallDialog(act, name, url);
-            }
-        } catch (Throwable t) {
-            Toast.makeText(act, "打开 " + name + " 失败: " + t.getMessage(), Toast.LENGTH_SHORT).show();
+    /** 入口图标按 hin2n 连接状态染色（未拨号=原色 / 拨号中=黄 / 已连接=绿 / 失败=红） */
+    public static void applyStateTint(ImageView iv) {
+        if (iv == null) {
+            return;
         }
-    }
-
-    /** 未安装提示：有下载地址则后台下载并拉起安装；无地址时提示去远程配置补充 */
-    private static void showInstallDialog(final Activity act, String name, final String url) {
-        boolean hasUrl = url != null && !url.trim().isEmpty();
-        if (hasUrl) {
-            AlertDialog.Builder b = new AlertDialog.Builder(act);
-            b.setTitle("未安装「" + name + "」");
-            b.setMessage("是否在后台下载并安装？\n\n下载地址：\n" + url.trim());
-            b.setPositiveButton("后台下载", new DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    ApkInstaller.downloadAndInstall(act, name, url.trim());
-                }
-            });
-            b.setNegativeButton("取消", null);
-            b.show();
+        int color = Hin2nEntryState.colorFor(Hin2nEntryState.current());
+        if (color != 0) {
+            iv.setColorFilter(color);
         } else {
-            AlertDialog.Builder b = new AlertDialog.Builder(act);
-            b.setTitle("未安装「" + name + "」");
-            b.setMessage("未安装「" + name + "」。\n请在「设置 → 配置地址」下方的远程配置接口中补充下载地址。");
-            b.setNegativeButton("确定", null);
-            b.show();
+            iv.clearColorFilter();
         }
     }
 
