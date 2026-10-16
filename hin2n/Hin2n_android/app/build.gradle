@@ -210,6 +210,8 @@ greendao {
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation 'androidx.drawerlayout:drawerlayout:1.0.0'
+    // 显式声明，保证 Android 4.4（API 19）等 <21 设备上 MultiDexApplication 的 multi-dex 安装可用
+    implementation 'androidx.multidex:multidex:2.0.1'
     androidTestImplementation('com.android.support.test.espresso:espresso-core:2.2.2', {
         exclude group: 'com.android.support', module: 'support-annotations'
     })

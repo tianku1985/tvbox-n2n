@@ -16,6 +16,10 @@ android {
         versionCode 1
         versionName "1.0.".concat(buildTime())
         multiDexEnabled true
+        // Android 4.4（API 19）无法渲染 vector drawable：本项目布局/菜单大量用 android:src 直接引用矢量图，
+        // 在 API<21 上会抛 Resources.NotFoundException 闪退。这里让 AGP 为 minSdk<21 的变体额外生成 PNG，
+        // 仅 legacy 变体受影响（normal/python 的 minSdk 为 21，不会生成），modern 变体仍走矢量图。
+        vectorDrawables.generatedDensities = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi']
         //设置room的Schema的位置
         javaCompileOptions {
             annotationProcessorOptions {
@@ -71,6 +75,13 @@ android {
             // Python 版本需要额外的 Proguard 规则
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro', 'proguard-python.pro'
         }
+        legacy {
+            // Android 4.4 (API 19) 兼容版：播放器内核 media3 1.3.1 本身已声明支持 API 19，
+            // 仅需把 appcompat 降到 1.6.1、并用 src/legacy 的 manifest 放行 nextlib 的 minSdk 21
+            dimension = "mode"
+            minSdkVersion 19
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
     }
     applicationVariants.configureEach { variant ->
         variant.outputs.configureEach { output ->
@@ -118,7 +129,10 @@ dependencies {
     implementation 'com.github.NanoHttpd.nanohttpd:nanohttpd:nanohttpd-project-2.3.1'
     implementation 'com.github.NanoHttpd.nanohttpd:nanohttpd:nanohttpd-websocket-2.3.1'
     implementation 'com.google.zxing:core:3.5.1'
-    implementation 'androidx.appcompat:appcompat:1.7.0'
+    // appcompat 1.7.0 起声明 minSdk 21，Android 4.4 兼容版回退到 1.6.1（1.7.0 仅在 >=21 的版本使用）
+    normalImplementation 'androidx.appcompat:appcompat:1.7.0'
+    pythonImplementation 'androidx.appcompat:appcompat:1.7.0'
+    legacyImplementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'androidx.lifecycle:lifecycle-extensions:2.2.0'
     implementation 'androidx.recyclerview:recyclerview:1.3.2'
