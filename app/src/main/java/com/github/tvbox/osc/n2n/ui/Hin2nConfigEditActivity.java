@@ -78,7 +78,8 @@ public class Hin2nConfigEditActivity extends BaseActivity implements View.OnClic
         }
         if (mType == TYPE_MODIFY) {
             mSaveId = getIntent().getLongExtra("saveId", 0L);
-            mModel = Hin2nCore.daoSession().getN2NSettingModelDao().load(mSaveId);
+            N2NSettingModelDao dao = Hin2nCore.settingDao();
+            mModel = dao == null ? null : dao.load(mSaveId);
             if (mModel == null) {
                 Toast.makeText(this, "配置不存在", Toast.LENGTH_SHORT).show();
                 finish();
@@ -176,6 +177,7 @@ public class Hin2nConfigEditActivity extends BaseActivity implements View.OnClic
 
     private void fillDefaults() {
         // v2 已在布局中默认选中
+        etIp.setText("10.0.0.8");   // 预填合法 IP，保证遥控器用户直接保存即可成功
         etSuperNode.setText(DEFAULT_SN_V2);
         etNetmask.setText(DEFAULT_NETMASK);
         etMtu.setText("1328");
@@ -335,7 +337,11 @@ public class Hin2nConfigEditActivity extends BaseActivity implements View.OnClic
 
         int version = getN2nVersion();
         String name = text(etName);
-        N2NSettingModelDao dao = Hin2nCore.daoSession().getN2NSettingModelDao();
+        N2NSettingModelDao dao = Hin2nCore.settingDao();
+        if (dao == null) {
+            Toast.makeText(this, "配置数据库不可用，请重启应用后重试", Toast.LENGTH_LONG).show();
+            return;
+        }
 
         if (mType == TYPE_ADD) {
             // 重名自动加 (i)
@@ -349,7 +355,12 @@ public class Hin2nConfigEditActivity extends BaseActivity implements View.OnClic
                     .where(N2NSettingModelDao.Properties.IsSelcected.eq(true)).unique() != null;
 
             N2NSettingModel model = buildModel(null, version, name, !hasSelected);
-            dao.insert(model);
+            try {
+                dao.insert(model);
+            } catch (Throwable t) {
+                Toast.makeText(this, "保存失败：" + t.getMessage(), Toast.LENGTH_LONG).show();
+                return;
+            }
             if (!hasSelected) {
                 N2NSettingModel selected = dao.queryBuilder()
                         .where(N2NSettingModelDao.Properties.IsSelcected.eq(true)).unique();
@@ -373,7 +384,12 @@ public class Hin2nConfigEditActivity extends BaseActivity implements View.OnClic
             }
             boolean selected = mModel != null && mModel.getIsSelcected();
             N2NSettingModel updated = buildModel(mSaveId, version, name, selected);
-            dao.update(updated);
+            try {
+                dao.update(updated);
+            } catch (Throwable t) {
+                Toast.makeText(this, "保存失败：" + t.getMessage(), Toast.LENGTH_LONG).show();
+                return;
+            }
             mModel = updated;
 
             boolean runningCurrent = Hin2nVpn.isRunning()

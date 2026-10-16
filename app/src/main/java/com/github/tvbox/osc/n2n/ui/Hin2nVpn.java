@@ -53,7 +53,10 @@ public class Hin2nVpn {
      * 把指定配置标记为当前配置（DB isSelcected + SP current_setting_id）。
      */
     public static void markSelected(Context ctx, long targetId) {
-        N2NSettingModelDao dao = Hin2nCore.daoSession().getN2NSettingModelDao();
+        N2NSettingModelDao dao = Hin2nCore.settingDao();
+        if (dao == null) {
+            return;
+        }
         List<N2NSettingModel> all = dao.loadAll();
         for (N2NSettingModel m : all) {
             boolean selected = m.getId() != null && m.getId() == targetId;

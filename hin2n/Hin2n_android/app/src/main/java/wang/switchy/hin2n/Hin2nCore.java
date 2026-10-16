@@ -124,21 +124,82 @@ public class Hin2nCore {
         if (sDaoSession == null && sApp != null) {
             synchronized (Hin2nCore.class) {
                 if (sDaoSession == null) {
-                    setDatabase();
+                    try {
+                        setDatabase();
+                    } catch (Throwable t) {
+                        Log.e(TAG, "daoSession lazy open failed", t);
+                    }
                 }
             }
         }
         return sDaoSession;
     }
 
+    /**
+     * 配置表 DAO；数据库不可用（打开失败 / 表结构损坏自愈失败）时返回 null，
+     * 调用方需判空并给出提示，避免直接崩溃回主界面。
+     */
+    public static wang.switchy.hin2n.storage.db.base.N2NSettingModelDao settingDao() {
+        DaoSession session = daoSession();
+        return session == null ? null : session.getN2NSettingModelDao();
+    }
+
+    /**
+     * 打开 greenDAO 数据库。打开失败（文件损坏 / 版本不匹配 / 旧测试包残留的
+     * 同版本异构表）时删除库文件重建一次，保证配置页可用（代价是清空已存配置）。
+     */
     private static void setDatabase() {
         if (sApp == null) {
             return;
         }
+        try {
+            openDatabase();
+            ensureSchema();
+        } catch (Throwable t) {
+            Log.e(TAG, "open N2N-db failed, recreate", t);
+            closeDatabase();
+            try {
+                sApp.deleteDatabase("N2N-db");
+            } catch (Throwable ignored) {
+            }
+            openDatabase();
+        }
+    }
+
+    private static void openDatabase() {
         sHelper = new DaoMaster.DevOpenHelper(sApp, "N2N-db", null);
         sDb = sHelper.getWritableDatabase();
         sDaoMaster = new DaoMaster(sDb);
         sDaoSession = sDaoMaster.newSession();
+    }
+
+    private static void closeDatabase() {
+        try {
+            if (sDb != null) {
+                sDb.close();
+            }
+        } catch (Throwable ignored) {
+        }
+        sDb = null;
+        sDaoMaster = null;
+        sDaoSession = null;
+        sHelper = null;
+    }
+
+    /** 校验配置表列与当前实体一致；缺列（旧包残留表）时抛异常走删库重建 */
+    private static void ensureSchema() {
+        if (sDb == null) {
+            throw new IllegalStateException("db not open");
+        }
+        android.database.Cursor c = sDb.rawQuery("SELECT * FROM N2NSettingList LIMIT 0", null);
+        try {
+            if (c.getColumnIndex("HEADER_ENC") < 0 || c.getColumnIndex("GATEWAY_IP") < 0
+                    || c.getColumnIndex("ENCRYPTION_MODE") < 0 || c.getColumnIndex("DNS_SERVER") < 0) {
+                throw new IllegalStateException("N2NSettingList schema mismatch");
+            }
+        } finally {
+            c.close();
+        }
     }
 
     // ---------------- SharedPreferences 便捷访问 ----------------

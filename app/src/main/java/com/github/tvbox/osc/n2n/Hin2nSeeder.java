@@ -40,7 +40,11 @@ public class Hin2nSeeder {
             return;
         }
         try {
-            N2NSettingModelDao dao = Hin2nCore.daoSession().getN2NSettingModelDao();
+            N2NSettingModelDao dao = Hin2nCore.settingDao();
+            if (dao == null) {
+                Log.e(TAG, "hin2n dao unavailable, skip seed");
+                return;
+            }
             boolean empty = dao.count() == 0;
 
             // 开机自连 / 静态路由：与种子配置一样，只在首启写入默认值
