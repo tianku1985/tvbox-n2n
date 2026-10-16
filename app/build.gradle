@@ -83,6 +83,12 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
+    sourceSets {
+        // legacy 与 normal 一样使用 Java 版 pyLoader（不支持 .py 源），
+        // 复用 normal flavor 的 Java 源目录（其中仅有 pyLoader.java），避免重复实现。
+        legacy.java.srcDirs += 'src/normal/java'
+    }
+
     applicationVariants.configureEach { variant ->
         variant.outputs.configureEach { output ->
             def flavorNames = variant.productFlavors.collect { it.name == "normal" ? "java" : it.name }.join('-')
