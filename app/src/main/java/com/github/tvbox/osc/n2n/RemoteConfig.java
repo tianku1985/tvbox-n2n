@@ -55,11 +55,7 @@ import java.util.List;
  *     "versionCode": 2, "versionName": "1.0.2", "url": "https://.../x.apk",
  *     "force": false, "notes": "更新内容" },
  *   "hin2nEntry": true,                               // 首页是否显示 hin2n 固定入口
- *   "hin2n": {                                        // hin2n 组网模块配置（仅首启 DB 为空时播种）
- *     "bootStart": false,                             // 开机自动连接 n2n
- *     "staticRoutes": "192.168.8.0/24 10.0.0.13",
- *     "configs": [ { ... 28 个字段，见 docs/hin2n.md ... } ]
- *   },
+ *   "hin2n": { "apkUrl": "https://.../hin2n.apk" },   // 独立组网 App：未安装时的 APK 下载地址（可选）
  *   "entries": [ {"name":"文件管理","pkg":"...","icon":"...","url":"..."} ],
  *   "topEntries": [                               // 顶栏整体替换（缺省=内置默认顶栏）
  *     {"name":"搜索","type":"page","target":"search","icon":"hm_search"},
@@ -174,6 +170,19 @@ public class RemoteConfig {
 
     public static boolean hin2nEntryEnabled() {
         return Hawk.get(K_HIN2N, true);
+    }
+
+    /**
+     * 独立 hin2n 组网 App 的 APK 下载地址（内置 JSON "hin2n" 段的 "apkUrl" 字段）。
+     * 组网入口点击时：已安装直接拉起；未安装且此处非空时走后台下载安装管线。
+     */
+    public static String hin2nApkUrl() {
+        try {
+            JSONObject h = raw().optJSONObject("hin2n");
+            return h == null ? "" : h.optString("apkUrl", "").trim();
+        } catch (Throwable t) {
+            return "";
+        }
     }
 
     public static boolean bootStartEnabled() {

@@ -31,8 +31,8 @@ import java.util.Set;
  */
 public class UpgradeChecker {
 
-    /** 本进程已提示过的版本号 */
-    private static final Set<Integer> SHOWN = new HashSet<>();
+    /** 本进程已提示过的版本标识（versionCode/versionName 组合） */
+    private static final Set<String> SHOWN = new HashSet<>();
     private static WeakReference<Activity> sAct = new WeakReference<>(null);
 
     /** HomeActivity 启动后调用（幂等，每版本每进程一次） */
@@ -82,15 +82,28 @@ public class UpgradeChecker {
     private static void maybePrompt(final Activity act, JSONObject up) {
         try {
             int remoteCode = up.optInt("versionCode", 0);
+            String remoteName = up.optString("versionName", "").trim();
             String apkUrl = up.optString("url", "").trim();
-            if (remoteCode <= 0 || apkUrl.isEmpty()) {
+            if (apkUrl.isEmpty()) {
                 return;
             }
             PackageInfo pi = act.getPackageManager().getPackageInfo(act.getPackageName(), 0);
-            if (remoteCode <= pi.versionCode || SHOWN.contains(remoteCode)) {
+            int localCode = pi.versionCode;
+            String localName = pi.versionName != null ? pi.versionName : "";
+
+            boolean needUpgrade = false;
+            if (remoteCode > 0 && localCode > 0) {
+                needUpgrade = remoteCode > localCode;
+            }
+            // versionName 兜底：versionCode 相等/缺失时，versionName 语义更大也提示
+            if (!needUpgrade && !remoteName.isEmpty() && !localName.isEmpty()) {
+                needUpgrade = compareVersionName(remoteName, localName) > 0;
+            }
+            String shownKey = remoteCode + "/" + remoteName;
+            if (!needUpgrade || SHOWN.contains(shownKey)) {
                 return;
             }
-            SHOWN.add(remoteCode);
+            SHOWN.add(shownKey);
             final String versionName = up.optString("versionName", "").trim();
             final boolean force = up.optBoolean("force", false);
             String notes = up.optString("notes", "").trim();
@@ -134,6 +147,45 @@ public class UpgradeChecker {
             holder[0].setCancelable(!force);
             holder[0].show();
         } catch (Throwable ignored) {
+        }
+    }
+
+    /**
+     * 点分版本号比较（如 "1.0.2" vs "1.0.10"）。
+     * 忽略非数字段，位数不足补 0；返回 >0 表示 v1 更新。
+     */
+    private static int compareVersionName(String v1, String v2) {
+        if (v1 == null) v1 = "";
+        if (v2 == null) v2 = "";
+        String[] a1 = v1.split("\\.");
+        String[] a2 = v2.split("\\.");
+        int len = Math.max(a1.length, a2.length);
+        for (int i = 0; i < len; i++) {
+            long n1 = i < a1.length ? parseLongSafe(a1[i]) : 0;
+            long n2 = i < a2.length ? parseLongSafe(a2[i]) : 0;
+            if (n1 != n2) {
+                return n1 > n2 ? 1 : -1;
+            }
+        }
+        return 0;
+    }
+
+    private static long parseLongSafe(String s) {
+        if (s == null) return 0;
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c >= '0' && c <= '9') {
+                sb.append(c);
+            } else {
+                break;
+            }
+        }
+        if (sb.length() == 0) return 0;
+        try {
+            return Long.parseLong(sb.toString());
+        } catch (Throwable t) {
+            return 0;
         }
     }
 }

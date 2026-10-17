@@ -9,7 +9,6 @@ import android.widget.Toast;
 
 import com.bumptech.glide.Glide;
 import com.github.tvbox.osc.R;
-import com.github.tvbox.osc.n2n.ui.Hin2nActivity;
 import com.github.tvbox.osc.ui.activity.AppsActivity;
 import com.github.tvbox.osc.ui.activity.CollectActivity;
 import com.github.tvbox.osc.ui.activity.CustomVodActivity;
@@ -92,7 +91,15 @@ public class EntryDispatcher {
         } else if ("apps".equals(target)) {
             cls = AppsActivity.class;
         } else if ("hin2n".equals(target)) {
-            cls = Hin2nActivity.class;
+            // hin2n 已拆分为独立 App（wang.switchy.hin2n）：已安装直接拉起，
+            // 未安装且 JSON 配置了 hin2n.apkUrl 时走后台下载安装管线
+            RemoteConfig.Entry e = new RemoteConfig.Entry();
+            e.type = "app";
+            e.name = "组网";
+            e.pkg = "wang.switchy.hin2n";
+            e.url = RemoteConfig.hin2nApkUrl();
+            openApp(act, e);
+            return;
         }
         if (cls != null) {
             act.startActivity(new Intent(act, cls));
@@ -190,9 +197,10 @@ public class EntryDispatcher {
         loadIcon(ctx, iv, resolveIcon(ctx, e));
     }
 
-    /** 是否为 hin2n 入口（用于连接状态染色） */
+    /** 是否为 hin2n 入口（组网：内置 page 入口或指向独立 hin2n App 的 app 入口） */
     public static boolean isHin2nEntry(RemoteConfig.Entry e) {
-        return e != null && "page".equals(e.type) && "hin2n".equals(e.target);
+        return e != null && (("page".equals(e.type) && "hin2n".equals(e.target))
+                || ("app".equals(e.type) && e.pkg != null && e.pkg.startsWith("wang.switchy.hin2n")));
     }
 
     /**

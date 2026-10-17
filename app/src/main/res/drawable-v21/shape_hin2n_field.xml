@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- hin2n 输入框背景：跟随 TVBox 主题色 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <corners android:radius="@dimen/vs_15" />
-    <solid android:color="?attr/color_theme_40" />
-</shape>

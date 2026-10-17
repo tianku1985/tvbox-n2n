@@ -1,12 +1,10 @@
-package com.github.tvbox.osc.n2n.ui;
+package wang.switchy.hin2n.ui;
 
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 
 import androidx.core.content.ContextCompat;
-
-import java.util.List;
 
 import wang.switchy.hin2n.Hin2nCore;
 import wang.switchy.hin2n.model.EdgeStatus;

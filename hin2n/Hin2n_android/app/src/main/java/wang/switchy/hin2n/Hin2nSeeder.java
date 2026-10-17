@@ -1,4 +1,4 @@
-package com.github.tvbox.osc.n2n;
+package wang.switchy.hin2n;
 
 import android.content.Context;
 import android.util.Log;
@@ -9,39 +9,25 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.List;
 
-import wang.switchy.hin2n.Hin2nCore;
 import wang.switchy.hin2n.storage.db.base.model.N2NSettingModel;
 
 /**
- * 把内置 tvbox-config.json 中 "hin2n" 段播种到 hin2n 模块：
+ * 把内置 assets/hin2n-config.json 播种到 hin2n 模块数据库：
  * - configs：首次启动（greenDAO 中一条配置都没有）时插入种子配置；
  * - bootStart / staticRoutes：同样仅在首启 DB 为空时写入，之后一切以用户在界面上的修改为准。
- *
- * configs 单项支持的字段（全部可选，缺省取 hin2n 原有默认值）：
- * version(0=v1,1=v2,2=v2s,3=v3)、name、ipMode(0/1 或 fromSupernode 布尔)、
- * ip、netmask、community、password、devDesc、superNode、superNodeBackup、
- * macAddr、mtu、localIP（或 localIpAuto 布尔）、holePunchInterval、
- * resolveSupernodeIp 布尔、localPort、allowRouting 布尔、
- * acceptMulticast 布尔（或 dropMulticast 反义）、httpTunnel 布尔、
- * traceLevel(0-4)、selected 布尔、gatewayIp、dnsServer、
- * encryptionMode(Twofish/AES-CBC/ChaCha20/Speck-CTR)、headerEnc 布尔。
  */
 public class Hin2nSeeder {
 
     private static final String TAG = "Hin2nSeeder";
 
-    public static void seed(Context ctx, JSONObject rootConfig) {
-        if (ctx == null || rootConfig == null) {
-            return;
-        }
-        JSONObject h = rootConfig.optJSONObject("hin2n");
-        if (h == null) {
+    public static void seed(Context ctx, String rawJson) {
+        if (ctx == null || rawJson == null || rawJson.trim().isEmpty()) {
             return;
         }
         try {
+            JSONObject h = new JSONObject(rawJson.trim());
             boolean empty = Hin2nCore.configCount() == 0;
 
-            // 开机自连 / 静态路由：与种子配置一样，只在首启写入默认值
             if (empty && h.has("bootStart")) {
                 Hin2nCore.setStartAtBoot(ctx, h.optBoolean("bootStart", false));
             }
@@ -85,7 +71,6 @@ public class Hin2nSeeder {
                     currentId = id;
                 }
             }
-            // insert 后 id 已回填到实体，优先用实体里的 id
             N2NSettingModel selected = models.get(selectedIndex);
             if (selected.getId() != null) {
                 currentId = selected.getId();

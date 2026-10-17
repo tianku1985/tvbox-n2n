@@ -1,13 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <!-- hin2n 日志级别：沿用原 hin2n 的 5 档（保存时取选中下标 0-4） -->
-    <string-array name="hin2n_trace_levels">
-        <item>错误（Error）</item>
-        <item>警告（Warn）</item>
-        <item>普通（Normal）</item>
-        <item>信息（Info）</item>
-        <item>调试（Debug）</item>
-    </string-array>
-
 </resources>

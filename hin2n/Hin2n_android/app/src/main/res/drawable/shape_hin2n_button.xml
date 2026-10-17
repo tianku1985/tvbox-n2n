@@ -1,23 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- hin2n 小按钮/列表项背景：跟随 TVBox 主题色 -->
+<!-- hin2n 小按钮/列表项背景：独立 App 固定色 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_focused="true">
         <shape>
             <corners android:radius="@dimen/vs_20" />
-            <solid android:color="?attr/color_theme_80" />
-            <stroke android:width="2mm" android:color="@android:color/white" />
+            <solid android:color="#B318A2E7" />
+            <stroke android:width="2dp" android:color="@android:color/white" />
         </shape>
     </item>
     <item android:state_pressed="true">
         <shape>
             <corners android:radius="@dimen/vs_20" />
-            <solid android:color="?attr/color_theme_80" />
+            <solid android:color="#B318A2E7" />
         </shape>
     </item>
     <item>
         <shape>
             <corners android:radius="@dimen/vs_20" />
-            <solid android:color="?attr/color_theme_40" />
+            <solid android:color="#3318A2E7" />
         </shape>
     </item>
 </selector>

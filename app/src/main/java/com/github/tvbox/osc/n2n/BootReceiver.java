@@ -6,12 +6,11 @@ import android.content.Intent;
 import android.util.Log;
 
 /**
- * 开机自启（BOOT_COMPLETED），保留两个相互独立的开关：
- * 1. hin2n 引导页里的「开机启动」（SP "Hin2n"/start_at_boot）：开机自动连接 n2n VPN；
- * 2. 设置页的 TVBox「开机启动」（RemoteConfig.bootStartEnabled）：开机拉起首页。
+ * 开机自启（BOOT_COMPLETED）：设置页的 TVBox「开机启动」（RemoteConfig.bootStartEnabled）
+ * 开启时开机拉起首页。
  *
  * 注意：Android 10+ 对后台拉起 Activity 有限制，部分 TV 固件可能拦截，best-effort。
- * hin2n 连接走前台 VpnService，未授予过 VPN 权限时直接跳过。
+ * hin2n 组网已拆分为独立 App（包名 wang.switchy.hin2n），其开机自连由该 App 自身处理。
  */
 public class BootReceiver extends BroadcastReceiver {
 
@@ -27,14 +26,7 @@ public class BootReceiver extends BroadcastReceiver {
             @Override
             public void run() {
                 try {
-                    // 1) hin2n 开机自动连 VPN（自带开关与权限判断）
-                    try {
-                        wang.switchy.hin2n.Hin2nCore.init(ctx.getApplicationContext());
-                        wang.switchy.hin2n.Hin2nCore.startOnBoot(ctx.getApplicationContext());
-                    } catch (Throwable t) {
-                        Log.w(TAG, "hin2n startOnBoot failed: " + t);
-                    }
-                    // 2) TVBox 开机启动拉起首页
+                    // TVBox 开机启动拉起首页
                     if (RemoteConfig.bootStartEnabled()) {
                         Log.i(TAG, "boot completed, bootStart enabled");
                         try {

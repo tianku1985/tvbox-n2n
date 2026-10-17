@@ -135,51 +135,12 @@
     "notes": ""                        // 更新内容说明（可空）
   },
 
-  // ============================ hin2n 组网模块（内置模块，无需另装 APK） ============================
-  // 仅在应用首次启动（模块数据库为空）时播种一次；之后全部以用户在组网界面内的修改为准。
-  // 如需修改出厂配置，改源码本文件后重新编译即可。
+  // ============================ hin2n 组网（独立 App，包名 wang.switchy.hin2n） ============================
+  // 首页「组网」入口点击：已安装 → 直接拉起 hin2n App；未安装 → 按下方 apkUrl 后台下载并安装
+  // （顶部显示下载进度）。apkUrl 留空且未安装时，仅提示「未安装」。组网配置（社区/超节点/开机自连
+  // 等）全部在 hin2n App 内维护，与本文件无关。
   "hin2n": {
-    "bootStart": false,                // 开机自动连接 n2n 组网（也可在组网页内切换；与上面的 bootStart 互不影响）
-    "staticRoutes": "",                // 静态路由，多条用空格分隔；"CIDR 网关IP" 成对，如 "192.168.8.0/24 10.0.0.13"
-    "configs": [
-      {
-        // ---- 基本配置 ----
-        "version": 3,                  // 协议版本：0=n2n_v1, 1=n2n_v2, 2=n2n_v2s, 3=n2n_v3
-        "name": "默认组网",             // 配置名称
-        "ipMode": 0,                   // IP 分配：0=手动填写 ip；1=由超节点分配（等价 "fromSupernode": true）
-        "ip": "10.0.0.6",              // 虚拟 IP（ipMode=0 时必填）
-        "netmask": "255.255.255.0",    // 子网掩码
-        "community": "mynet",          // 组网名称（community，最长 20 字符）
-        "password": "",                // 组网密钥
-        "devDesc": "tvbox",            // 设备描述（v2/v3）
-        "superNode": "supernode.ntop.org:7777", // 超节点 地址:端口
-                                         // 留空时按版本取默认：v1 hin2n.nton.eu.org:10082
-                                         // v2 hin2n.nton.eu.org:10086 / v2s :10088 / v3 supernode.ntop.org:7777
-        "selected": true,              // 是否作为当前配置（首条默认选中）
-
-        // ---- 高级配置（moreSettings=true 时界面展开；不填按默认） ----
-        "moreSettings": true,
-        "superNodeBackup": "",         // 备用超节点
-        "macAddr": "",                 // 虚拟 MAC，空=随机；格式 "AA:BB:CC:DD:EE:FF"
-        "mtu": 1328,                   // MTU，范围 46-1500
-        "localIP": "",                 // 本地 IP，"auto" 或留空=自动（等价 "localIpAuto": true，v2s/v3）
-        "holePunchInterval": 20,       // 打洞间隔（秒，v2s）
-        "resolveSupernodeIp": false,   // 预先解析超节点域名（v1/v2s）
-        "localPort": 0,                // 本地端口，0=随机
-        "allowRouting": false,         // 允许路由转发（-r）
-        "acceptMulticast": false,      // 接受组播/广播（-E，ARP 依赖它，ping 不通对端时尝试打开）
-                                         // 也可写反义字段 "dropMulticast": true
-        "httpTunnel": false,           // 优先 HTTP 隧道（-H）
-        "traceLevel": 2,               // 日志级别：0=错误 1=警告 2=普通 3=信息 4=调试
-        "gatewayIp": "",               // 虚拟网关（v2/v3）
-        "dnsServer": "",               // DNS 服务器（v2/v3）
-        "encryptionMode": "Twofish",   // 加密方式：Twofish | AES-CBC | ChaCha20 | Speck-CTR（v2/v3）
-        "headerEnc": false             // 启用包头加密（v2/v3）
-      }
-      // 需要内置多条配置时继续追加对象即可，例如：
-      // ,{ "version": 2, "name": "办公室", "ip": "10.1.0.6",
-      //    "community": "office", "superNode": "sn.example.com:5645", "selected": false }
-    ]
+    "apkUrl": ""                       // hin2n App 的 APK 下载地址（可选）
   },
 
   // ============================ 首页自定义入口（旧版，仅第三方 App，作用于顶栏） ============================
@@ -212,7 +173,7 @@
   //   url    type=app 时未安装的 APK 下载地址（可选）
   //   theme  仅 type=vod：自定义点播界面的独立主题（可填主题索引数字、内置主题中文名或英文别名），
   //          该界面及其打开的影片详情/播放页使用此主题，与主界面互不影响；空=跟随全局主题
-  // 组网入口（type=page,target=hin2n）图标颜色会随连接状态自动变化（黄=连接中 绿=已连接 红=失败）
+  // 组网入口（type=page,target=hin2n）= 独立 hin2n App 入口：已安装拉起，未安装按 hin2n.apkUrl 下载安装
   "topEntries": [
     { "name": "网络",   "type": "feature", "target": "wifi",        "icon": "" },
     { "name": "搜索",   "type": "page",    "target": "search",      "icon": "hm_search" },

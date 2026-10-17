@@ -9,4 +9,10 @@
     <color name="termail_gray">#302C2C</color>
     <color name="c_black">#000000</color>
     <color name="c_eeeeee">#eeeeee</color>
+
+    <!-- hin2n 独立 App 固定深色配色（原 TVBox 主题色，拆分后固定） -->
+    <color name="color_FFFFFF_90">#E6FFFFFF</color>
+    <color name="color_FFFFFF_50">#80FFFFFF</color>
+    <color name="hin2n_bg">#FF1A1A1A</color>
+    <color name="hin2n_accent">#18A2E7</color>
 </resources>

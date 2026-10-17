@@ -257,13 +257,21 @@ public class CustomVodActivity extends BaseActivity {
         sourceViewModel.sortResult.observe(this, new Observer<AbsSortXml>() {
             @Override
             public void onChanged(AbsSortXml absXml) {
-                String key = ApiConfig.get().getHomeSourceBean() != null ? ApiConfig.get().getHomeSourceBean().getKey() : "";
-                if (absXml != null && absXml.classes != null && absXml.classes.sortList != null) {
-                    sortAdapter.setNewData(DefaultConfig.adjustSort(key, absXml.classes.sortList, false));
-                } else {
-                    sortAdapter.setNewData(DefaultConfig.adjustSort(key, new ArrayList<>(), false));
+                try {
+                    if (isFinishing() || isDestroyed()) {
+                        return;
+                    }
+                    String key = ApiConfig.get().getHomeSourceBean() != null ? ApiConfig.get().getHomeSourceBean().getKey() : "";
+                    if (absXml != null && absXml.classes != null && absXml.classes.sortList != null) {
+                        sortAdapter.setNewData(DefaultConfig.adjustSort(key, absXml.classes.sortList, false));
+                    } else {
+                        sortAdapter.setNewData(DefaultConfig.adjustSort(key, new ArrayList<>(), false));
+                    }
+                    initViewPager();
+                } catch (Throwable t) {
+                    // 切换源过程中的任何异常都不允许崩进程
+                    showEmpty();
                 }
-                initViewPager();
             }
         });
     }
@@ -567,6 +575,15 @@ public class CustomVodActivity extends BaseActivity {
         currentSelected = 0;
         sortFocused = 0;
         String key = ApiConfig.get().getHomeSourceBean() != null ? ApiConfig.get().getHomeSourceBean().getKey() : "";
+        // 取消其它 cv_ 源仍在途的 homeContent 请求，避免旧响应后到达覆盖新源列表
+        try {
+            for (SourceBean sb : customSources) {
+                if (sb.getKey() != null && !sb.getKey().equals(key)) {
+                    OkGo.getInstance().cancelTag(sb.getKey() + "_sort");
+                }
+            }
+        } catch (Throwable ignored) {
+        }
         sourceViewModel.getSort(key, true);
     }
 }

@@ -658,17 +658,6 @@ public class HomeActivity extends BaseActivity {
         }
     }
 
-    /** hin2n 连接状态变化：顶栏 tvHin2n 图标按状态染色（拨号中=黄/已连接=绿/失败=红/未拨号=原色） */
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    public void onHin2nStateChanged(com.github.tvbox.osc.n2n.Hin2nEntryState.ChangedEvent event) {
-        android.widget.ImageView tvHin2n = findViewById(R.id.tvHin2n);
-        if (tvHin2n != null) {
-            com.github.tvbox.osc.n2n.HomeEntry.applyStateTint(tvHin2n);
-        }
-        // JSON topEntries 整体替换顶栏时，动态生成的组网图标同步染色
-        com.github.tvbox.osc.n2n.HomeEntry.retintStateIcons(this);
-    }
-
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (event.getAction() == KeyEvent.ACTION_DOWN) {

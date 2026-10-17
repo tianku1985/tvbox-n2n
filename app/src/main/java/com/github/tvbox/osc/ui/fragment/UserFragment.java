@@ -15,7 +15,6 @@ import com.github.tvbox.osc.api.ApiConfig;
 import com.github.tvbox.osc.base.BaseLazyFragment;
 import com.github.tvbox.osc.bean.Movie;
 import com.github.tvbox.osc.n2n.RemoteConfig;
-import com.github.tvbox.osc.n2n.ui.Hin2nActivity;
 import com.github.tvbox.osc.bean.VodInfo;
 import com.github.tvbox.osc.cache.RoomDataManger;
 import com.github.tvbox.osc.event.ServerEvent;
@@ -130,11 +129,6 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         tvPush = findViewById(R.id.tvPush);
         tvHin2nHome = findViewById(R.id.tvHin2nHome);
         tvHin2nHome.setVisibility(RemoteConfig.hin2nEntryEnabled() ? View.VISIBLE : View.GONE);
-        // 入口图标按 hin2n 连接状态染色（拨号中=黄/已连接=绿/失败=红/未拨号=原色）
-        android.widget.ImageView hmHin2n = findViewById(R.id.hm_hin2n);
-        if (hmHin2n != null) {
-            com.github.tvbox.osc.n2n.HomeEntry.applyStateTint(hmHin2n);
-        }
         tvDrive.setOnClickListener(this);
         tvVod.setOnClickListener(this);
         tvLive.setOnClickListener(this);
@@ -342,10 +336,6 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
             iv.setLayoutParams(ilp);
             iv.setAlpha(0.9f);
             com.github.tvbox.osc.n2n.EntryDispatcher.loadIcon(mContext, iv, e);
-            if (com.github.tvbox.osc.n2n.EntryDispatcher.isHin2nEntry(e)) {
-                iv.setTag("hin2n_state");
-                com.github.tvbox.osc.n2n.HomeEntry.applyStateTint(iv);
-            }
             card.addView(iv);
 
             android.widget.TextView tv = new android.widget.TextView(mContext);
@@ -528,38 +518,18 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         } else if (v.getId() == R.id.tvDrive) {
             jumpActivity(DriveActivity.class);
         } else if (v.getId() == R.id.tvHin2nHome) {
-            startActivity(new Intent(mContext, Hin2nActivity.class));
+            // 组网入口：独立 hin2n App（已安装拉起，未安装走下载安装管线）
+            RemoteConfig.Entry e = new RemoteConfig.Entry();
+            e.type = "page";
+            e.name = "组网";
+            e.target = "hin2n";
+            com.github.tvbox.osc.n2n.EntryDispatcher.open(mActivity, e);
         }
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void server(ServerEvent event) {
         if (event.type == ServerEvent.SERVER_CONNECTION) {
-        }
-    }
-
-    /** hin2n 连接状态变化：历史行「组网」卡片图标按状态染色 */
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    public void onHin2nStateChanged(com.github.tvbox.osc.n2n.Hin2nEntryState.ChangedEvent event) {
-        android.widget.ImageView hmHin2n = findViewById(R.id.hm_hin2n);
-        if (hmHin2n != null) {
-            com.github.tvbox.osc.n2n.HomeEntry.applyStateTint(hmHin2n);
-        }
-        // JSON homeEntries 整体替换时，动态生成的组网卡片图标同步染色
-        LinearLayout row = findViewById(R.id.tvUserHome);
-        if (row != null) {
-            for (int i = 0; i < row.getChildCount(); i++) {
-                View child = row.getChildAt(i);
-                if (child instanceof LinearLayout) {
-                    LinearLayout card = (LinearLayout) child;
-                    for (int j = 0; j < card.getChildCount(); j++) {
-                        View v = card.getChildAt(j);
-                        if (v instanceof android.widget.ImageView && "hin2n_state".equals(v.getTag())) {
-                            com.github.tvbox.osc.n2n.HomeEntry.applyStateTint((android.widget.ImageView) v);
-                        }
-                    }
-                }
-            }
         }
     }
 

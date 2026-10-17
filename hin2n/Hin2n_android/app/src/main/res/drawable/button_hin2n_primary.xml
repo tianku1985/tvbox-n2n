@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- hin2n 主操作按钮：API19 固定色版（API21+ 由 drawable-v21 同名文件覆盖为主题色） -->
+<!-- hin2n 主操作按钮：独立 App 固定色 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_focused="true">
         <shape>
             <corners android:radius="@dimen/vs_30" />
             <solid android:color="#CC18A2E7" />
-            <stroke android:width="2mm" android:color="@android:color/white" />
+            <stroke android:width="2dp" android:color="@android:color/white" />
         </shape>
     </item>
     <item>

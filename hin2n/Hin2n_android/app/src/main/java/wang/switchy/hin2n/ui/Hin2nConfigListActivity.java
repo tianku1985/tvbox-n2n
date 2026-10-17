@@ -1,4 +1,4 @@
-package com.github.tvbox.osc.n2n.ui;
+package wang.switchy.hin2n.ui;
 
 import android.content.DialogInterface;
 import android.content.Intent;
@@ -15,8 +15,7 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.github.tvbox.osc.R;
-import com.github.tvbox.osc.base.BaseActivity;
+import wang.switchy.hin2n.R;
 
 import java.util.ArrayList;
 import java.util.List;

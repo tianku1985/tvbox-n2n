@@ -2,4 +2,27 @@
     <!-- Default screen margins, per the Android Design guidelines. -->
     <dimen name="activity_horizontal_margin">16dp</dimen>
     <dimen name="activity_vertical_margin">16dp</dimen>
+
+    <!-- hin2n 独立 App 布局尺寸（原 TVBox autosize mm 单位改为固定 dp/sp） -->
+    <dimen name="vs_5">3dp</dimen>
+    <dimen name="vs_10">6dp</dimen>
+    <dimen name="vs_15">8dp</dimen>
+    <dimen name="vs_20">12dp</dimen>
+    <dimen name="vs_30">18dp</dimen>
+    <dimen name="vs_40">24dp</dimen>
+    <dimen name="vs_50">28dp</dimen>
+    <dimen name="vs_60">34dp</dimen>
+    <dimen name="vs_70">40dp</dimen>
+    <dimen name="vs_80">44dp</dimen>
+    <dimen name="vs_90">50dp</dimen>
+    <dimen name="vs_100">56dp</dimen>
+    <dimen name="vs_150">84dp</dimen>
+
+    <dimen name="ts_18">12sp</dimen>
+    <dimen name="ts_20">13sp</dimen>
+    <dimen name="ts_22">14sp</dimen>
+    <dimen name="ts_24">15sp</dimen>
+    <dimen name="ts_28">16sp</dimen>
+    <dimen name="ts_32">18sp</dimen>
+    <dimen name="ts_40">22sp</dimen>
 </resources>

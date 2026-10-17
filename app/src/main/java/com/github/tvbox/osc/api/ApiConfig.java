@@ -941,27 +941,32 @@ public class ApiConfig {
                     : infoJson.get("sites").getAsJsonArray();
             int idx = 0;
             for (JsonElement opt : sites) {
-                JsonObject obj = (JsonObject) opt;
-                SourceBean sb = new SourceBean();
-                String siteKey = obj.has("key") ? obj.get("key").getAsString().trim() : ("site" + idx);
-                String injectKey = CUSTOM_SRC_PREFIX + (idx++) + "_" + siteKey;
-                sb.setKey(injectKey);
-                sb.setName(obj.has("name") ? obj.get("name").getAsString().trim() : siteKey);
-                sb.setType(obj.get("type").getAsInt());
-                sb.setApi(obj.get("api").getAsString().trim());
-                sb.setSearchable(DefaultConfig.safeJsonInt(obj, "searchable", 1));
-                sb.setQuickSearch(DefaultConfig.safeJsonInt(obj, "quickSearch", 1));
-                sb.setFilterable(siteKey.startsWith("py_") ? 1 : DefaultConfig.safeJsonInt(obj, "filterable", 1));
-                sb.setHide(DefaultConfig.safeJsonInt(obj, "hide", 0));
-                sb.setPlayerUrl(DefaultConfig.safeJsonString(obj, "playUrl", ""));
-                sb.setExt(DefaultConfig.safeJsonString(obj, "ext", ""));
-                sb.setJar(DefaultConfig.safeJsonString(obj, "jar", ""));
-                sb.setPlayerType(DefaultConfig.safeJsonInt(obj, "playerType", -1));
-                sb.setCategories(DefaultConfig.safeJsonStringList(obj, "categories"));
-                sb.setClickSelector(DefaultConfig.safeJsonString(obj, "click", ""));
-                sb.setStyle(DefaultConfig.safeJsonString(obj, "style", ""));
-                sourceBeanList.put(injectKey, sb);
-                out.add(sb);
+                try {
+                    JsonObject obj = (JsonObject) opt;
+                    SourceBean sb = new SourceBean();
+                    String siteKey = obj.has("key") ? obj.get("key").getAsString().trim() : ("site" + idx);
+                    String injectKey = CUSTOM_SRC_PREFIX + (idx++) + "_" + siteKey;
+                    sb.setKey(injectKey);
+                    sb.setName(obj.has("name") ? obj.get("name").getAsString().trim() : siteKey);
+                    // 缺 type/api 的站点按 type=0 / 空串兜底，单个站点解析失败不影响其它站点注入
+                    sb.setType(DefaultConfig.safeJsonInt(obj, "type", 0));
+                    sb.setApi(obj.has("api") && !obj.get("api").isJsonNull() ? obj.get("api").getAsString().trim() : "");
+                    sb.setSearchable(DefaultConfig.safeJsonInt(obj, "searchable", 1));
+                    sb.setQuickSearch(DefaultConfig.safeJsonInt(obj, "quickSearch", 1));
+                    sb.setFilterable(siteKey.startsWith("py_") ? 1 : DefaultConfig.safeJsonInt(obj, "filterable", 1));
+                    sb.setHide(DefaultConfig.safeJsonInt(obj, "hide", 0));
+                    sb.setPlayerUrl(DefaultConfig.safeJsonString(obj, "playUrl", ""));
+                    sb.setExt(DefaultConfig.safeJsonString(obj, "ext", ""));
+                    sb.setJar(DefaultConfig.safeJsonString(obj, "jar", ""));
+                    sb.setPlayerType(DefaultConfig.safeJsonInt(obj, "playerType", -1));
+                    sb.setCategories(DefaultConfig.safeJsonStringList(obj, "categories"));
+                    sb.setClickSelector(DefaultConfig.safeJsonString(obj, "click", ""));
+                    sb.setStyle(DefaultConfig.safeJsonString(obj, "style", ""));
+                    sourceBeanList.put(injectKey, sb);
+                    out.add(sb);
+                } catch (Throwable perSite) {
+                    idx++;
+                }
             }
         } catch (Throwable ignored) {
         }

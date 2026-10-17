@@ -30,9 +30,8 @@ import java.util.List;
  *
  * 公告条渲染与滚动（含首页/直播/点播三处显示开关、由右向左方向）统一由 {@link NoticeBar} 负责；
  * 远程 JSON 的 notice/home 样式字段见 RemoteConfig 类注释；
- * hin2n 已内化为 TVBox 内置模块（:hin2n library），顶栏 tvHin2n 与历史行 tvHin2nHome
- * 点击直接打开 {@link com.github.tvbox.osc.n2n.ui.Hin2nActivity}，图标颜色随拨号状态变化
- * （{@link Hin2nEntryState}）。
+ * hin2n 组网已拆分为独立 App（包名 wang.switchy.hin2n），顶栏 tvHin2n 与历史行 tvHin2nHome
+ * 点击统一走 EntryDispatcher：已安装直接拉起，未安装且配置 hin2n.apkUrl 时后台下载安装。
  */
 public class HomeEntry {
 
@@ -44,18 +43,20 @@ public class HomeEntry {
         if (act == null) {
             return;
         }
-        // ---- hin2n 固定入口（内置模块，直接跳 TV 引导页；图标色随拨号状态） ----
+        // ---- hin2n 固定入口（独立 App：已安装拉起，未安装走下载安装管线） ----
         ImageView tvHin2n = act.findViewById(R.id.tvHin2n);
         if (tvHin2n != null) {
             tvHin2n.setVisibility(RemoteConfig.hin2nEntryEnabled() ? View.VISIBLE : View.GONE);
             tvHin2n.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    act.startActivity(new Intent(act,
-                            com.github.tvbox.osc.n2n.ui.Hin2nActivity.class));
+                    RemoteConfig.Entry e = new RemoteConfig.Entry();
+                    e.type = "page";
+                    e.name = "组网";
+                    e.target = "hin2n";
+                    EntryDispatcher.open(act, e);
                 }
             });
-            applyStateTint(tvHin2n);
         }
         // ---- 公告/入口/外观：先用缓存渲染，再后台拉取最新配置 ----
         populate(act);
@@ -104,8 +105,6 @@ public class HomeEntry {
             }
             buildTopEntries(act, bar, top);
             applyHomeStyleToEntries(act);
-            // 样式应用可能 clearColorFilter，重新按连接状态染 hin2n 图标
-            retintStateIcons(act);
             return;
         }
         // 旧版 "entries"：仅 app 类型，点击拉起对应 App（未安装且配 url 时后台下载安装）
@@ -113,9 +112,6 @@ public class HomeEntry {
         buildTopEntries(act, bar, entries);
         // 外观：入口配色对动态生成的图标同样生效
         applyHomeStyleToEntries(act);
-        // applyHomeStyleToEntries 里 iconColor=0 时会 clearColorFilter，把状态色抹掉；
-        // populate 末尾重新按 hin2n 连接状态给 tvHin2n 染色，保证拨号中/已连接/失败颜色不被覆盖
-        applyStateTint((ImageView) act.findViewById(R.id.tvHin2n));
     }
 
     /** 顶栏动态入口渲染：图标按钮（vs_50），点击统一走 EntryDispatcher */
@@ -124,11 +120,6 @@ public class HomeEntry {
         int margin = act.getResources().getDimensionPixelSize(R.dimen.vs_15);
         int pad = act.getResources().getDimensionPixelSize(R.dimen.vs_10);
         for (final RemoteConfig.Entry e : entries) {
-            // hin2n 已内化为内置模块（走顶栏/历史行固定入口或 type=page/target=hin2n），
-            // 跳过旧缓存里残留的第三方 hin2n App 入口，防止误点出"未安装"提示
-            if ("app".equals(e.type) && e.pkg != null && e.pkg.startsWith("wang.switchy.hin2n")) {
-                continue;
-            }
             ImageView iv = new ImageView(act);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(size, size);
             lp.setMarginStart(margin);
@@ -140,10 +131,6 @@ public class HomeEntry {
             iv.setFocusable(true);
             iv.setContentDescription(e.name);
             EntryDispatcher.loadIcon(act, iv, e);
-            if (EntryDispatcher.isHin2nEntry(e)) {
-                iv.setTag("hin2n_state");
-                applyStateTint(iv);
-            }
             iv.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -151,33 +138,6 @@ public class HomeEntry {
                 }
             });
             bar.addView(iv);
-        }
-    }
-
-    /** 为 entryBar 内标记了 hin2n_state 的动态图标重新染色（连接状态变化时调用） */
-    public static void retintStateIcons(Activity act) {
-        try {
-            LinearLayout bar = act.findViewById(R.id.entryBar);
-            if (bar == null) return;
-            for (int i = 0; i < bar.getChildCount(); i++) {
-                View v = bar.getChildAt(i);
-                if (v instanceof ImageView && "hin2n_state".equals(v.getTag())) {
-                    applyStateTint((ImageView) v);
-                }
-            }
-        } catch (Throwable ignored) {}
-    }
-
-    /** 入口图标按 hin2n 连接状态染色（未拨号=原色 / 拨号中=黄 / 已连接=绿 / 失败=红） */
-    public static void applyStateTint(ImageView iv) {
-        if (iv == null) {
-            return;
-        }
-        int color = Hin2nEntryState.colorFor(Hin2nEntryState.current());
-        if (color != 0) {
-            iv.setColorFilter(color);
-        } else {
-            iv.clearColorFilter();
         }
     }
 

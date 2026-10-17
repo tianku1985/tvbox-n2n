@@ -1,4 +1,4 @@
-package com.github.tvbox.osc.n2n.ui;
+package wang.switchy.hin2n.ui;
 
 import android.app.Activity;
 import android.content.DialogInterface;
@@ -15,8 +15,7 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
 
-import com.github.tvbox.osc.R;
-import com.github.tvbox.osc.base.BaseActivity;
+import wang.switchy.hin2n.R;
 
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
@@ -45,7 +44,7 @@ import wang.switchy.hin2n.tool.IOUtils;
  * - 进入配置管理（列表 / 新建 / 编辑）；
  * - 开机启动开关（勾选需先进行系统 VPN 授权）；
  * - Ping 测试、运行日志轮询。
- * 颜色全部使用 ?attr/color_theme*（API19 由 drawable 固定色兜底），随 TVBox 主题变化。
+ * 独立 App 版：固定深色背景 + 白字，无 TVBox 主题依赖。
  */
 public class Hin2nActivity extends BaseActivity implements View.OnClickListener {
 
@@ -316,23 +315,15 @@ public class Hin2nActivity extends BaseActivity implements View.OnClickListener 
         final EditText et = new EditText(this);
         et.setHint("主机名或 IP，如 10.0.0.1");
         et.setSingleLine(true);
-        // 输入框随主题变化：背景优先用 JSON home.inputBgColor，缺省用当前主题深色(bgStart)；
-        // 文字/提示色按背景亮度自动取黑或白，避免浅色对话框上「白字白底」看不见输入内容。
-        int bg = com.github.tvbox.osc.n2n.HomeEntry.parseColor(
-                com.github.tvbox.osc.n2n.RemoteConfig.homeStyle().optString("inputBgColor", ""));
-        if (bg == 0) {
-            int[] pair = com.github.tvbox.osc.n2n.ThemeManager.currentBgPair();
-            bg = 0xCC000000 | (pair[0] & 0xFFFFFF);
-        }
+        // 独立 App 固定深色输入框 + 白字
+        int bg = 0xFF2A2A2A;
         android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
         gd.setColor(bg);
         float radius = 10 * getResources().getDisplayMetrics().density;
         gd.setCornerRadius(radius);
         et.setBackground(gd);
-        int luminance = (int) (0.299 * ((bg >> 16) & 0xFF) + 0.587 * ((bg >> 8) & 0xFF) + 0.114 * (bg & 0xFF));
-        int fg = luminance < 128 ? 0xFFFFFFFF : 0xFF1A1A1A;
-        et.setTextColor(fg);
-        et.setHintTextColor((fg & 0x00FFFFFF) | 0x99000000);
+        et.setTextColor(0xFFFFFFFF);
+        et.setHintTextColor(0x99FFFFFF);
         int pad = (int) (16 * getResources().getDisplayMetrics().density);
         et.setPadding(pad, pad / 2, pad, pad / 2);
         new AlertDialog.Builder(this)

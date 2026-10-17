@@ -1,4 +1,4 @@
-package com.github.tvbox.osc.n2n.ui;
+package wang.switchy.hin2n.ui;
 
 import android.app.Activity;
 import android.content.DialogInterface;
@@ -17,8 +17,7 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
 
-import com.github.tvbox.osc.R;
-import com.github.tvbox.osc.base.BaseActivity;
+import wang.switchy.hin2n.R;
 
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
