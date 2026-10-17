@@ -789,6 +789,66 @@ public class ApiConfig {
         return sourceBeanList.get(key);
     }
 
+    /** 自定义点播界面注入的源 key 前缀（与主配置隔离，退出界面时整体移除） */
+    public static final String CUSTOM_SRC_PREFIX = "cv_";
+
+    /**
+     * 自定义点播列表界面专用：解析与主点播接口相同格式的 json，仅取 sites 数组，
+     * 全部以 "cv_" 前缀注入源表；其它字段（live/epg/wallpaper/parses 等）一律忽略，
+     * 不影响 app 其它配置。返回注入成功的源列表（保持 json 中的顺序）。
+     */
+    public synchronized List<SourceBean> injectCustomSources(String jsonStr) {
+        removeCustomSources();
+        List<SourceBean> out = new ArrayList<>();
+        try {
+            JsonObject infoJson = new Gson().fromJson(jsonStr, JsonObject.class);
+            JsonArray sites = infoJson.has("video")
+                    ? infoJson.getAsJsonObject("video").getAsJsonArray("sites")
+                    : infoJson.get("sites").getAsJsonArray();
+            int idx = 0;
+            for (JsonElement opt : sites) {
+                JsonObject obj = (JsonObject) opt;
+                SourceBean sb = new SourceBean();
+                String siteKey = obj.has("key") ? obj.get("key").getAsString().trim() : ("site" + idx);
+                String injectKey = CUSTOM_SRC_PREFIX + (idx++) + "_" + siteKey;
+                sb.setKey(injectKey);
+                sb.setName(obj.has("name") ? obj.get("name").getAsString().trim() : siteKey);
+                sb.setType(obj.get("type").getAsInt());
+                sb.setApi(obj.get("api").getAsString().trim());
+                sb.setSearchable(DefaultConfig.safeJsonInt(obj, "searchable", 1));
+                sb.setQuickSearch(DefaultConfig.safeJsonInt(obj, "quickSearch", 1));
+                sb.setFilterable(siteKey.startsWith("py_") ? 1 : DefaultConfig.safeJsonInt(obj, "filterable", 1));
+                sb.setHide(DefaultConfig.safeJsonInt(obj, "hide", 0));
+                sb.setPlayerUrl(DefaultConfig.safeJsonString(obj, "playUrl", ""));
+                sb.setExt(DefaultConfig.safeJsonString(obj, "ext", ""));
+                sb.setJar(DefaultConfig.safeJsonString(obj, "jar", ""));
+                sb.setPlayerType(DefaultConfig.safeJsonInt(obj, "playerType", -1));
+                sb.setCategories(DefaultConfig.safeJsonStringList(obj, "categories"));
+                sb.setClickSelector(DefaultConfig.safeJsonString(obj, "click", ""));
+                sb.setStyle(DefaultConfig.safeJsonString(obj, "style", ""));
+                sourceBeanList.put(injectKey, sb);
+                out.add(sb);
+            }
+        } catch (Throwable ignored) {
+        }
+        return out;
+    }
+
+    /** 移除全部自定义点播界面注入的源（退出自定义点播界面时调用） */
+    public synchronized void removeCustomSources() {
+        List<String> keys = new ArrayList<>(sourceBeanList.keySet());
+        for (String k : keys) {
+            if (k != null && k.startsWith(CUSTOM_SRC_PREFIX)) {
+                sourceBeanList.remove(k);
+            }
+        }
+    }
+
+    /** 仅切换内存中的当前源（不写 Hawk）：自定义点播界面用，退出后由调用方恢复 */
+    public void setHomeSourceTemp(SourceBean sourceBean) {
+        this.mHomeSource = sourceBean;
+    }
+
     public void setSourceBean(SourceBean sourceBean) {
         this.mHomeSource = sourceBean;
         Hawk.put(HawkConfig.HOME_API, sourceBean.getKey());

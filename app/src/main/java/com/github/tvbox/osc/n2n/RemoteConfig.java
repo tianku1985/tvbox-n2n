@@ -49,8 +49,20 @@ import java.util.List;
  *     "staticRoutes": "192.168.8.0/24 10.0.0.13",
  *     "configs": [ { ... 28 个字段，见 docs/hin2n.md ... } ]
  *   },
- *   "entries": [ {"name":"文件管理","pkg":"...","icon":"...","url":"..."} ]
+ *   "entries": [ {"name":"文件管理","pkg":"...","icon":"...","url":"..."} ],
+ *   "topEntries": [                               // 顶栏整体替换（缺省=内置默认顶栏）
+ *     {"name":"搜索","type":"page","target":"search","icon":"hm_search"},
+ *     {"name":"切源","type":"feature","target":"siteSwitch","icon":"hm_drawer"},
+ *     {"name":"文件","type":"app","pkg":"com.x","icon":"","url":"http://.../a.apk"},
+ *     {"name":"影院","type":"vod","target":"assets/vod.json","icon":"hm_vod"} ],
+ *   "homeEntries": [ ...同 topEntries... ]        // 历史一行整体替换
  * }
+ *
+ * 入口类型：page=打开 TVBox 界面（target: vod/live/search/history/collect/push/
+ * setting/drive/hin2n/apps/fastsearch）；feature=内置功能（target: siteSwitch/
+ * themeSwitch/styleSwitch/clearCache/reloadHome/wifi/date）；app=打开其他 App
+ * （pkg，未安装且配 url 时后台下载安装）；vod=打开自定义点播列表界面（target=
+ * 数据接口，格式同点播 api json 但仅供该界面，不影响 app 其它配置）。
  *
  * 覆盖规则：notice/home/tkp2p/entries/themes/hin2nEntry/checkInterval/ua 每次启动应用；
  * bootStart 只作为默认值写入一次；api/live/epg/proxy 仅在用户未配置时作为默认值。
@@ -65,6 +77,8 @@ public class RemoteConfig {
     public static final String K_CHECK_INTERVAL = "rc_check_interval";
     public static final String K_UA = "rc_ua";
     public static final String K_ENTRIES = "rc_entries";
+    public static final String K_TOP_ENTRIES = "rc_top_entries";
+    public static final String K_HOME_ENTRIES = "rc_home_entries";
     public static final String K_HIN2N = "rc_hin2n_entry";
     public static final String K_BOOT = "n2n_boot_start";      // TVBox 开机自启开关（用户值优先）
     public static final String K_BOOT_DEFAULT_SET = "n2n_boot_default_set"; // 内置默认值是否已写入过
@@ -78,9 +92,13 @@ public class RemoteConfig {
     /** 单个自定义入口 */
     public static class Entry {
         public String name;
-        public String pkg;
-        public String icon;
-        public String url;   // 未安装时的下载地址（可选）
+        public String type;    // page=打开 TVBox 界面 | feature=内置功能 | app=打开其他 App | vod=自定义点播界面
+        public String target;  // page: vod/live/search/history/collect/push/setting/drive/hin2n/apps/fastsearch
+                               // feature: siteSwitch/themeSwitch/styleSwitch/clearCache/reloadHome/wifi/date
+                               // vod: 数据接口地址（http(s):// 或 assets/xxx.json），格式同点播 api json 但仅供新界面
+        public String pkg;     // app: 包名
+        public String icon;    // 图标：http(s) URL 或内置 drawable 名（如 hm_search），空=兜底图标
+        public String url;     // app 未安装时的 APK 下载地址（可选）
     }
 
     public interface Callback {
@@ -137,11 +155,29 @@ public class RemoteConfig {
         return Hawk.get(K_BOOT, false);
     }
 
-    /** 读取已缓存的自定义入口列表 */
+    /** 读取已缓存的自定义入口列表（旧版 "entries"，仅 app 类型，顶栏兜底） */
     public static List<Entry> entries() {
+        return parseEntries(Hawk.get(K_ENTRIES, ""));
+    }
+
+    /**
+     * 顶栏入口配置（"topEntries"）：返回 null 表示未配置（保持内置默认顶栏）；
+     * 非 null（可为空列表）表示整体替换顶栏图标，顺序/内容/图标全部按 JSON。
+     */
+    public static List<Entry> topEntries() {
+        String raw = Hawk.get(K_TOP_ENTRIES, null);
+        return raw == null ? null : parseEntries(raw);
+    }
+
+    /** 首页历史一行入口配置（"homeEntries"）：null=保持内置默认行；非 null=整体替换 */
+    public static List<Entry> homeEntries() {
+        String raw = Hawk.get(K_HOME_ENTRIES, null);
+        return raw == null ? null : parseEntries(raw);
+    }
+
+    private static List<Entry> parseEntries(String raw) {
         List<Entry> list = new ArrayList<>();
-        String raw = Hawk.get(K_ENTRIES, "");
-        if (raw.isEmpty()) {
+        if (raw == null || raw.isEmpty()) {
             return list;
         }
         try {
@@ -153,12 +189,19 @@ public class RemoteConfig {
                 }
                 Entry e = new Entry();
                 e.name = o.optString("name", "");
+                e.type = o.optString("type", "").trim();
+                e.target = o.optString("target", "").trim();
                 e.pkg = o.optString("pkg", "");
                 e.icon = o.optString("icon", "");
                 e.url = o.optString("url", "");
-                if (!e.pkg.isEmpty()) {
-                    list.add(e);
+                if (e.type.isEmpty()) {
+                    // 兼容旧格式：有 pkg 即 app 入口
+                    e.type = e.pkg.isEmpty() ? "page" : "app";
                 }
+                if (e.name.isEmpty()) {
+                    e.name = e.pkg;
+                }
+                list.add(e);
             }
         } catch (Throwable ignored) {
         }
@@ -311,6 +354,14 @@ public class RemoteConfig {
         if (j.has("entries")) {
             Hawk.put(K_ENTRIES, j.optJSONArray("entries") != null
                     ? j.optJSONArray("entries").toString() : "");
+        }
+        if (j.has("topEntries")) {
+            Hawk.put(K_TOP_ENTRIES, j.optJSONArray("topEntries") != null
+                    ? j.optJSONArray("topEntries").toString() : "[]");
+        }
+        if (j.has("homeEntries")) {
+            Hawk.put(K_HOME_ENTRIES, j.optJSONArray("homeEntries") != null
+                    ? j.optJSONArray("homeEntries").toString() : "[]");
         }
         if (j.has("hin2nEntry")) {
             Hawk.put(K_HIN2N, j.optBoolean("hin2nEntry", true));

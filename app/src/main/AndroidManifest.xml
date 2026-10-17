@@ -64,6 +64,12 @@
             android:screenOrientation="sensorLandscape"
             android:exported="false"
             android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation" />
+        <!-- 自定义点播列表界面（JSON 入口 type=vod 打开，数据接口独立） -->
+        <activity
+            android:name=".ui.activity.CustomVodActivity"
+            android:screenOrientation="sensorLandscape"
+            android:exported="false"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation" />
         <activity
             android:name=".ui.activity.PlayActivity"
             android:screenOrientation="sensorLandscape"

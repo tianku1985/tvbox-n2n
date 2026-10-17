@@ -115,10 +115,42 @@
     ]
   },
 
-  // ============================ 首页自定义入口（第三方 App） ============================
-  // 已安装直接打开；未安装则点击无响应（hin2n 已内化为 TVBox 模块，请勿在此配置 hin2n，
-  // 其固定入口走顶栏图标 + 历史行「组网」卡片，由 hin2nEntry 开关控制显隐）
+  // ============================ 首页自定义入口（旧版，仅第三方 App，作用于顶栏） ============================
+  // 已安装直接打开；未安装且配置 url 时后台下载 APK（顶部显示进度条），完成后自动调起安装。
+  // 顶栏需要更多类型/自定义顺序时请改用下面的 topEntries（配置后 entries 不再生效）
   "entries": [
-    // { "name": "文件管理", "pkg": "com.android.filemanager", "icon": "" }
+    // { "name": "文件管理", "pkg": "com.android.filemanager", "icon": "", "url": "" }
+  ],
+
+  // ============================ 顶栏入口（topEntries，整体替换内置顶栏图标） ============================
+  // 配置后顶栏固定图标（wifi/搜索/单双排/主题/收藏/设置/组网）全部隐藏，内容/顺序/图标完全按本数组。
+  // 不配置（删除本字段）则保持内置默认顶栏。元素字段：
+  //   name   显示名称（顶栏仅作 contentDescription，历史一行显示在图标右侧）
+  //   type   page=打开 TVBox 界面 | feature=内置功能 | app=打开其他 App | vod=自定义点播界面
+  //   target type=page   : vod live search fastsearch history collect push setting drive apps hin2n
+  //          type=feature: siteSwitch themeSwitch styleSwitch clearCache reloadHome wifi date
+  //          type=vod    : 数据接口地址（http(s):// 或 assets/xxx.json 或绝对路径），
+  //                        格式与点播 api json 完全一致（取其中 sites），但仅供该新界面，app 其它配置不调用
+  //   pkg    type=app 时的包名；未安装且配 url 时后台下载安装（顶部进度条）
+  //   icon   http(s) 图片地址或内置 drawable 名（如 hm_search hm_vod hm_live hm_history
+  //          hm_fav hm_push hm_folder hm_settings hm_drawer ic_theme ic_hin2n），空=兜底图标
+  //   url    type=app 时未安装的 APK 下载地址（可选）
+  "topEntries": [
+    // { "name": "搜索",   "type": "page",    "target": "search",     "icon": "hm_search" },
+    // { "name": "切源",   "type": "feature", "target": "siteSwitch", "icon": "hm_drawer" },
+    // { "name": "主题",   "type": "feature", "target": "themeSwitch","icon": "ic_theme" },
+    // { "name": "组网",   "type": "page",    "target": "hin2n",      "icon": "ic_hin2n" },
+    // { "name": "文件",   "type": "app",     "pkg": "com.android.filemanager", "icon": "", "url": "" },
+    // { "name": "我的影院","type": "vod",    "target": "assets/vod-custom.json", "icon": "hm_vod" }
+  ],
+
+  // ============================ 首页历史一行入口（homeEntries，整体替换） ============================
+  // 配置后首页「历史/点播/直播/搜索/收藏/推送/文件/设置/组网」一行整体替换为本数组，
+  // 字段与 topEntries 完全相同；不配置（删除本字段）则保持内置默认一行。
+  "homeEntries": [
+    // { "name": "历史", "type": "page", "target": "history", "icon": "hm_history" },
+    // { "name": "点播", "type": "page", "target": "vod",     "icon": "hm_vod" },
+    // { "name": "直播", "type": "page", "target": "live",    "icon": "hm_live" },
+    // { "name": "影院", "type": "vod",  "target": "https://example.com/vod.json", "icon": "" }
   ]
 }

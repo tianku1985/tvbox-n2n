@@ -153,6 +153,8 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         tvPush.setOnFocusChangeListener(focusChangeListener);
         tvCollect.setOnFocusChangeListener(focusChangeListener);
         tvHin2nHome.setOnFocusChangeListener(focusChangeListener);
+        // JSON "homeEntries" 配置存在时整体替换历史一行入口：内容/顺序/图标全部按 JSON
+        rebuildHomeEntriesIfConfigured();
         // 焦点在入口行与下方内容列表之间移动时，外层 ScrollView 跟随滚动，
         // 让「历史」一行入口随内容列表一起上/下滚动（D-pad 上下）。
         installScrollFollow();
@@ -291,6 +293,82 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         } else {
             tvHotListForGrid.setVisibility(View.GONE);
             tvHotListForLine.setVisibility(View.VISIBLE);
+        }
+    }
+
+    /**
+     * JSON "homeEntries" 整体替换历史一行：移除布局内置的固定入口卡片，
+     * 按 JSON 数组顺序动态生成相同样式的卡片，点击统一走 EntryDispatcher
+     * （page=打开界面 / feature=内置功能 / app=其他 App / vod=自定义点播界面）。
+     * 未配置时保持布局原样。
+     */
+    private void rebuildHomeEntriesIfConfigured() {
+        java.util.List<RemoteConfig.Entry> entries = RemoteConfig.homeEntries();
+        if (entries == null) {
+            return;
+        }
+        LinearLayout row = findViewById(R.id.tvUserHome);
+        if (row == null) {
+            return;
+        }
+        row.removeAllViews();
+        android.content.res.Resources res = getResources();
+        int h = res.getDimensionPixelSize(R.dimen.vs_100);
+        int margin = res.getDimensionPixelSize(R.dimen.vs_5);
+        int pad = res.getDimensionPixelSize(R.dimen.vs_15);
+        int minW = res.getDimensionPixelSize(R.dimen.vs_150);
+        int iconW = res.getDimensionPixelSize(R.dimen.vs_40);
+        int iconMargin = res.getDimensionPixelSize(R.dimen.vs_3);
+        int tvPad = res.getDimensionPixelSize(R.dimen.vs_3);
+        for (final RemoteConfig.Entry e : entries) {
+            LinearLayout card = new LinearLayout(mContext);
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, h);
+            clp.setMargins(margin, margin, margin, margin);
+            card.setLayoutParams(clp);
+            card.setGravity(android.view.Gravity.CENTER);
+            card.setMinimumWidth(minW);
+            card.setOrientation(LinearLayout.HORIZONTAL);
+            card.setPadding(pad, pad, pad, pad);
+            card.setBackgroundResource(R.drawable.shape_user_home);
+            card.setClickable(true);
+            card.setFocusable(true);
+            card.setContentDescription(e.name);
+
+            android.widget.ImageView iv = new android.widget.ImageView(mContext);
+            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(iconW,
+                    LinearLayout.LayoutParams.MATCH_PARENT);
+            ilp.setMargins(iconMargin, iconMargin, iconMargin, iconMargin);
+            iv.setLayoutParams(ilp);
+            iv.setAlpha(0.9f);
+            com.github.tvbox.osc.n2n.EntryDispatcher.loadIcon(mContext, iv, e.icon);
+            card.addView(iv);
+
+            android.widget.TextView tv = new android.widget.TextView(mContext);
+            LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            tv.setLayoutParams(tlp);
+            tv.setGravity(android.view.Gravity.CENTER);
+            tv.setPadding(tvPad, tvPad, tvPad, tvPad);
+            tv.setText(e.name);
+            tv.setTextColor(0xE6FFFFFF); // color_FFFFFF_90
+            tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
+                    res.getDimensionPixelSize(R.dimen.ts_24));
+            tv.setTypeface(android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.NORMAL));
+            tv.setFocusable(false);
+            tv.setClickable(false);
+            card.addView(tv);
+
+            card.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    FastClickCheckUtil.check(v);
+                    com.github.tvbox.osc.n2n.EntryDispatcher.open(mActivity, e);
+                }
+            });
+            card.setOnFocusChangeListener(focusChangeListener);
+            row.addView(card);
         }
     }
 

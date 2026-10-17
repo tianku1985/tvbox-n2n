@@ -85,20 +85,46 @@ public class HomeEntry {
         applyBackground(act);
         applyHomeStyle(act);
         NoticeBar.show(act, NoticeBar.SCREEN_HOME);
-        // 自定义入口栏：按远程 JSON 动态生成图标，点击拉起对应 App
+        // 自定义入口栏：按远程 JSON 动态生成图标
         LinearLayout bar = act.findViewById(R.id.entryBar);
         if (bar == null) {
             return;
         }
         bar.removeAllViews();
+        // topEntries 配置存在时整体替换顶栏：隐藏全部内置固定图标，顺序/内容/图标全按 JSON
+        List<RemoteConfig.Entry> top = RemoteConfig.topEntries();
+        if (top != null) {
+            int[] fixedIds = {R.id.tvWifi, R.id.tvFind, R.id.tvStyle, R.id.tvTheme,
+                    R.id.tvDrawer, R.id.tvN2n, R.id.tvHin2n};
+            for (int id : fixedIds) {
+                View v = act.findViewById(id);
+                if (v != null) {
+                    v.setVisibility(View.GONE);
+                }
+            }
+            buildTopEntries(act, bar, top);
+            applyHomeStyleToEntries(act);
+            return;
+        }
+        // 旧版 "entries"：仅 app 类型，点击拉起对应 App（未安装且配 url 时后台下载安装）
         List<RemoteConfig.Entry> entries = RemoteConfig.entries();
+        buildTopEntries(act, bar, entries);
+        // 外观：入口配色对动态生成的图标同样生效
+        applyHomeStyleToEntries(act);
+        // applyHomeStyleToEntries 里 iconColor=0 时会 clearColorFilter，把状态色抹掉；
+        // populate 末尾重新按 hin2n 连接状态给 tvHin2n 染色，保证拨号中/已连接/失败颜色不被覆盖
+        applyStateTint((ImageView) act.findViewById(R.id.tvHin2n));
+    }
+
+    /** 顶栏动态入口渲染：图标按钮（vs_50），点击统一走 EntryDispatcher */
+    private static void buildTopEntries(final Activity act, LinearLayout bar, List<RemoteConfig.Entry> entries) {
         int size = act.getResources().getDimensionPixelSize(R.dimen.vs_50);
         int margin = act.getResources().getDimensionPixelSize(R.dimen.vs_15);
         int pad = act.getResources().getDimensionPixelSize(R.dimen.vs_10);
         for (final RemoteConfig.Entry e : entries) {
-            // hin2n 已内化为内置模块（走顶栏/历史行固定入口），跳过第三方 App 入口渲染，
-            // 防止历史 Hawk 缓存里残留的 hin2n 条目再被 point 出"未安装"弹窗
-            if (e.pkg != null && e.pkg.startsWith("wang.switchy.hin2n")) {
+            // hin2n 已内化为内置模块（走顶栏/历史行固定入口或 type=page/target=hin2n），
+            // 跳过旧缓存里残留的第三方 hin2n App 入口，防止误点出"未安装"提示
+            if ("app".equals(e.type) && e.pkg != null && e.pkg.startsWith("wang.switchy.hin2n")) {
                 continue;
             }
             ImageView iv = new ImageView(act);
@@ -111,31 +137,15 @@ public class HomeEntry {
             iv.setClickable(true);
             iv.setFocusable(true);
             iv.setContentDescription(e.name);
-            if (e.icon != null && !e.icon.isEmpty()) {
-                Glide.with(act).load(e.icon).into(iv);
-            } else {
-                iv.setImageResource(R.drawable.hm_drawer);   // 无图标时用应用抽屉图标兜底
-            }
+            EntryDispatcher.loadIcon(act, iv, e.icon);
             iv.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    try {
-                        Intent it = v.getContext().getPackageManager()
-                                .getLaunchIntentForPackage(e.pkg);
-                        if (it != null) {
-                            v.getContext().startActivity(it);
-                        }
-                    } catch (Throwable ignored) {
-                    }
+                    EntryDispatcher.open(act, e);
                 }
             });
             bar.addView(iv);
         }
-        // 外观：入口配色对动态生成的图标同样生效
-        applyHomeStyleToEntries(act);
-        // applyHomeStyleToEntries 里 iconColor=0 时会 clearColorFilter，把状态色抹掉；
-        // populate 末尾重新按 hin2n 连接状态给 tvHin2n 染色，保证拨号中/已连接/失败颜色不被覆盖
-        applyStateTint((ImageView) act.findViewById(R.id.tvHin2n));
     }
 
     /** 入口图标按 hin2n 连接状态染色（未拨号=原色 / 拨号中=黄 / 已连接=绿 / 失败=红） */
