@@ -165,8 +165,9 @@ public class HomeEntry {
 
     /**
      * 远程背景图应用到内容层（android.R.id.content）背景。
-     * BaseActivity.onCreate 统一调用，因此 JSON 的 home.bgImage 会在「所有页面」生效，
-     * 而不仅限于首页；未配置时保持各页面原样。
+     * BaseActivity.onCreate 统一调用，因此背景图会在「所有页面」生效，而不仅限于首页。
+     * 取值优先级：home.bgImage（全局固定）> 当前主题 themes[].bgImages/bgImage（一个或多个，
+     * 多张随机选一张后按主题保持稳定）> 都不配置时保持各页面原样（主题渐变背景）。
      */
     public static void applyBackground(Activity act) {
         if (act == null || act.isFinishing() || act.isDestroyed()) {
@@ -174,6 +175,13 @@ public class HomeEntry {
         }
         JSONObject home = RemoteConfig.homeStyle();
         String bg = home != null ? home.optString("bgImage", "").trim() : "";
+        if (bg.isEmpty()) {
+            try {
+                String themed = ThemeManager.currentBgImage();
+                bg = themed != null ? themed : "";
+            } catch (Throwable ignored) {
+            }
+        }
         if (bg.isEmpty()) {
             return;
         }

@@ -43,6 +43,7 @@ public class ThemeManager {
         public int bgEnd;     // 渐变背景终点（浅色/主色）
         public int styleRes;  // 内置 XML 主题资源 id；自定义主题为 -1
         public int builtin;   // 内置序号 0..13；自定义为 -1
+        public String[] bgImages; // 背景图片 URL 列表（一个或多个；空=用渐变背景）
 
         boolean isCustom() {
             return builtin < 0;
@@ -146,6 +147,7 @@ public class ThemeManager {
             Hawk.put(K_THEMES, arr.toString());
             sThemes = buildBuiltins();
             applyJsonLocked(arr.toString());
+            resetBgPick();
         }
     }
 
@@ -167,6 +169,8 @@ public class ThemeManager {
                 if (o.has("style")) {
                     styleIdx = o.optInt("style", -1);
                 }
+                // 背景图片：bgImages 数组（一个或多个），兼容单字符串 bgImage
+                String[] bgImages = parseBgImages(o);
 
                 // 定位要覆盖的内置主题：style 索引优先，其次 alias/name
                 int hit = -1;
@@ -213,6 +217,9 @@ public class ThemeManager {
                     if (bgE == 0 && color != 0) {
                         t.bgEnd = 0xFF000000 | color;
                     }
+                    if (bgImages != null) {
+                        t.bgImages = bgImages;
+                    }
                 } else {
                     // 追加自定义主题
                     if (color == 0) {
@@ -228,6 +235,7 @@ public class ThemeManager {
                     t.bgEnd = bgE != 0 ? 0xFF000000 | bgE : argb;
                     t.styleRes = -1;
                     t.builtin = -1;
+                    t.bgImages = bgImages;
                     sThemes.add(t);
                 }
             }
@@ -403,5 +411,68 @@ public class ThemeManager {
             return 0;
         }
         return i;
+    }
+
+    /**
+     * 解析主题背景图片配置："bgImages": ["url1", "url2", ...]（一个或多个），
+     * 兼容单字符串 "bgImage": "url"。无配置返回 null（不覆盖已有值）。
+     */
+    private static String[] parseBgImages(JSONObject o) {
+        try {
+            JSONArray arr = o.optJSONArray("bgImages");
+            if (arr != null) {
+                List<String> urls = new ArrayList<>();
+                for (int i = 0; i < arr.length(); i++) {
+                    String u = arr.optString(i, "").trim();
+                    if (!u.isEmpty()) {
+                        urls.add(u);
+                    }
+                }
+                return urls.isEmpty() ? null : urls.toArray(new String[0]);
+            }
+            String single = o.optString("bgImage", "").trim();
+            if (!single.isEmpty()) {
+                return new String[]{single};
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    // 每个主题已选定的背景图（多张时随机选一张后保持稳定，避免每次进入页面闪烁换图）
+    private static final java.util.Map<Integer, String> sBgPick = new java.util.HashMap<>();
+
+    /**
+     * 当前主题应使用的背景图 URL；未配置返回 null（调用方回退渐变背景）。
+     * 一个主题配置了多张图时随机选取一张，并在该主题索引下缓存保持稳定。
+     */
+    public static String currentBgImage() {
+        try {
+            int idx = index();
+            Theme t = at(idx);
+            if (t.bgImages == null || t.bgImages.length == 0) {
+                return null;
+            }
+            if (t.bgImages.length == 1) {
+                return t.bgImages[0];
+            }
+            synchronized (sBgPick) {
+                String picked = sBgPick.get(idx);
+                if (picked == null) {
+                    picked = t.bgImages[new java.util.Random().nextInt(t.bgImages.length)];
+                    sBgPick.put(idx, picked);
+                }
+                return picked;
+            }
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** 主题清单被 JSON 重建后调用，清掉已失效的背景图选取缓存 */
+    public static void resetBgPick() {
+        synchronized (sBgPick) {
+            sBgPick.clear();
+        }
     }
 }

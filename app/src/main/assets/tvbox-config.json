@@ -37,6 +37,8 @@
 
   // ============================ 主题 ============================
   // 启动默认主题：可填 themes 中的 style 数字、中文名或英文 alias；空=不强制
+  // 每个主题除颜色外还可配背景图："bgImage": "url"（一张）或 "bgImages": ["url1","url2"]（多张，
+  // 多张时随机选一张并在该主题下保持稳定）；配置了背景图则所有页面背景用图，否则用 bgStart/bgEnd 渐变
   "theme": "",
   "themes": [
     { "name": "红色", "alias": "red",      "style": 0,  "color": "#D81F26", "dark": "#8C1418", "bgStart": "#3D0A0D", "bgEnd": "#D81F26" },
@@ -53,6 +55,8 @@
     { "name": "靛蓝", "alias": "indigo",   "style": 11, "color": "#5B5BD6", "dark": "#2E2E90", "bgStart": "#222250", "bgEnd": "#5B5BD6" },
     { "name": "玫红", "alias": "rose",     "style": 12, "color": "#E11D48", "dark": "#700E24", "bgStart": "#4A0F1F", "bgEnd": "#E11D48" },
     { "name": "石墨", "alias": "graphite", "style": 13, "color": "#6B7280", "dark": "#3D4250", "bgStart": "#2A2E38", "bgEnd": "#6B7280" }
+    // 自定义主题示例（无 style 字段=追加新主题）：可带一张或多张背景图
+    // ,{ "name": "夜空", "alias": "night", "color": "#3B82F6", "bgImages": ["https://example.com/bg1.jpg", "https://example.com/bg2.jpg"] }
   ],
 
   // ============================ 各接口地址 ============================
@@ -67,6 +71,19 @@
   "ua": "",                            // 全局 UA，空=内置浏览器 UA（webview 直播源同样使用）
   "bootStart": false,                  // 开机自动启动 TVBox（在 设置-内置配置 中也可切换）
   "hin2nEntry": true,                  // 首页是否显示「组网」入口
+
+  // ============================ TVBox 远程升级（秒开酒店 IPTV 桌面风格） ============================
+  // 启动时检查：远程 versionCode 大于当前版本 → 弹窗提示 → 确认后后台下载 APK
+  // （顶部进度条）→ 完成后调起系统安装。每个版本每次启动只提示一次。
+  // checkUrl 指向一个返回同结构 json 的地址；不配 checkUrl 时直接使用下方内联字段。
+  "upgrade": {
+    "checkUrl": "",                    // 远程版本信息地址，如 "https://example.com/tvbox-version.json"
+    "versionCode": 0,                  // 内联模式：新版本号（> 当前版本才提示）
+    "versionName": "",                 // 新版本名（仅显示用）
+    "url": "",                         // 新版 APK 下载地址（必填，否则不提示）
+    "force": false,                    // true=强制升级（弹窗无取消按钮）
+    "notes": ""                        // 更新内容说明（可空）
+  },
 
   // ============================ hin2n 组网模块（内置模块，无需另装 APK） ============================
   // 仅在应用首次启动（模块数据库为空）时播种一次；之后全部以用户在组网界面内的修改为准。

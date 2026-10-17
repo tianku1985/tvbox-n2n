@@ -79,6 +79,7 @@ public class RemoteConfig {
     public static final String K_ENTRIES = "rc_entries";
     public static final String K_TOP_ENTRIES = "rc_top_entries";
     public static final String K_HOME_ENTRIES = "rc_home_entries";
+    public static final String K_UPGRADE = "rc_upgrade";
     public static final String K_HIN2N = "rc_hin2n_entry";
     public static final String K_BOOT = "n2n_boot_start";      // TVBox 开机自启开关（用户值优先）
     public static final String K_BOOT_DEFAULT_SET = "n2n_boot_default_set"; // 内置默认值是否已写入过
@@ -173,6 +174,19 @@ public class RemoteConfig {
     public static List<Entry> homeEntries() {
         String raw = Hawk.get(K_HOME_ENTRIES, null);
         return raw == null ? null : parseEntries(raw);
+    }
+
+    /** 远程升级配置（"upgrade" 段）：未配置返回 null */
+    public static JSONObject upgrade() {
+        String raw = Hawk.get(K_UPGRADE, "");
+        if (raw.isEmpty()) {
+            return null;
+        }
+        try {
+            return new JSONObject(raw);
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     private static List<Entry> parseEntries(String raw) {
@@ -362,6 +376,9 @@ public class RemoteConfig {
         if (j.has("homeEntries")) {
             Hawk.put(K_HOME_ENTRIES, j.optJSONArray("homeEntries") != null
                     ? j.optJSONArray("homeEntries").toString() : "[]");
+        }
+        if (j.has("upgrade") && j.optJSONObject("upgrade") != null) {
+            Hawk.put(K_UPGRADE, j.optJSONObject("upgrade").toString());
         }
         if (j.has("hin2nEntry")) {
             Hawk.put(K_HIN2N, j.optBoolean("hin2nEntry", true));

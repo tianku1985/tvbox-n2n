@@ -438,6 +438,15 @@ public class HomeActivity extends BaseActivity {
                     public void run() {
                         initData();
                         showWarningTextOnce();
+                        // 远程升级检查：延迟片刻，避免与免责声明弹窗叠加
+                        mHandler.postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (!isFinishing() && !isDestroyed()) {
+                                    com.github.tvbox.osc.n2n.UpgradeChecker.check(HomeActivity.this);
+                                }
+                            }
+                        }, 3000);
                     }
                 }, 50);
             }
