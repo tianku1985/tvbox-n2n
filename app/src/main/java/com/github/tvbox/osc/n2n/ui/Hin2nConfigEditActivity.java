@@ -30,7 +30,6 @@ import wang.switchy.hin2n.event.StartEvent;
 import wang.switchy.hin2n.model.EdgeCmd;
 import wang.switchy.hin2n.model.N2NSettingInfo;
 import wang.switchy.hin2n.service.N2NService;
-import wang.switchy.hin2n.storage.db.base.N2NSettingModelDao;
 import wang.switchy.hin2n.storage.db.base.model.N2NSettingModel;
 
 /**
@@ -78,8 +77,7 @@ public class Hin2nConfigEditActivity extends BaseActivity implements View.OnClic
         }
         if (mType == TYPE_MODIFY) {
             mSaveId = getIntent().getLongExtra("saveId", 0L);
-            N2NSettingModelDao dao = Hin2nCore.settingDao();
-            mModel = dao == null ? null : dao.load(mSaveId);
+            mModel = Hin2nCore.configById(mSaveId);
             if (mModel == null) {
                 Toast.makeText(this, "配置不存在", Toast.LENGTH_SHORT).show();
                 finish();
@@ -337,59 +335,49 @@ public class Hin2nConfigEditActivity extends BaseActivity implements View.OnClic
 
         int version = getN2nVersion();
         String name = text(etName);
-        N2NSettingModelDao dao = Hin2nCore.settingDao();
-        if (dao == null) {
-            Toast.makeText(this, "配置数据库不可用，请重启应用后重试", Toast.LENGTH_LONG).show();
-            return;
-        }
 
         if (mType == TYPE_ADD) {
             // 重名自动加 (i)
             String original = name;
             int i = 0;
-            while (dao.queryBuilder().where(N2NSettingModelDao.Properties.Name.eq(name)).unique() != null) {
+            while (Hin2nCore.configByName(name) != null) {
                 i++;
                 name = original + "(" + i + ")";
             }
-            boolean hasSelected = dao.queryBuilder()
-                    .where(N2NSettingModelDao.Properties.IsSelcected.eq(true)).unique() != null;
+            boolean hasSelected = false;
+            for (N2NSettingModel m : Hin2nCore.configList()) {
+                if (m.getIsSelcected()) {
+                    hasSelected = true;
+                    break;
+                }
+            }
 
             N2NSettingModel model = buildModel(null, version, name, !hasSelected);
-            try {
-                dao.insert(model);
-            } catch (Throwable t) {
-                Toast.makeText(this, "保存失败：" + t.getMessage(), Toast.LENGTH_LONG).show();
+            long id = Hin2nCore.configInsert(model);
+            if (id < 0) {
+                Toast.makeText(this, "保存失败：存储不可用", Toast.LENGTH_LONG).show();
                 return;
             }
             if (!hasSelected) {
-                N2NSettingModel selected = dao.queryBuilder()
-                        .where(N2NSettingModelDao.Properties.IsSelcected.eq(true)).unique();
-                if (selected != null) {
-                    Hin2nCore.setCurrentSettingId(this, selected.getId());
-                }
+                Hin2nCore.setCurrentSettingId(this, id);
             }
             Toast.makeText(this, "添加成功！", Toast.LENGTH_SHORT).show();
             finish();
         } else {
             String original = name;
             int i = 0;
-            N2NSettingModel dup = dao.queryBuilder().where(N2NSettingModelDao.Properties.Name.eq(name)).unique();
+            N2NSettingModel dup = Hin2nCore.configByName(name);
             while (dup != null) {
                 if (dup.getId() != null && dup.getId() == mSaveId) {
                     break;
                 }
                 i++;
                 name = original + "(" + i + ")";
-                dup = dao.queryBuilder().where(N2NSettingModelDao.Properties.Name.eq(name)).unique();
+                dup = Hin2nCore.configByName(name);
             }
             boolean selected = mModel != null && mModel.getIsSelcected();
             N2NSettingModel updated = buildModel(mSaveId, version, name, selected);
-            try {
-                dao.update(updated);
-            } catch (Throwable t) {
-                Toast.makeText(this, "保存失败：" + t.getMessage(), Toast.LENGTH_LONG).show();
-                return;
-            }
+            Hin2nCore.configUpdate(updated);
             mModel = updated;
 
             boolean runningCurrent = Hin2nVpn.isRunning()

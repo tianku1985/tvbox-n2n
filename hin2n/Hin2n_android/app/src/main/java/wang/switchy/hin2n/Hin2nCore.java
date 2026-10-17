@@ -14,9 +14,14 @@ import android.util.Log;
 
 import androidx.core.content.ContextCompat;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.io.File;
 import java.io.FileWriter;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 
 import wang.switchy.hin2n.model.N2NSettingInfo;
 import wang.switchy.hin2n.service.N2NService;
@@ -155,6 +160,7 @@ public class Hin2nCore {
         try {
             openDatabase();
             ensureSchema();
+            sDbError = null;
         } catch (Throwable t) {
             Log.e(TAG, "open N2N-db failed, recreate", t);
             closeDatabase();
@@ -162,7 +168,13 @@ public class Hin2nCore {
                 sApp.deleteDatabase("N2N-db");
             } catch (Throwable ignored) {
             }
-            openDatabase();
+            try {
+                openDatabase();
+                sDbError = null;
+            } catch (Throwable t2) {
+                sDbError = String.valueOf(t2);
+                Log.e(TAG, "recreate N2N-db failed, fallback to JSON store", t2);
+            }
         }
     }
 
@@ -200,6 +212,232 @@ public class Hin2nCore {
         } finally {
             c.close();
         }
+    }
+
+    // ---------------- 配置存储：greenDAO 优先，JSON(SharedPreferences) 备用 ----------------
+    // 个别盒子上 SQLite 打不开/反复损坏时，配置功能必须仍然可用，
+    // 任何 DB 操作失败都会置 sForceFallback，之后全部走 JSON 备用存储。
+
+    private static final String SP_FB_CONFIGS = "fallback_configs_json";
+    private static final String SP_FB_NEXT_ID = "fallback_next_id";
+    private static String sDbError = null;
+    private static boolean sForceFallback = false;
+
+    /** 数据库最近一次错误（null=正常或已恢复），界面可用于诊断提示 */
+    public static String dbError() {
+        return sDbError;
+    }
+
+    private static wang.switchy.hin2n.storage.db.base.N2NSettingModelDao daoTry() {
+        if (sForceFallback) {
+            return null;
+        }
+        try {
+            return settingDao();
+        } catch (Throwable t) {
+            sDbError = String.valueOf(t);
+            sForceFallback = true;
+            return null;
+        }
+    }
+
+    public static List<N2NSettingModel> configList() {
+        wang.switchy.hin2n.storage.db.base.N2NSettingModelDao dao = daoTry();
+        if (dao != null) {
+            try {
+                return dao.loadAll();
+            } catch (Throwable t) {
+                sDbError = String.valueOf(t);
+                sForceFallback = true;
+            }
+        }
+        return fbList();
+    }
+
+    public static long configCount() {
+        return configList().size();
+    }
+
+    public static N2NSettingModel configById(long id) {
+        if (id < 0) {
+            return null;
+        }
+        wang.switchy.hin2n.storage.db.base.N2NSettingModelDao dao = daoTry();
+        if (dao != null) {
+            try {
+                return dao.load(id);
+            } catch (Throwable t) {
+                sDbError = String.valueOf(t);
+                sForceFallback = true;
+            }
+        }
+        for (N2NSettingModel m : fbList()) {
+            if (m.getId() != null && m.getId() == id) {
+                return m;
+            }
+        }
+        return null;
+    }
+
+    public static N2NSettingModel configByName(String name) {
+        if (name == null) {
+            return null;
+        }
+        for (N2NSettingModel m : configList()) {
+            if (name.equals(m.getName())) {
+                return m;
+            }
+        }
+        return null;
+    }
+
+    /** 插入配置并回填 id；返回行 id（-1 表示连备用存储都不可用） */
+    public static long configInsert(N2NSettingModel m) {
+        wang.switchy.hin2n.storage.db.base.N2NSettingModelDao dao = daoTry();
+        if (dao != null) {
+            try {
+                return dao.insert(m);
+            } catch (Throwable t) {
+                sDbError = String.valueOf(t);
+                sForceFallback = true;
+            }
+        }
+        if (sApp == null) {
+            return -1L;
+        }
+        List<N2NSettingModel> list = fbList();
+        long id = prefs(sApp).getLong(SP_FB_NEXT_ID, 1L);
+        prefs(sApp).edit().putLong(SP_FB_NEXT_ID, id + 1).apply();
+        m.setId(id);
+        list.add(m);
+        fbSaveAll(list);
+        return id;
+    }
+
+    public static void configUpdate(N2NSettingModel m) {
+        if (m == null || m.getId() == null) {
+            return;
+        }
+        wang.switchy.hin2n.storage.db.base.N2NSettingModelDao dao = daoTry();
+        if (dao != null) {
+            try {
+                dao.update(m);
+                return;
+            } catch (Throwable t) {
+                sDbError = String.valueOf(t);
+                sForceFallback = true;
+            }
+        }
+        List<N2NSettingModel> list = fbList();
+        for (int i = 0; i < list.size(); i++) {
+            if (m.getId().equals(list.get(i).getId())) {
+                list.set(i, m);
+                break;
+            }
+        }
+        fbSaveAll(list);
+    }
+
+    public static void configDelete(long id) {
+        wang.switchy.hin2n.storage.db.base.N2NSettingModelDao dao = daoTry();
+        if (dao != null) {
+            try {
+                dao.deleteByKey(id);
+                return;
+            } catch (Throwable t) {
+                sDbError = String.valueOf(t);
+                sForceFallback = true;
+            }
+        }
+        List<N2NSettingModel> list = fbList();
+        for (int i = list.size() - 1; i >= 0; i--) {
+            N2NSettingModel m = list.get(i);
+            if (m.getId() != null && m.getId() == id) {
+                list.remove(i);
+            }
+        }
+        fbSaveAll(list);
+    }
+
+    // -------- JSON 备用存储读写 --------
+
+    private static List<N2NSettingModel> fbList() {
+        List<N2NSettingModel> out = new ArrayList<>();
+        if (sApp == null) {
+            return out;
+        }
+        try {
+            JSONArray arr = new JSONArray(prefs(sApp).getString(SP_FB_CONFIGS, "[]"));
+            for (int i = 0; i < arr.length(); i++) {
+                out.add(modelFromJson(arr.getJSONObject(i)));
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "fallback configs parse failed", t);
+        }
+        return out;
+    }
+
+    private static void fbSaveAll(List<N2NSettingModel> list) {
+        if (sApp == null) {
+            return;
+        }
+        JSONArray arr = new JSONArray();
+        for (N2NSettingModel m : list) {
+            arr.put(modelToJson(m));
+        }
+        prefs(sApp).edit().putString(SP_FB_CONFIGS, arr.toString()).apply();
+    }
+
+    private static JSONObject modelToJson(N2NSettingModel m) {
+        JSONObject o = new JSONObject();
+        try {
+            o.put("id", m.getId());
+            o.put("version", m.getVersion());
+            o.put("name", m.getName());
+            o.put("ipMode", m.getIpMode());
+            o.put("ip", m.getIp());
+            o.put("netmask", m.getNetmask());
+            o.put("community", m.getCommunity());
+            o.put("password", m.getPassword());
+            o.put("devDesc", m.getDevDesc());
+            o.put("superNode", m.getSuperNode());
+            o.put("moreSettings", m.getMoreSettings());
+            o.put("superNodeBackup", m.getSuperNodeBackup());
+            o.put("macAddr", m.getMacAddr());
+            o.put("mtu", m.getMtu());
+            o.put("localIP", m.getLocalIP());
+            o.put("holePunchInterval", m.getHolePunchInterval());
+            o.put("resoveSupernodeIP", m.getResoveSupernodeIP());
+            o.put("localPort", m.getLocalPort());
+            o.put("allowRouting", m.getAllowRouting());
+            o.put("dropMuticast", m.getDropMuticast());
+            o.put("useHttpTunnel", m.getUseHttpTunnel());
+            o.put("traceLevel", m.getTraceLevel());
+            o.put("isSelcected", m.getIsSelcected());
+            o.put("gatewayIp", m.getGatewayIp());
+            o.put("dnsServer", m.getDnsServer());
+            o.put("encryptionMode", m.getEncryptionMode());
+            o.put("headerEnc", m.getHeaderEnc());
+        } catch (Throwable ignored) {
+        }
+        return o;
+    }
+
+    private static N2NSettingModel modelFromJson(JSONObject o) {
+        Long id = o.has("id") && !o.isNull("id") ? o.optLong("id") : null;
+        return new N2NSettingModel(
+                id, o.optInt("version", 1), o.optString("name", ""), o.optInt("ipMode", 0),
+                o.optString("ip", ""), o.optString("netmask", "255.255.255.0"),
+                o.optString("community", ""), o.optString("password", ""), o.optString("devDesc", ""),
+                o.optString("superNode", ""), o.optBoolean("moreSettings", false),
+                o.optString("superNodeBackup", ""), o.optString("macAddr", ""), o.optInt("mtu", 1328),
+                o.optString("localIP", ""), o.optInt("holePunchInterval", 20),
+                o.optBoolean("resoveSupernodeIP", false), o.optInt("localPort", 0),
+                o.optBoolean("allowRouting", false), o.optBoolean("dropMuticast", true),
+                o.optBoolean("useHttpTunnel", false), o.optInt("traceLevel", 2),
+                o.optBoolean("isSelcected", false), o.optString("gatewayIp", ""),
+                o.optString("dnsServer", ""), o.optString("encryptionMode", "Twofish"),
+                o.optBoolean("headerEnc", false));
     }
 
     // ---------------- SharedPreferences 便捷访问 ----------------

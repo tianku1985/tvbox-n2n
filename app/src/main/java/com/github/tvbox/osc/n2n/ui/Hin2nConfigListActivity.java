@@ -23,7 +23,6 @@ import java.util.List;
 
 import wang.switchy.hin2n.Hin2nCore;
 import wang.switchy.hin2n.service.N2NService;
-import wang.switchy.hin2n.storage.db.base.N2NSettingModelDao;
 import wang.switchy.hin2n.storage.db.base.model.N2NSettingModel;
 
 /**
@@ -74,28 +73,14 @@ public class Hin2nConfigListActivity extends BaseActivity {
         reload();
     }
 
-    private N2NSettingModelDao dao() {
-        return Hin2nCore.settingDao();
-    }
-
     private void reload() {
-        N2NSettingModelDao dao = dao();
-        if (dao == null) {
-            mEmpty.setText("配置数据库不可用，请重启应用后重试");
-            mEmpty.setVisibility(View.VISIBLE);
-            mRecyclerView.setVisibility(View.GONE);
-            return;
-        }
-        try {
-            List<N2NSettingModel> list = dao.loadAll();
-            mEmpty.setText("暂无配置，按「新建配置」创建第一条 n2n 配置");
-            mEmpty.setVisibility(list.isEmpty() ? View.VISIBLE : View.GONE);
-            mRecyclerView.setVisibility(list.isEmpty() ? View.GONE : View.VISIBLE);
-            mAdapter.setData(list);
-        } catch (Throwable t) {
-            Toast.makeText(this, "读取配置失败：" + t.getMessage(), Toast.LENGTH_LONG).show();
-            mAdapter.setData(new ArrayList<>());
-        }
+        List<N2NSettingModel> list = Hin2nCore.configList();
+        mEmpty.setText(Hin2nCore.dbError() != null
+                ? "数据库异常，已启用备用存储，配置可正常保存使用"
+                : "暂无配置，按「新建配置」创建第一条 n2n 配置");
+        mEmpty.setVisibility(list.isEmpty() ? View.VISIBLE : View.GONE);
+        mRecyclerView.setVisibility(list.isEmpty() ? View.GONE : View.VISIBLE);
+        mAdapter.setData(list);
     }
 
     // ---------------- 行操作 ----------------
@@ -130,8 +115,7 @@ public class Hin2nConfigListActivity extends BaseActivity {
     }
 
     private void reconnectWithPrepare(long id) {
-        N2NSettingModelDao dao = dao();
-        N2NSettingModel model = dao == null ? null : dao.load(id);
+        N2NSettingModel model = Hin2nCore.configById(id);
         if (model == null) {
             reload();
             return;
@@ -167,8 +151,7 @@ public class Hin2nConfigListActivity extends BaseActivity {
             long id = mPendingStartId;
             mPendingStartId = -1L;
             if (resultCode == RESULT_OK && id >= 0) {
-                N2NSettingModelDao dao = dao();
-                N2NSettingModel model = dao == null ? null : dao.load(id);
+                N2NSettingModel model = Hin2nCore.configById(id);
                 if (model != null) {
                     stopThenStart(model);
                 }
@@ -187,14 +170,9 @@ public class Hin2nConfigListActivity extends BaseActivity {
 
     private void onCopy(final N2NSettingModel model) {
         try {
-            N2NSettingModelDao dao = dao();
-            if (dao == null) {
-                Toast.makeText(this, "配置数据库不可用", Toast.LENGTH_LONG).show();
-                return;
-            }
             String base = model.getName() + "(1)";
             int i = 1;
-            while (dao.queryBuilder().where(N2NSettingModelDao.Properties.Name.eq(base)).unique() != null) {
+            while (Hin2nCore.configByName(base) != null) {
                 i++;
                 base = model.getName() + "(" + i + ")";
             }
@@ -206,7 +184,7 @@ public class Hin2nConfigListActivity extends BaseActivity {
                     model.getLocalPort(), model.getAllowRouting(), model.getDropMuticast(), model.getUseHttpTunnel(),
                     model.getTraceLevel(), false, model.getGatewayIp(), model.getDnsServer(),
                     model.getEncryptionMode(), model.getHeaderEnc());
-            dao.insert(copy);
+            Hin2nCore.configInsert(copy);
             Toast.makeText(this, "已复制为「" + base + "」", Toast.LENGTH_SHORT).show();
             reload();
         } catch (Throwable t) {
@@ -222,19 +200,16 @@ public class Hin2nConfigListActivity extends BaseActivity {
                 .setPositiveButton("删除", new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
-                        N2NSettingModelDao dao = dao();
-                        if (dao == null) {
-                            Toast.makeText(Hin2nConfigListActivity.this, "配置数据库不可用", Toast.LENGTH_LONG).show();
-                            return;
-                        }
                         boolean isCurrent = model.getId() != null
                                 && model.getId() == Hin2nCore.currentSettingId(Hin2nConfigListActivity.this);
                         if (isCurrent && Hin2nVpn.isRunning()) {
                             Hin2nVpn.stop();
                         }
-                        dao.delete(model);
+                        if (model.getId() != null) {
+                            Hin2nCore.configDelete(model.getId());
+                        }
                         if (isCurrent) {
-                            List<N2NSettingModel> rest = dao.loadAll();
+                            List<N2NSettingModel> rest = Hin2nCore.configList();
                             if (!rest.isEmpty()) {
                                 Hin2nVpn.markSelected(Hin2nConfigListActivity.this, rest.get(0).getId());
                             } else {

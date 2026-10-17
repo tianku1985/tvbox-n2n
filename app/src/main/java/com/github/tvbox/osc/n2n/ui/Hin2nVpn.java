@@ -12,7 +12,6 @@ import wang.switchy.hin2n.Hin2nCore;
 import wang.switchy.hin2n.model.EdgeStatus;
 import wang.switchy.hin2n.model.N2NSettingInfo;
 import wang.switchy.hin2n.service.N2NService;
-import wang.switchy.hin2n.storage.db.base.N2NSettingModelDao;
 import wang.switchy.hin2n.storage.db.base.model.N2NSettingModel;
 
 /**
@@ -53,16 +52,11 @@ public class Hin2nVpn {
      * 把指定配置标记为当前配置（DB isSelcected + SP current_setting_id）。
      */
     public static void markSelected(Context ctx, long targetId) {
-        N2NSettingModelDao dao = Hin2nCore.settingDao();
-        if (dao == null) {
-            return;
-        }
-        List<N2NSettingModel> all = dao.loadAll();
-        for (N2NSettingModel m : all) {
+        for (N2NSettingModel m : Hin2nCore.configList()) {
             boolean selected = m.getId() != null && m.getId() == targetId;
             if (m.getIsSelcected() != selected) {
                 m.setIsSelcected(selected);
-                dao.update(m);
+                Hin2nCore.configUpdate(m);
             }
         }
         Hin2nCore.setCurrentSettingId(ctx, targetId);

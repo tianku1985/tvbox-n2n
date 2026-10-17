@@ -10,7 +10,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import wang.switchy.hin2n.Hin2nCore;
-import wang.switchy.hin2n.storage.db.base.N2NSettingModelDao;
 import wang.switchy.hin2n.storage.db.base.model.N2NSettingModel;
 
 /**
@@ -40,12 +39,7 @@ public class Hin2nSeeder {
             return;
         }
         try {
-            N2NSettingModelDao dao = Hin2nCore.settingDao();
-            if (dao == null) {
-                Log.e(TAG, "hin2n dao unavailable, skip seed");
-                return;
-            }
-            boolean empty = dao.count() == 0;
+            boolean empty = Hin2nCore.configCount() == 0;
 
             // 开机自连 / 静态路由：与种子配置一样，只在首启写入默认值
             if (empty && h.has("bootStart")) {
@@ -86,7 +80,7 @@ public class Hin2nSeeder {
             for (int i = 0; i < models.size(); i++) {
                 N2NSettingModel m = models.get(i);
                 m.setIsSelcected(i == selectedIndex);
-                long id = dao.insert(m);
+                long id = Hin2nCore.configInsert(m);
                 if (i == selectedIndex) {
                     currentId = id;
                 }
