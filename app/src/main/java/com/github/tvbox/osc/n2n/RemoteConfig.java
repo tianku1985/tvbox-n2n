@@ -12,18 +12,22 @@ import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.net.HttpURLConnection;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * 内置配置接口：TVBox 的全部可配置项统一来自 APK 内置 assets/tvbox-config.json。
  *
- * 已移除「远程地址配置」：不再有远程 URL、网络拉取与远程 APK 自动更新，
- * 需要远程/定制配置时直接修改源码内 assets/tvbox-config.json 重新编译。
+ * 远程配置：若内置配置指定了 remoteConfigUrl，启动时会异步拉取该远程 json，
+ * 覆盖「除 settings（设置页）和 hin2n（n2n 组网）之外」的所有段；
+ * 设置页与 n2n 的配置永远只读写本地内置 json，不被远程覆盖。
+ * remoteConfigUrl 留空或远程无法访问时，全部使用内置 json（含上次成功拉取的远程缓存兜底）。
  * 开机启动（TVBox 开机自启 + hin2n 开机自动连 VPN）仍然保留。
  *
  * JSON 结构（所有字段可选，缺省保持本地现状；支持 // 与 /* 注释、尾逗号）：
  * {
+ *   "remoteConfigUrl": "https://.../config.json",     // 远程配置地址（空=不启用远程）
  *   "notice": {                                       // 公告：字符串（旧格式）或对象
  *     "text": "公告文本",
  *     "position": "bottom",                           // top | bottom
@@ -90,6 +94,8 @@ public class RemoteConfig {
     public static final String K_HIN2N = "rc_hin2n_entry";
     public static final String K_BOOT = "n2n_boot_start";      // TVBox 开机自启开关（用户值优先）
     public static final String K_BOOT_DEFAULT_SET = "n2n_boot_default_set"; // 内置默认值是否已写入过
+    /** 最近一次成功拉取的远程配置原文（断网/下次启动兜底） */
+    public static final String K_REMOTE_RAW = "rc_remote_raw";
 
     /** 内置配置（app/src/main/assets/ 下，随 APK 打包） */
     private static final String LOCAL_ASSET = "tvbox-config.json";
@@ -242,8 +248,8 @@ public class RemoteConfig {
     }
 
     /**
-     * App 启动时调用：同步读取内置 assets/tvbox-config.json 并应用。
-     * 文件极小（几 KB），同步读取避免后续播种逻辑竞态；读失败静默忽略。
+     * App 启动时调用：同步读取内置 assets/tvbox-config.json 并应用（含 settings 与 hin2n 段）。
+     * 若内置配置指定了 remoteConfigUrl，另起后台线程拉取远程 json，覆盖除 settings/hin2n 之外的所有段。
      */
     public static void bootstrap(Context ctx) {
         if (ctx == null) {
@@ -254,27 +260,114 @@ public class RemoteConfig {
             if (data != null) {
                 JSONObject cfg = parseLoose(new String(data, "UTF-8"));
                 sConfig = cfg;
-                apply(ctx.getApplicationContext(), cfg);
+                apply(ctx.getApplicationContext(), cfg, false);
+
+                // 远程接口：拉取成功后覆盖非设置/非n2n段；失败则保持内置
+                String remoteUrl = cfg.optString("remoteConfigUrl", "").trim();
+                if (!remoteUrl.isEmpty()) {
+                    fetchRemoteAsync(ctx.getApplicationContext(), remoteUrl);
+                }
             }
         } catch (Throwable ignored) {
         }
     }
 
-    /**
-     * 远程拉取入口已移除：保留方法壳，立即回调成功，避免调用方改动。
-     * 需要不同配置时，修改内置 assets/tvbox-config.json 后重新编译。
-     */
-    public static void fetchAuto(Context ctx, Callback cb) {
-        if (cb != null) {
-            cb.onDone(true);
+    /** 后台线程拉取远程 json 并应用（非 settings/hin2n 段） */
+    private static void fetchRemoteAsync(final Context app, final String url) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                fetchAndApply(app, url, null);
+            }
+        }, "rc-remote-fetch").start();
+    }
+
+    /** 同步拉取远程 json 并应用；cb 可为空 */
+    private static boolean fetchAndApply(Context app, String url, Callback cb) {
+        try {
+            String raw = httpGet(url, RemoteConfig.ua());
+            if (raw == null || raw.isEmpty()) {
+                if (cb != null) cb.onDone(false);
+                return false;
+            }
+            JSONObject remote = parseLoose(raw);
+            apply(app, remote, true);
+            Hawk.put(K_REMOTE_RAW, raw);
+            if (cb != null) cb.onDone(true);
+            return true;
+        } catch (Throwable t) {
+            // 网络失败/解析失败：用上次缓存的远程配置兜底（若有）
+            try {
+                String cached = Hawk.get(K_REMOTE_RAW, "");
+                if (cached != null && !cached.isEmpty()) {
+                    JSONObject remote = parseLoose(cached);
+                    apply(app, remote, true);
+                }
+            } catch (Throwable ignored) {
+            }
+            if (cb != null) cb.onDone(false);
+            return false;
         }
     }
 
-    /** 远程拉取入口已移除（原「立即同步」按钮已删除），保留空壳兼容 */
-    public static void fetch(Context ctx, Callback cb) {
-        if (cb != null) {
-            cb.onDone(true);
+    /** 简单 HttpURLConnection GET（带 UA，超时 8s） */
+    private static String httpGet(String urlStr, String ua) {
+        HttpURLConnection conn = null;
+        InputStream in = null;
+        try {
+            java.net.URL url = new java.net.URL(urlStr);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(8000);
+            conn.setReadTimeout(8000);
+            conn.setRequestProperty("User-Agent", ua == null || ua.isEmpty()
+                    ? "Mozilla/5.0 (Linux; Android) TVBox" : ua);
+            conn.setRequestProperty("Accept", "application/json,*/*");
+            int code = conn.getResponseCode();
+            in = (code >= 200 && code < 300) ? conn.getInputStream() : conn.getErrorStream();
+            if (in == null) return null;
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                bos.write(buf, 0, n);
+            }
+            return new String(bos.toByteArray(), "UTF-8");
+        } catch (Throwable t) {
+            return null;
+        } finally {
+            if (in != null) { try { in.close(); } catch (Throwable ignored) {} }
+            if (conn != null) { conn.disconnect(); }
         }
+    }
+
+    /**
+     * 远程拉取入口：从内置配置的 remoteConfigUrl 拉取并应用（非 settings/hin2n 段）。
+     * 未配置 remoteConfigUrl 时直接回调成功（保持内置）。
+     */
+    public static void fetchAuto(Context ctx, Callback cb) {
+        String url = remoteConfigUrl(ctx);
+        if (url.isEmpty()) {
+            if (cb != null) cb.onDone(true);
+            return;
+        }
+        fetchAndApply(ctx.getApplicationContext(), url, cb);
+    }
+
+    /** 同步拉取指定远程地址并应用 */
+    public static void fetch(Context ctx, Callback cb) {
+        fetchAuto(ctx, cb);
+    }
+
+    /** 内置配置中的远程 json 地址 */
+    public static String remoteConfigUrl(Context ctx) {
+        try {
+            if (sConfig != null && sConfig.has("remoteConfigUrl")) {
+                return sConfig.optString("remoteConfigUrl", "").trim();
+            }
+        } catch (Throwable ignored) {
+        }
+        return "";
     }
 
     /** 远程 APK 更新入口已移除：BaseActivity.onResume 仍会调用，这里空实现 */
@@ -359,8 +452,13 @@ public class RemoteConfig {
         return new JSONObject(out);
     }
 
-    /** 解析内置配置并落盘。内置 JSON 只提供默认值：用户手动改过的项不被覆盖。 */
-    private static void apply(Context ctx, JSONObject j) {
+    /**
+     * 解析配置并落盘。
+     * @param remoteOnly true=来自远程配置，只覆盖非设置(settings)/非n2n(hin2n)段，
+     *                   且不覆盖 TVBox 开机自启(bootStart，属于设置页项)；
+     *                   false=内置配置，全部段应用。
+     */
+    private static void apply(Context ctx, JSONObject j, boolean remoteOnly) {
         if (j.has("notice")) {
             Object n = j.opt("notice");
             if (n instanceof JSONObject) {
@@ -389,7 +487,6 @@ public class RemoteConfig {
                     ? j.optJSONArray("entries").toString() : "");
         }
         // 注意：空数组与「不写该字段」等价 = 保持内置默认 UI。
-        // 否则 demo 里「数组中只放注释示例」剥注释后会被误判为「整体替换成空」，导致图标全消失。
         JSONArray topArr = j.optJSONArray("topEntries");
         if (topArr != null && topArr.length() > 0) {
             Hawk.put(K_TOP_ENTRIES, topArr.toString());
@@ -412,16 +509,19 @@ public class RemoteConfig {
         if (themes != null && themes.length() > 0) {
             ThemeManager.updateThemes(themes);
         }
-        // TVBox 开机自启：内置默认值只写一次，之后以用户开关为准
-        if (j.has("bootStart") && !Hawk.get(K_BOOT_DEFAULT_SET, false)) {
-            Hawk.put(K_BOOT, j.optBoolean("bootStart", false));
-            Hawk.put(K_BOOT_DEFAULT_SET, true);
-        }
-        // 设置页各项默认值（"settings" 段）：仅当用户从未在设置页修改过该项时写入，
-        // 用户在设置页更改后该项以用户设定为准，JSON 不再覆盖。
-        JSONObject st = j.optJSONObject("settings");
-        if (st != null) {
-            applySettingsDefaults(st);
+        // 以下三项属于用户本地设置，远程配置不覆盖：
+        //   - bootStart（TVBox 开机自启，设置页项）
+        //   - settings（设置页所有项）
+        //   - hin2n（n2n 组网模块配置）
+        if (!remoteOnly) {
+            if (j.has("bootStart") && !Hawk.get(K_BOOT_DEFAULT_SET, false)) {
+                Hawk.put(K_BOOT, j.optBoolean("bootStart", false));
+                Hawk.put(K_BOOT_DEFAULT_SET, true);
+            }
+            JSONObject st = j.optJSONObject("settings");
+            if (st != null) {
+                applySettingsDefaults(st);
+            }
         }
         applyEndpoint(ctx, j, "api", HawkConfig.API_URL, "点播接口");
         applyEndpoint(ctx, j, "live", HawkConfig.LIVE_URL, "直播接口");

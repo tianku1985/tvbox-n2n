@@ -137,6 +137,32 @@ public class N2NService extends VpnService {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        // 关键：startForegroundService 启动后必须在 5 秒内调用 startForeground，
+        // 否则 Android 8+ 会抛 RemoteServiceException 杀进程（表现为「点击连接闪退」）。
+        // 所以前台通知必须在任何可能阻塞/抛异常的逻辑（包括 native startEdge）之前建立。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                Intent i = getPackageManager().getLaunchIntentForPackage(getPackageName());
+                int piFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0;
+                PendingIntent pendingIntent = i != null
+                        ? PendingIntent.getActivity(this, 0, i, piFlags)
+                        : null;
+                Notification notification = new NotificationCompat.Builder(this, getString(R.string.notification_channel_id_default))
+                        .setTicker("Nature")
+                        .setSmallIcon(R.mipmap.ic_launcher)
+                        .setLargeIcon(BitmapFactory.decodeResource(getResources(), R.mipmap.ic_launcher))
+                        .setColor(ContextCompat.getColor(this, R.color.colorPrimary))
+                        .setContentTitle("hin2n")
+                        .setContentText("hin2n service is running")
+                        .setContentIntent(pendingIntent)
+                        .build();
+                notification.flags |= Notification.FLAG_NO_CLEAR;
+                startForeground(1, notification);
+            } catch (Throwable t) {
+                Log.e("N2NService", "startForeground failed", t);
+            }
+        }
+
         if (intent == null) {
             EventBus.getDefault().post(new ErrorEvent());
             return super.onStartCommand(intent, flags, startId);
@@ -175,43 +201,29 @@ public class N2NService extends VpnService {
             mFileObserver.stopWatching();
             IOUtils.clearLogTxt(cmd.logPath);
             mFileObserver.startWatching();
-            try {
-                if (!startEdge(cmd)) {
-                    appendEdgeLog("[启动失败] native startEdge 返回 false");
-                    EventBus.getDefault().post(new ErrorEvent());
+            // startEdge 是 native 阻塞调用，放后台线程避免阻塞服务主线程（否则可能触发 ANR/前台服务超时）
+            final EdgeCmd edgeCmd = cmd;
+            ThreadUtils.cachedThreadExecutor(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        if (!startEdge(edgeCmd)) {
+                            appendEdgeLog("[启动失败] native startEdge 返回 false");
+                            EventBus.getDefault().post(new ErrorEvent());
+                        }
+                    } catch (Throwable t) {
+                        // 典型场景：native 库未随 APK 打包或加载失败（UnsatisfiedLinkError）
+                        Log.e("N2NService", "startEdge failed", t);
+                        appendEdgeLog("[启动失败] " + t.getClass().getSimpleName() + ": " + t.getMessage()
+                                + "（若为 UnsatisfiedLinkError，请确认 APK 内包含 libedge.so 等 hin2n native 库）");
+                        EventBus.getDefault().post(new ErrorEvent());
+                    }
                 }
-            } catch (Throwable t) {
-                // 典型场景：native 库未随 APK 打包或加载失败（UnsatisfiedLinkError）
-                Log.e("N2NService", "startEdge failed", t);
-                appendEdgeLog("[启动失败] " + t.getClass().getSimpleName() + ": " + t.getMessage()
-                        + "（若为 UnsatisfiedLinkError，请确认 APK 内包含 libedge.so 等 hin2n native 库）");
-                EventBus.getDefault().post(new ErrorEvent());
-            }
+            });
         } catch (Throwable t) {
             Log.e("N2NService", "onStartCommand failed", t);
             appendEdgeLog("[启动失败] " + t);
             EventBus.getDefault().post(new ErrorEvent());
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // 通知渠道由 Hin2nCore.init 统一创建（R.string.notification_channel_id_default）
-            Intent i = getPackageManager().getLaunchIntentForPackage(getPackageName());
-            // onStartCommand 形参已叫 flags，这里改用 piFlags 避免重复定义
-            int piFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0;
-            PendingIntent pendingIntent = i != null
-                    ? PendingIntent.getActivity(this, 0, i, piFlags)
-                    : null;
-            NotificationCompat.Builder notificationBuilder = new NotificationCompat.Builder(this, getString(R.string.notification_channel_id_default))
-                    .setTicker("Nature")
-                    .setSmallIcon(R.mipmap.ic_launcher)
-                    .setLargeIcon(BitmapFactory.decodeResource(getResources(), R.mipmap.ic_launcher))
-                    .setColor(ContextCompat.getColor(this, R.color.colorPrimary))
-                    .setContentTitle("hin2n")
-                    .setContentText("hin2n service is running")
-                    .setContentIntent(pendingIntent);
-            Notification notification = notificationBuilder.build();
-            notification.flags |= Notification.FLAG_NO_CLEAR;
-            startForeground(1, notification);
         }
 
         return super.onStartCommand(intent, flags, startId);
