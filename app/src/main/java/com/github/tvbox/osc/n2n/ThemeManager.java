@@ -103,6 +103,32 @@ public class ThemeManager {
 
     private static volatile List<Theme> sThemes;
 
+    /** 自定义点播界面独立主题覆盖（JSON 入口 "theme" 字段）；null=无覆盖，全部页面用全局主题 */
+    private static volatile Integer sOverrideIdx = null;
+
+    /**
+     * 开启主题覆盖：自定义点播入口打开 CustomVodActivity 前调用，
+     * 该界面及其打开的播放页在覆盖期间使用独立主题（不影响全局 THEME_SELECT）。
+     * 无法识别的值不覆盖。HomeActivity 创建时自动取消覆盖（视为回到 app 全局状态）。
+     */
+    public static void pushOverride(String theme) {
+        int idx = indexFromConfig(theme);
+        if (idx >= 0) {
+            sOverrideIdx = idx;
+        }
+    }
+
+    /** 取消主题覆盖（幂等） */
+    public static void popOverride() {
+        sOverrideIdx = null;
+    }
+
+    /** 当前生效主题索引：有独立主题覆盖时返回覆盖值，否则返回全局选择 */
+    private static int activeIndex() {
+        Integer ov = sOverrideIdx;
+        return ov != null ? clamp(ov) : index();
+    }
+
     private static List<Theme> themes() {
         if (sThemes == null) {
             synchronized (ThemeManager.class) {
@@ -267,8 +293,12 @@ public class ThemeManager {
         if (act == null) {
             return;
         }
+        // 回到 app 全局界面（HomeActivity 新建=从桌面重启/重新进入主界面）时取消独立主题覆盖
+        if (sOverrideIdx != null && act instanceof com.github.tvbox.osc.ui.activity.HomeActivity) {
+            popOverride();
+        }
         try {
-            act.setTheme(styleToApply(at(index())));
+            act.setTheme(styleToApply(at(activeIndex())));
         } catch (Throwable ignored) {
         }
     }
@@ -292,7 +322,7 @@ public class ThemeManager {
 
     /** 获取当前主题的渐变背景色对 */
     public static int[] currentBgPair() {
-        return bgPair(index());
+        return bgPair(activeIndex());
     }
 
     /**
@@ -302,7 +332,7 @@ public class ThemeManager {
      */
     public static Integer primaryColorOverride() {
         try {
-            Theme t = at(index());
+            Theme t = at(activeIndex());
             int bound = boundColor(styleToApply(t));
             int exact = 0xFFFFFF & t.color;
             if (bound != exact) {
@@ -448,7 +478,7 @@ public class ThemeManager {
      */
     public static String currentBgImage() {
         try {
-            int idx = index();
+            int idx = activeIndex();
             Theme t = at(idx);
             if (t.bgImages == null || t.bgImages.length == 0) {
                 return null;

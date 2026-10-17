@@ -87,7 +87,7 @@ TVBox 的所有定制配置统一来自 APK 内置文件：
 
 ### 3.4 自定义入口机制（topEntries / homeEntries / entries）
 
-- 数据模型：`RemoteConfig.Entry`（name/type/target/pkg/icon/url），`RemoteConfig.parseEntries()` 兼容字符串数组等异常输入。
+- 数据模型：`RemoteConfig.Entry`（name/type/target/pkg/icon/url/theme，`theme` 仅 vod 类型），`RemoteConfig.parseEntries()` 兼容字符串数组等异常输入。
 - **出厂 JSON 即显式列出全部内置入口**（topEntries 7 项 / homeEntries 9 项，默认全显）；想关闭某入口 = 从数组删除该条；把字段整个删除或改成空数组 `[]` = 回退代码内置默认 UI。每次启动按 JSON 覆盖 Hawk 缓存。
 - 顶栏：`HomeEntry.populate()` 读 `RemoteConfig.topEntries()`——返回 `null` 走内置默认；返回非空（≥1 项）则隐藏 7 个固定图标并按数组顺序动态生成 ImageView 加入顶栏容器，点击统一调 `EntryDispatcher.handle(activity, entry)`。
 - 首页历史行：`UserFragment.rebuildHomeEntriesIfConfigured()` 读 `RemoteConfig.homeEntries()`；非空时移除 `tvUserHome` 行内全部默认卡片并按数组重建（含 `vod` 类型）。该行与推荐列表同处一个 ScrollView，焦点跟随滚动逻辑对动态卡片同样生效；重建行内「历史」卡片保留长按（切推荐模式并重载首页）。
@@ -99,9 +99,11 @@ TVBox 的所有定制配置统一来自 APK 内置文件：
 ### 3.5 自定义点播界面（type=vod / cv_ 源注入）
 
 1. 入口 target 为接口地址（http(s)/assets/file），`EntryDispatcher` 把地址放入 intent extra 启动 `CustomVodActivity`；
+   - 入口 `theme` 字段非空时：先 `ThemeManager.pushOverride(theme)`（解析为主题索引，无法识别则不生效）+ `BaseActivity.resetWallpaper()`，随后创建的 `CustomVodActivity` 及其播放页（Detail/Play）在覆盖期间使用独立主题（`ThemeManager.apply()/currentBgPair()/currentBgImage()` 均走 `activeIndex()`），全局 `THEME_SELECT` 不受影响；
+   - 覆盖撤销时机：`CustomVodActivity.onPause(isFinishing)` 与 `onDestroy` 兜底（见下），另 `ThemeManager.apply()` 检测到 `HomeActivity` 创建时自动 `popOverride()`（视为回到 app 全局状态），三重防泄漏；
 2. `onCreate` 读取并解析接口 JSON（标准 Gson，与点播 api 同结构），对每个 `SourceBean` 的 key 加 `CUSTOM_SRC_PREFIX = "cv_"`（防与用户源重名冲突），调 `ApiConfig.injectCustomSources(list)` 内存注入，并用 `setHomeSourceTemp(cv源key)` 临时切首页位；
-3. 界面本体就是 VodActivity 逻辑复用，仅源集合不同；
-4. `onDestroy` 调 `ApiConfig.removeCustomSources()` 清除全部 `cv_` 源并恢复进入前的 home 源 key——**不落盘、不污染用户配置**；进程被杀重启后自然恢复。
+3. 界面本体就是 VodActivity 逻辑复用，仅源集合不同；切源弹窗选择后 `setHomeSourceTemp` + Toast「切换源：xxx」+ `reloadHome()`（getSort force=true 绕过缓存强制刷新）；
+4. **恢复时序（关键）**：Activity finish 时系统顺序是 `CustomVod.onPause → HomeActivity.onResume → CustomVod.onStop → onDestroy`。若等 `onDestroy` 才恢复 home 源，主界面 `onResume` 已先读到 cv_ 临时源并把源名写到左上角（用户报障「影院切源后主屏左上文字变了」）。因此 `restoreHomeSource()`（`removeCustomSources` + `setHomeSourceTemp(prevHome)`，幂等，`homeRestored` 标记）在 `onPause(isFinishing=true)` 内立即执行，`onDestroy` 仅兜底；同时 `popOverride()` + `resetWallpaper()` 让主界面恢复全局主题背景——**不落盘、不污染用户配置**；进程被杀重启后自然恢复。
 
 ### 3.6 升级检查与 APK 下载安装管线
 
@@ -119,6 +121,12 @@ TVBox 的所有定制配置统一来自 APK 内置文件：
 - 直播源 URL 前缀 `tkp2p://` 时，`LiveWebViewPlayer.buildTkP2pPage()` 生成内置播放页（`assets/tkp2p/`）并加载真实流地址；
 - 引擎：`engine` 取值归一化为 `auto/hls/media`（配置里写全称 `p2p-media-loader`→`hls`、`media-p2p-engine`→`media` 兼容）；`announce`（tracker 列表）、`zone`、`token`（SwarmCloud）注入页面；
 - ICE：先读 `iceServers`，兼容简写键 `ice`，JSON 数组整体注入 WebRTC 配置。
+
+### 3.8 稳定性修复：进程级崩溃防护与显示规则（2026-10-17）
+
+- **点播/首页 NPE 自动重启**：`ApiConfig.getHomeSourceBean()` 永不返回 null（未就绪时返回 `emptyHome`，key=""），`SourceViewModel.getSort()` 原代码 `getSource(sourceKey).getType()` 在 key 为空/源未加载时直接 NPE → 进程被杀 → 系统自动重启 app（用户表现「点击点播 app 自动重启」）。修复：`getSort()` 开头对 `getSource()` 判空，null 时 `sortResult.postValue(null)` 走正常空态展示。
+- **n2n 连接自动重启 + 无日志**：`N2NService.onStartCommand` 链路中 `intent.getBundleExtra` 取值无空判、`vpn_session_name[version]` 无越界保护、native `startEdge()` 只被 `catch(Exception)` 保护（`UnsatisfiedLinkError` 是 Error，会穿透）——任一触发即杀进程，且 edge.log 尚未创建导致「无日志输出」。修复：整链 `try/catch(Throwable)` + `appendEdgeLog()` 把失败原因（含 lib 加载失败提示）写进 edge 日志文件，界面日志页直接可见；`stopEdge()`/`getEdgeStatus()` 同样 Throwable 防护（EventBus 订阅线程崩溃同样会杀进程）。
+- **主屏左上源名显示规则**（`HomeActivity.applySourceName()`）：用户已配置点播接口（Hawk `api_url` 非空）且开启 `HOME_SHOW_SOURCE` 且当前源就绪 → 显示当前源名；否则显示内置 JSON `home.sourceName` 默认文字（未配置回退 app 名称）。`initViewModel` 观察者与 `onResume` 两处统一走该方法。
 
 ## 4. hin2n 入口与 TV 界面
 

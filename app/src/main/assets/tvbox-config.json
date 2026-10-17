@@ -18,6 +18,8 @@
   // ============================ 首页外观 ============================
   "home": {
     "bgImage": "",                      // 背景图片 URL，空=用主题渐变背景
+    "sourceName": "",                   // 首页左上角默认文字；用户未配置点播接口时显示它（空=显示 app 名称），
+                                        // 配置了点播接口且开启「首页顶部显示数据源名称」后，左上角显示当前源名
     "entryBgColor": "",                 // 入口卡片背景，空=随主题色
     "iconColor": "",                    // 图标颜色，空=白色
     "textColor": "",                    // 文字颜色，空=白色
@@ -57,7 +59,9 @@
     { "name": "靛蓝", "alias": "indigo",   "style": 11, "color": "#5B5BD6", "dark": "#2E2E90", "bgStart": "#222250", "bgEnd": "#5B5BD6" },
     { "name": "玫红", "alias": "rose",     "style": 12, "color": "#E11D48", "dark": "#700E24", "bgStart": "#4A0F1F", "bgEnd": "#E11D48" },
     { "name": "石墨", "alias": "graphite", "style": 13, "color": "#6B7280", "dark": "#3D4250", "bgStart": "#2A2E38", "bgEnd": "#6B7280" }
-    // 自定义主题示例（无 style 字段=追加新主题）：可带一张或多张背景图
+    // 自定义主题示例①：带 style 数字 = 覆盖对应内置主题（13=石墨），可改名称/主色/渐变，并支持一张或多张背景图
+    // ,{ "name": "石墨", "alias": "graphite", "style": 13, "color": "#6B7280", "dark": "#3D4250", "bgStart": "#2A2E38", "bgEnd": "#6B7280", "bgImages": ["https://example.com/bg1.jpg", "https://example.com/bg2.jpg"] }
+    // 自定义主题示例②：不带 style = 追加全新主题（索引排在内置主题之后）
     // ,{ "name": "夜空", "alias": "night", "color": "#3B82F6", "bgImages": ["https://example.com/bg1.jpg", "https://example.com/bg2.jpg"] }
   ],
 
@@ -199,6 +203,8 @@
   //          icon 留空时：wifi 入口按当前网络类型自动选图（hm_wifi/hm_lan/hm_mobile/hm_wifi_no），
   //          styleSwitch 入口按当前单双排状态自动选图（hm_left_right/hm_up_down），其余用兜底图标
   //   url    type=app 时未安装的 APK 下载地址（可选）
+  //   theme  仅 type=vod：自定义点播界面的独立主题（可填主题索引数字、内置主题中文名或英文别名），
+  //          该界面及其打开的影片详情/播放页使用此主题，与主界面互不影响；空=跟随全局主题
   // 组网入口（type=page,target=hin2n）图标颜色会随连接状态自动变化（黄=连接中 绿=已连接 红=失败）
   "topEntries": [
     { "name": "网络",   "type": "feature", "target": "wifi",        "icon": "" },
@@ -211,7 +217,7 @@
     // 追加示例：
     // ,{ "name": "切源",   "type": "feature", "target": "siteSwitch", "icon": "hm_drawer" }
     // ,{ "name": "文件",   "type": "app",     "pkg": "com.android.filemanager", "icon": "hm_folder", "url": "" }
-    // ,{ "name": "我的影院","type": "vod",    "target": "assets/vod-custom.json", "icon": "hm_vod" }
+    // ,{ "name": "我的影院","type": "vod",    "target": "assets/vod-custom.json", "icon": "hm_vod", "theme": "1" }
   ],
 
   // ============================ 首页历史一行入口（homeEntries） ============================
@@ -231,6 +237,6 @@
     { "name": "组网", "type": "page", "target": "hin2n",   "icon": "ic_hin2n" }
     // 追加示例：
     // ,{ "name": "应用", "type": "page", "target": "apps",   "icon": "hm_drawer" }
-    // ,{ "name": "影院", "type": "vod",  "target": "https://example.com/vod.json", "icon": "hm_vod" }
+    // ,{ "name": "影院", "type": "vod",  "target": "https://example.com/vod.json", "icon": "hm_vod", "theme": "1" }
   ]
 }

@@ -33,8 +33,9 @@ import java.util.List;
  *     "timeStart": "08:00", "timeEnd": "22:00", "expire": "2027-12-31",
  *     "speed": 60
  *   },
- *   "home": { "bgImage": "...", "entryBgColor": "...", "iconColor": "...",
- *             "textColor": "...", "alpha": 90 },      // 首页外观
+ *   "home": { "bgImage": "...", "sourceName": "...", "entryBgColor": "...", "iconColor": "...",
+ *             "textColor": "...", "alpha": 90, "inputBgColor": "...", "buttonBgColor": "..." },
+ *             // sourceName=首页左上角默认文字（用户未配置点播接口时显示）
  *   "tkp2p": { "engine": "auto|hls|media", "announce": [...], "token": "",
  *              "zone": "cn", "iceServers": [...] },   // iceServers 也可简写 ice
  *   "checkInterval": 30,                              // 配置检查间隔（分钟，本地模式下列出兼容）
@@ -60,7 +61,7 @@ import java.util.List;
  *     {"name":"搜索","type":"page","target":"search","icon":"hm_search"},
  *     {"name":"切源","type":"feature","target":"siteSwitch","icon":"hm_drawer"},
  *     {"name":"文件","type":"app","pkg":"com.x","icon":"","url":"http://.../a.apk"},
- *     {"name":"影院","type":"vod","target":"assets/vod.json","icon":"hm_vod"} ],
+ *     {"name":"影院","type":"vod","target":"assets/vod.json","icon":"hm_vod","theme":"1"} ],
  *   "homeEntries": [ ...同 topEntries... ]        // 历史一行整体替换
  * }
  *
@@ -106,6 +107,7 @@ public class RemoteConfig {
         public String pkg;     // app: 包名
         public String icon;    // 图标：http(s) URL 或内置 drawable 名（如 hm_search），空=兜底图标
         public String url;     // app 未安装时的 APK 下载地址（可选）
+        public String theme;   // vod: 自定义点播界面独立主题（主题索引/中文名/英文别名），空=跟随全局主题
     }
 
     public interface Callback {
@@ -135,6 +137,16 @@ public class RemoteConfig {
         } catch (Throwable t) {
             return new JSONObject();
         }
+    }
+
+    /**
+     * 首页左上角源名按钮的默认显示文字（home 段 "sourceName" 字段）。
+     * 仅当用户尚未配置点播接口（api_url 为空）或当前源未就绪时作为兜底显示；
+     * 用户配置过点播接口后，左上角显示当前源名称。
+     */
+    public static String homeSourceName() {
+        String sn = homeStyle().optString("sourceName", "");
+        return sn == null ? "" : sn.trim();
     }
 
     public static JSONObject tkP2pStyle() {
@@ -214,6 +226,7 @@ public class RemoteConfig {
                 e.pkg = o.optString("pkg", "");
                 e.icon = o.optString("icon", "");
                 e.url = o.optString("url", "");
+                e.theme = o.optString("theme", "").trim();
                 if (e.type.isEmpty()) {
                     // 兼容旧格式：有 pkg 即 app 入口
                     e.type = e.pkg.isEmpty() ? "page" : "app";

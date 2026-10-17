@@ -142,28 +142,54 @@ public class N2NService extends VpnService {
             return super.onStartCommand(intent, flags, startId);
         }
 
-        Bundle setting = intent.getBundleExtra("Setting");
-        mN2nSettingInfo = setting.getParcelable("n2nSettingInfo");
-
-        int vpnServiceFd = -1;
-        if (mN2nSettingInfo.getIpMode() == 0) {
-            vpnServiceFd = EstablishVpnService(mN2nSettingInfo.getIp(), getIpAddrPrefixLength(mN2nSettingInfo.getNetmask()));
-            if (vpnServiceFd < 0) {
+        // 兜底：启动链路任何 Throwable（含 UnsatisfiedLinkError 等 Error）都不允许杀进程，
+        // 否则系统会自动重启 app，且错误原因无日志可查
+        try {
+            Bundle setting = intent.getBundleExtra("Setting");
+            mN2nSettingInfo = setting == null ? null : setting.getParcelable("n2nSettingInfo");
+            if (mN2nSettingInfo == null) {
+                appendEdgeLog("[启动失败] 启动参数缺失（Setting/n2nSettingInfo 为空）");
+                EventBus.getDefault().post(new ErrorEvent());
                 return super.onStartCommand(intent, flags, startId);
             }
-        }
 
-        String session = getResources().getStringArray(R.array.vpn_session_name)[mN2nSettingInfo.getVersion()];
-        cmd = new EdgeCmd(mN2nSettingInfo, vpnServiceFd, getExternalFilesDir("log") + "/" + session + ".log");
-        mFileObserver = new LogFileObserver(cmd.logPath);
-        mFileObserver.stopWatching();
-        IOUtils.clearLogTxt(cmd.logPath);
-        mFileObserver.startWatching();
-        try {
-            if (!startEdge(cmd)) {
+            int vpnServiceFd = -1;
+            if (mN2nSettingInfo.getIpMode() == 0) {
+                vpnServiceFd = EstablishVpnService(mN2nSettingInfo.getIp(), getIpAddrPrefixLength(mN2nSettingInfo.getNetmask()));
+                if (vpnServiceFd < 0) {
+                    appendEdgeLog("[启动失败] VpnService 建立失败（ip=" + mN2nSettingInfo.getIp() + "）");
+                    return super.onStartCommand(intent, flags, startId);
+                }
+            }
+
+            String[] sessions = getResources().getStringArray(R.array.vpn_session_name);
+            int version = mN2nSettingInfo.getVersion();
+            if (version < 0 || version >= sessions.length) {
+                appendEdgeLog("[启动失败] 协议版本非法: " + version);
+                EventBus.getDefault().post(new ErrorEvent());
+                return super.onStartCommand(intent, flags, startId);
+            }
+            String session = sessions[version];
+            cmd = new EdgeCmd(mN2nSettingInfo, vpnServiceFd, getExternalFilesDir("log") + "/" + session + ".log");
+            mFileObserver = new LogFileObserver(cmd.logPath);
+            mFileObserver.stopWatching();
+            IOUtils.clearLogTxt(cmd.logPath);
+            mFileObserver.startWatching();
+            try {
+                if (!startEdge(cmd)) {
+                    appendEdgeLog("[启动失败] native startEdge 返回 false");
+                    EventBus.getDefault().post(new ErrorEvent());
+                }
+            } catch (Throwable t) {
+                // 典型场景：native 库未随 APK 打包或加载失败（UnsatisfiedLinkError）
+                Log.e("N2NService", "startEdge failed", t);
+                appendEdgeLog("[启动失败] " + t.getClass().getSimpleName() + ": " + t.getMessage()
+                        + "（若为 UnsatisfiedLinkError，请确认 APK 内包含 libedge.so 等 hin2n native 库）");
                 EventBus.getDefault().post(new ErrorEvent());
             }
-        } catch (Exception e) {
+        } catch (Throwable t) {
+            Log.e("N2NService", "onStartCommand failed", t);
+            appendEdgeLog("[启动失败] " + t);
             EventBus.getDefault().post(new ErrorEvent());
         }
 
@@ -191,6 +217,23 @@ public class N2NService extends VpnService {
         return super.onStartCommand(intent, flags, startId);
     }
 
+    /** 把启动失败原因追加进 edge 日志文件（界面日志页会实时展示，避免「无日志输出」） */
+    private void appendEdgeLog(String line) {
+        try {
+            if (cmd != null && cmd.logPath != null) {
+                java.io.File f = new java.io.File(cmd.logPath);
+                java.io.File dir = f.getParentFile();
+                if (dir != null && !dir.exists()) {
+                    dir.mkdirs();
+                }
+                java.io.FileWriter w = new java.io.FileWriter(f, true);
+                w.append(line).append("\n");
+                w.close();
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
     public boolean isStopInProgress() {
         return (mStopInProgress);
     }
@@ -208,7 +251,11 @@ public class N2NService extends VpnService {
             @Override
             public void run() {
                 /* Blocking call */
-                stopEdge();
+                try {
+                    stopEdge();
+                } catch (Throwable t) {
+                    Log.e("N2NService", "stopEdge failed", t);
+                }
                 mStopInProgress = true;
                 ThreadUtils.mainThreadExecutor(new Runnable() {
                     @Override
@@ -285,9 +332,14 @@ public class N2NService extends VpnService {
 
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void onLogChangeEvent(final LogChangeEvent event) {
-        EdgeStatus status = getEdgeStatus();
-        Log.d("status",status.runningStatus.name());
-        reportEdgeStatus(status);
+        try {
+            EdgeStatus status = getEdgeStatus();
+            Log.d("status", status.runningStatus.name());
+            reportEdgeStatus(status);
+        } catch (Throwable t) {
+            // native 库异常时不能让 EventBus 订阅线程崩溃（否则整个 app 退出重启）
+            Log.e("N2NService", "getEdgeStatus failed", t);
+        }
     }
 
 

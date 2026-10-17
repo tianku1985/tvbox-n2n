@@ -95,6 +95,8 @@ public class CustomVodActivity extends BaseActivity {
     private final List<SourceBean> customSources = new ArrayList<>();
     /** 进入本界面前的当前源（退出时恢复） */
     private SourceBean prevHome = null;
+    /** 原当前源是否已恢复（onPause 先于 HomeActivity.onResume 执行，必须提前恢复） */
+    private boolean homeRestored = false;
 
     private final Runnable mRunnable = new Runnable() {
         @SuppressLint({"DefaultLocale", "SetTextI18n"})
@@ -459,13 +461,22 @@ public class CustomVodActivity extends BaseActivity {
     protected void onPause() {
         super.onPause();
         mHandler.removeCallbacksAndMessages(null);
+        // 关键时序：A.onResume 在 B.onDestroy 之前执行。若等 onDestroy 才恢复当前源，
+        // 主界面 HomeActivity.onResume 已先读到 cv_ 临时源名并显示在左上角。
+        // 所以必须在真正离开本界面（isFinishing）时于 onPause 内立即恢复 + 撤销独立主题。
+        if (isFinishing() && !homeRestored) {
+            restoreHomeSource();
+            com.github.tvbox.osc.n2n.ThemeManager.popOverride();
+            BaseActivity.resetWallpaper();
+        }
     }
 
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        com.github.tvbox.osc.n2n.NoticeBar.hide(this, com.github.tvbox.osc.n2n.NoticeBar.SCREEN_VOD);
-        // 移除本界面注入的 cv_ 源并恢复原当前源（仅内存，Hawk 中的当前源从未被本界面改动）
+    /** 恢复进入本界面前的当前源（幂等；同时移除本界面注入的 cv_ 源） */
+    private void restoreHomeSource() {
+        if (homeRestored) {
+            return;
+        }
+        homeRestored = true;
         try {
             ApiConfig.get().removeCustomSources();
             if (prevHome != null && prevHome.getKey() != null
@@ -482,6 +493,15 @@ public class CustomVodActivity extends BaseActivity {
             }
         } catch (Throwable ignored) {
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        com.github.tvbox.osc.n2n.NoticeBar.hide(this, com.github.tvbox.osc.n2n.NoticeBar.SCREEN_VOD);
+        // 兜底：onPause 未恢复（如系统直接销毁）时在此恢复
+        restoreHomeSource();
+        com.github.tvbox.osc.n2n.ThemeManager.popOverride();
     }
 
     @Override
@@ -517,6 +537,8 @@ public class CustomVodActivity extends BaseActivity {
                 @Override
                 public void click(SourceBean value, int pos) {
                     ApiConfig.get().setHomeSourceTemp(value);
+                    // 反馈 + 强制刷新列表（getSort force=true 绕过 homeContent 缓存）
+                    Toast.makeText(mContext, getString(R.string.dia_source) + "：" + value.getName(), Toast.LENGTH_SHORT).show();
                     reloadHome();
                 }
 

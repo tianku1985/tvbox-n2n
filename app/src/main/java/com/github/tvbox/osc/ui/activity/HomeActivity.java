@@ -329,13 +329,33 @@ public class HomeActivity extends BaseActivity {
                 }
                 showSuccess();
                 // takagen99 : Switch to show / hide source title
-                SourceBean home = ApiConfig.get().getHomeSourceBean();
-                if (HomeShow) {
-                    if (home != null && home.getName() != null && !home.getName().isEmpty()) tvName.setText(home.getName());
-                        tvName.clearAnimation();
-                }
+                applySourceName();
             }
         });
+    }
+
+    /**
+     * 左上角源名按钮显示规则：
+     * 1) 用户已配置点播接口（api_url 非空）且当前源就绪、设置开启显示源名 → 显示当前源名称；
+     * 2) 否则显示内置 json「home.sourceName」配置的默认文字（未配置回退 app 名称）。
+     */
+    private void applySourceName() {
+        boolean apiReady = !Hawk.get(HawkConfig.API_URL, "").isEmpty();
+        SourceBean home = ApiConfig.get().getHomeSourceBean();
+        boolean showSrc = Hawk.get(HawkConfig.HOME_SHOW_SOURCE, false) && apiReady
+                && home != null && home.getKey() != null && !home.getKey().isEmpty()
+                && home.getName() != null && !home.getName().isEmpty();
+        if (showSrc) {
+            tvName.setText(home.getName());
+        } else {
+            String sn = com.github.tvbox.osc.n2n.RemoteConfig.homeSourceName();
+            if (sn.isEmpty()) {
+                tvName.setText(R.string.app_name);
+            } else {
+                tvName.setText(sn);
+            }
+        }
+        tvName.clearAnimation();
     }
 
     private boolean dataInitOk = false;
@@ -606,15 +626,7 @@ public class HomeActivity extends BaseActivity {
         com.github.tvbox.osc.n2n.ApkDownloader.resumePendingInstall(this);
 
         // takagen99 : Switch to show / hide source title
-        SourceBean home = ApiConfig.get().getHomeSourceBean();
-        if (Hawk.get(HawkConfig.HOME_SHOW_SOURCE, false)) {
-            if (home != null && home.getName() != null && !home.getName().isEmpty()) {
-                tvName.setText(home.getName());
-                tvName.clearAnimation();
-            }
-        } else {
-            tvName.setText(R.string.app_name);
-        }
+        applySourceName();
 
         // takagen99: Icon Placement（JSON topEntries 整体替换顶栏时，固定图标显隐由 HomeEntry 全权控制）
         if (com.github.tvbox.osc.n2n.RemoteConfig.topEntries() == null) {

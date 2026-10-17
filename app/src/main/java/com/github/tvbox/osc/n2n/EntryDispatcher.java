@@ -51,6 +51,14 @@ public class EntryDispatcher {
                 Intent it = new Intent(act, CustomVodActivity.class);
                 it.putExtra("name", e.name == null ? "" : e.name);
                 it.putExtra("url", target.isEmpty() ? (e.url == null ? "" : e.url) : target);
+                String theme = e.theme == null ? "" : e.theme.trim();
+                it.putExtra("theme", theme);
+                if (!theme.isEmpty()) {
+                    // 独立主题：本界面及其播放页使用入口 "theme" 指定主题（主题索引/中文名/英文别名），
+                    // 不影响全局主题；退出本界面时由 CustomVodActivity 撤销
+                    com.github.tvbox.osc.n2n.ThemeManager.pushOverride(theme);
+                    com.github.tvbox.osc.base.BaseActivity.resetWallpaper();
+                }
                 act.startActivity(it);
             } else {
                 // 默认 app 类型

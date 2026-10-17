@@ -405,6 +405,8 @@ public class VodActivity extends BaseActivity {
                 @Override
                 public void click(SourceBean value, int pos) {
                     ApiConfig.get().setSourceBean(value);
+                    // 反馈 + 强制刷新列表（getSort force=true 绕过 homeContent 缓存）
+                    Toast.makeText(mContext, getString(R.string.dia_source) + "：" + value.getName(), Toast.LENGTH_SHORT).show();
                     reloadHome();
                 }
 
