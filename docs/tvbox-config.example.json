@@ -58,6 +58,33 @@
   "ua": "",
   "bootStart": false,
   "hin2nEntry": true,
+  "settings": {
+    "homeShowSource": true,
+    "homeSearchPosition": false,
+    "homeMenuPosition": true,
+    "homeRec": 1,
+    "homeNum": 4,
+    "homeRecStyle": false,
+    "homeDefaultShow": false,
+    "showPreview": true,
+    "playScale": 0,
+    "backgroundPlayType": 0,
+    "playType": 1,
+    "ijkCodec": "硬解码",
+    "ijkCachePlay": false,
+    "exoRenderer": 0,
+    "exoRendererMode": 1,
+    "vodPlayerPreferred": 0,
+    "playRender": 0,
+    "videoPurify": true,
+    "homeLocale": 0,
+    "themeSelect": 0,
+    "searchView": 1,
+    "parseWebview": true,
+    "dohUrl": 0,
+    "fastSearchMode": false,
+    "debugOpen": false
+  },
   "upgrade": {
     "checkUrl": "",
     "versionCode": 0,
@@ -101,6 +128,24 @@
     ]
   },
   "entries": [],
-  "topEntries": [],
-  "homeEntries": []
+  "topEntries": [
+    { "name": "网络", "type": "feature", "target": "wifi", "icon": "" },
+    { "name": "搜索", "type": "page", "target": "search", "icon": "hm_search" },
+    { "name": "单双排", "type": "feature", "target": "styleSwitch", "icon": "" },
+    { "name": "主题", "type": "feature", "target": "themeSwitch", "icon": "ic_theme" },
+    { "name": "应用", "type": "page", "target": "apps", "icon": "hm_drawer" },
+    { "name": "设置", "type": "page", "target": "setting", "icon": "hm_settings" },
+    { "name": "组网", "type": "page", "target": "hin2n", "icon": "ic_n2n" }
+  ],
+  "homeEntries": [
+    { "name": "历史", "type": "page", "target": "history", "icon": "hm_history" },
+    { "name": "点播", "type": "page", "target": "vod", "icon": "hm_vod" },
+    { "name": "直播", "type": "page", "target": "live", "icon": "hm_live" },
+    { "name": "搜索", "type": "page", "target": "search", "icon": "hm_search" },
+    { "name": "收藏", "type": "page", "target": "collect", "icon": "hm_fav" },
+    { "name": "推送", "type": "page", "target": "push", "icon": "hm_push" },
+    { "name": "文件", "type": "page", "target": "drive", "icon": "hm_folder" },
+    { "name": "设置", "type": "page", "target": "setting", "icon": "hm_settings" },
+    { "name": "组网", "type": "page", "target": "hin2n", "icon": "ic_hin2n" }
+  ]
 }

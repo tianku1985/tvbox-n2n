@@ -62,9 +62,14 @@ public class App extends MultiDexApplication {
     public void onCreate() {
         super.onCreate();
         SubtitleHelper.initSubtitleColor(this);
-        initParams();
-        // 加载 APK 内置配置 JSON（assets/tvbox-config.json，已移除远程地址配置）
+        // Hawk 必须先初始化：内置 JSON 的设置项默认值与 hin2n 播种都依赖 Hawk
+        Hawk.init(this).build();
+        Hawk.put(HawkConfig.DEBUG_OPEN, false);
+        // 加载 APK 内置配置 JSON（assets/tvbox-config.json，已移除远程地址配置）。
+        // 先于 initParams()：JSON 中的「设置页默认值」仅当用户从未手动修改时写入，
+        // initParams() 里的硬编码默认值只作最终兜底，不会覆盖 JSON。
         com.github.tvbox.osc.n2n.RemoteConfig.bootstrap(this);
+        initParams();
         // hin2n 内置组网模块：加载 n2n native 库、greenDAO、通知渠道、崩溃落盘
         wang.switchy.hin2n.Hin2nCore.init(this);
         wang.switchy.hin2n.Hin2nCore.installCrashLogger(this);
@@ -150,10 +155,7 @@ public class App extends MultiDexApplication {
 
 
     private void initParams() {
-        // Hawk
-        Hawk.init(this).build();
-        Hawk.put(HawkConfig.DEBUG_OPEN, false);
-
+        // Hawk 已在 onCreate 最前面初始化（内置 JSON 的设置默认值需要它）
         // 首页选项
         putDefault(HawkConfig.HOME_SHOW_SOURCE, true);       //数据源显示: true=开启, false=关闭
         putDefault(HawkConfig.HOME_SEARCH_POSITION, false);  //按钮位置-搜索: true=上方, false=下方

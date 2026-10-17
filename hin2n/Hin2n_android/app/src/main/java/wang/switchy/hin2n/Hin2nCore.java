@@ -84,7 +84,14 @@ public class Hin2nCore {
             return;
         }
         sApp = context.getApplicationContext();
-        loadLibraries();
+        // 9 个 n2n native 库加载较慢，且只在启动 VPN 时才用到；
+        // 放后台线程预热，避免拖慢 TVBox 首页冷启动。真正起 VPN 前 N2NService 会再同步确保加载完成。
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                loadLibraries();
+            }
+        }, "hin2n-load-libs").start();
         safeRun("setDatabase", new Runnable() {
             @Override
             public void run() {
@@ -470,17 +477,35 @@ public class Hin2nCore {
         prefs(ctx).edit().putString(SP_STATIC_ROUTES, routes == null ? "" : routes.trim()).apply();
     }
 
-    /** 读取当前选中的配置；无配置 / 已被删除时返回 null */
+    /**
+     * 读取当前选中的配置；无配置时返回 null。
+     * 自愈逻辑：SP 中 current_setting_id 丢失/失效（如旧版本未写入、配置被删后未回写、
+     * 数据库曾走 JSON 备用存储）时，自动按 isSelcected → 第一条 兜底选中并回写 SP，
+     * 避免「配置管理里明明有配置，点击连接却提示请先新建配置」。
+     */
     public static N2NSettingModel currentSetting(Context ctx) {
         long id = currentSettingId(ctx);
-        if (id < 0 || sDaoSession == null) {
+        if (id >= 0) {
+            N2NSettingModel m = configById(id);
+            if (m != null) {
+                return m;
+            }
+        }
+        List<N2NSettingModel> list = configList();
+        if (list.isEmpty()) {
             return null;
         }
-        try {
-            return sDaoSession.getN2NSettingModelDao().load(id);
-        } catch (Throwable t) {
-            return null;
+        N2NSettingModel pick = list.get(0);
+        for (N2NSettingModel it : list) {
+            if (it.getIsSelcected()) {
+                pick = it;
+                break;
+            }
         }
+        if (pick.getId() != null) {
+            setCurrentSettingId(ctx, pick.getId());
+        }
+        return pick;
     }
 
     /** 某 n2n 版本对应的日志文件（与 N2NService 中路径规则一致） */

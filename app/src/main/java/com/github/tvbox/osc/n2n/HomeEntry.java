@@ -104,6 +104,8 @@ public class HomeEntry {
             }
             buildTopEntries(act, bar, top);
             applyHomeStyleToEntries(act);
+            // 样式应用可能 clearColorFilter，重新按连接状态染 hin2n 图标
+            retintStateIcons(act);
             return;
         }
         // 旧版 "entries"：仅 app 类型，点击拉起对应 App（未安装且配 url 时后台下载安装）
@@ -137,7 +139,11 @@ public class HomeEntry {
             iv.setClickable(true);
             iv.setFocusable(true);
             iv.setContentDescription(e.name);
-            EntryDispatcher.loadIcon(act, iv, e.icon);
+            EntryDispatcher.loadIcon(act, iv, e);
+            if (EntryDispatcher.isHin2nEntry(e)) {
+                iv.setTag("hin2n_state");
+                applyStateTint(iv);
+            }
             iv.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -146,6 +152,20 @@ public class HomeEntry {
             });
             bar.addView(iv);
         }
+    }
+
+    /** 为 entryBar 内标记了 hin2n_state 的动态图标重新染色（连接状态变化时调用） */
+    public static void retintStateIcons(Activity act) {
+        try {
+            LinearLayout bar = act.findViewById(R.id.entryBar);
+            if (bar == null) return;
+            for (int i = 0; i < bar.getChildCount(); i++) {
+                View v = bar.getChildAt(i);
+                if (v instanceof ImageView && "hin2n_state".equals(v.getTag())) {
+                    applyStateTint((ImageView) v);
+                }
+            }
+        } catch (Throwable ignored) {}
     }
 
     /** 入口图标按 hin2n 连接状态染色（未拨号=原色 / 拨号中=黄 / 已连接=绿 / 失败=红） */

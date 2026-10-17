@@ -255,6 +255,8 @@ public class HomeActivity extends BaseActivity {
      * 一键切换主题（顶栏 tvTheme 与 JSON feature=themeSwitch 入口共用）。
      * recreate()/finish 重启会触发 onDestroy 的 appExit 杀进程（表现为"切主题=退出应用"），
      * 内部重启前置 sSkipAppExit，让本次 onDestroy 跳过杀进程，实现平滑换肤。
+     * 切主题只刷新界面 UI、不刷新数据：useCache 强制为 true，点播接口配置与 spider jar
+     * 均走本地缓存，homeContent 命中 SourceViewModel.sortCache 内存缓存（进程未杀，缓存仍在）。
      */
     public static void switchTheme(Activity act, boolean useCache) {
         int idx = com.github.tvbox.osc.n2n.ThemeManager.cycle();
@@ -262,7 +264,7 @@ public class HomeActivity extends BaseActivity {
         sSkipAppExit = true;
         com.github.tvbox.osc.base.BaseActivity.resetWallpaper();
         Intent it = new Intent(act, HomeActivity.class);
-        it.putExtra("useCache", useCache);
+        it.putExtra("useCache", true);
         act.finish();
         act.startActivity(it);
         act.overridePendingTransition(0, 0);
@@ -651,6 +653,8 @@ public class HomeActivity extends BaseActivity {
         if (tvHin2n != null) {
             com.github.tvbox.osc.n2n.HomeEntry.applyStateTint(tvHin2n);
         }
+        // JSON topEntries 整体替换顶栏时，动态生成的组网图标同步染色
+        com.github.tvbox.osc.n2n.HomeEntry.retintStateIcons(this);
     }
 
     @Override

@@ -341,7 +341,11 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
             ilp.setMargins(iconMargin, iconMargin, iconMargin, iconMargin);
             iv.setLayoutParams(ilp);
             iv.setAlpha(0.9f);
-            com.github.tvbox.osc.n2n.EntryDispatcher.loadIcon(mContext, iv, e.icon);
+            com.github.tvbox.osc.n2n.EntryDispatcher.loadIcon(mContext, iv, e);
+            if (com.github.tvbox.osc.n2n.EntryDispatcher.isHin2nEntry(e)) {
+                iv.setTag("hin2n_state");
+                com.github.tvbox.osc.n2n.HomeEntry.applyStateTint(iv);
+            }
             card.addView(iv);
 
             android.widget.TextView tv = new android.widget.TextView(mContext);
@@ -367,6 +371,16 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
                     com.github.tvbox.osc.n2n.EntryDispatcher.open(mActivity, e);
                 }
             });
+            // 长按「历史」入口：切换推荐模式并重载首页（与固定卡片行为一致）
+            if ("page".equals(e.type) && "history".equals(e.target)) {
+                card.setOnLongClickListener(new View.OnLongClickListener() {
+                    @Override
+                    public boolean onLongClick(View v) {
+                        HomeActivity.homeRecf();
+                        return HomeActivity.reHome(mContext);
+                    }
+                });
+            }
             card.setOnFocusChangeListener(focusChangeListener);
             row.addView(card);
         }
@@ -530,6 +544,22 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         android.widget.ImageView hmHin2n = findViewById(R.id.hm_hin2n);
         if (hmHin2n != null) {
             com.github.tvbox.osc.n2n.HomeEntry.applyStateTint(hmHin2n);
+        }
+        // JSON homeEntries 整体替换时，动态生成的组网卡片图标同步染色
+        LinearLayout row = findViewById(R.id.tvUserHome);
+        if (row != null) {
+            for (int i = 0; i < row.getChildCount(); i++) {
+                View child = row.getChildAt(i);
+                if (child instanceof LinearLayout) {
+                    LinearLayout card = (LinearLayout) child;
+                    for (int j = 0; j < card.getChildCount(); j++) {
+                        View v = card.getChildAt(j);
+                        if (v instanceof android.widget.ImageView && "hin2n_state".equals(v.getTag())) {
+                            com.github.tvbox.osc.n2n.HomeEntry.applyStateTint((android.widget.ImageView) v);
+                        }
+                    }
+                }
+            }
         }
     }
 

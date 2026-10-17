@@ -315,9 +315,26 @@ public class Hin2nActivity extends BaseActivity implements View.OnClickListener 
     private void showPingDialog() {
         final EditText et = new EditText(this);
         et.setHint("主机名或 IP，如 10.0.0.1");
-        et.setTextColor(0xFFFFFFFF);
-        et.setHintTextColor(0x80FFFFFF);
-        int pad = (int) (20 * getResources().getDisplayMetrics().density);
+        et.setSingleLine(true);
+        // 输入框随主题变化：背景优先用 JSON home.inputBgColor，缺省用当前主题深色(bgStart)；
+        // 文字/提示色按背景亮度自动取黑或白，避免浅色对话框上「白字白底」看不见输入内容。
+        int bg = com.github.tvbox.osc.n2n.HomeEntry.parseColor(
+                com.github.tvbox.osc.n2n.RemoteConfig.homeStyle().optString("inputBgColor", ""));
+        if (bg == 0) {
+            int[] pair = com.github.tvbox.osc.n2n.ThemeManager.currentBgPair();
+            bg = 0xCC000000 | (pair[0] & 0xFFFFFF);
+        }
+        android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+        gd.setColor(bg);
+        float radius = 10 * getResources().getDisplayMetrics().density;
+        gd.setCornerRadius(radius);
+        et.setBackground(gd);
+        int luminance = (int) (0.299 * ((bg >> 16) & 0xFF) + 0.587 * ((bg >> 8) & 0xFF) + 0.114 * (bg & 0xFF));
+        int fg = luminance < 128 ? 0xFFFFFFFF : 0xFF1A1A1A;
+        et.setTextColor(fg);
+        et.setHintTextColor((fg & 0x00FFFFFF) | 0x99000000);
+        int pad = (int) (16 * getResources().getDisplayMetrics().density);
+        et.setPadding(pad, pad / 2, pad, pad / 2);
         new AlertDialog.Builder(this)
                 .setTitle("Ping 测试")
                 .setView(et)

@@ -61,6 +61,8 @@ public class N2NService extends VpnService {
     public void onCreate() {
         super.onCreate();
         INSTANCE = this;
+        // native 库在 App.onCreate 中是后台异步预热的；真正启动 edge 前同步确保已加载（幂等）
+        wang.switchy.hin2n.Hin2nCore.loadLibraries();
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this);
         }

@@ -112,6 +112,8 @@ public class EntryDispatcher {
             } catch (Throwable ignored) {
             }
             Toast.makeText(act, grid ? R.string.hm_style_grid : R.string.hm_style_line, Toast.LENGTH_SHORT).show();
+            // 重建入口，使 style 图标状态同步（网格/列表图标自动切换）
+            HomeEntry.refresh(act);
         } else if ("clearCache".equals(target)) {
             if (act instanceof HomeActivity) {
                 ((HomeActivity) act).clearHomeCache();
@@ -173,5 +175,59 @@ public class EntryDispatcher {
         } catch (Throwable ignored) {
         }
         iv.setImageResource(R.drawable.hm_drawer);
+    }
+
+    /** 按 Entry 加载图标：icon 留空时对 wifi/styleSwitch 入口自动选择状态图标 */
+    public static void loadIcon(Context ctx, ImageView iv, RemoteConfig.Entry e) {
+        loadIcon(ctx, iv, resolveIcon(ctx, e));
+    }
+
+    /** 是否为 hin2n 入口（用于连接状态染色） */
+    public static boolean isHin2nEntry(RemoteConfig.Entry e) {
+        return e != null && "page".equals(e.type) && "hin2n".equals(e.target);
+    }
+
+    /**
+     * 解析入口图标名：显式配置优先；留空时部分内置功能入口自动按状态选图——
+     * wifi 按当前网络类型（hm_wifi/hm_mobile/hm_lan/hm_wifi_no），
+     * styleSwitch 按当前单双排状态（hm_up_down/hm_left_right）。
+     */
+    public static String resolveIcon(Context ctx, RemoteConfig.Entry e) {
+        if (e == null) {
+            return "";
+        }
+        if (e.icon != null && !e.icon.isEmpty()) {
+            return e.icon;
+        }
+        if ("feature".equals(e.type) && "wifi".equals(e.target)) {
+            return wifiIcon(ctx);
+        }
+        if ("feature".equals(e.type) && "styleSwitch".equals(e.target)) {
+            return Hawk.get(HawkConfig.HOME_REC_STYLE, false) ? "hm_up_down" : "hm_left_right";
+        }
+        return "";
+    }
+
+    /** 按当前网络连接类型返回顶栏网络图标名（无连接=hm_wifi_no） */
+    private static String wifiIcon(Context ctx) {
+        try {
+            android.net.ConnectivityManager cm =
+                    (android.net.ConnectivityManager) ctx.getSystemService(Context.CONNECTIVITY_SERVICE);
+            android.net.NetworkInfo info = cm == null ? null : cm.getActiveNetworkInfo();
+            if (info == null || !info.isConnectedOrConnecting()) {
+                return "hm_wifi_no";
+            }
+            if (info.getType() == android.net.ConnectivityManager.TYPE_WIFI) {
+                return "hm_wifi";
+            }
+            if (info.getType() == android.net.ConnectivityManager.TYPE_MOBILE) {
+                return "hm_mobile";
+            }
+            if (info.getType() == android.net.ConnectivityManager.TYPE_ETHERNET) {
+                return "hm_lan";
+            }
+        } catch (Throwable ignored) {
+        }
+        return "hm_wifi_no";
     }
 }

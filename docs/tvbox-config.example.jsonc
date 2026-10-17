@@ -16,6 +16,8 @@
 //   · api/live/epg/proxy：仅当用户从未在 TVBox 内手动配置过对应接口时作为默认值，
 //       用户一旦手动配置，该接口不再被文件覆盖（四项互不影响）；
 //   · bootStart（TVBox 开机自启）：只作默认值写入一次，之后以界面开关为准；
+//   · settings（设置页默认值）：仅当用户从未在设置页修改过该项时写入一次，
+//       用户一旦在设置页更改，该项永远以用户设定为准；
 //   · hin2n.bootStart/staticRoutes/configs：仅应用首次启动（组网数据库为空）时
 //       播种一次，之后以组网界面内的用户增删改为准；
 //   · 所有字段均可选，不写即保持默认。
@@ -113,7 +115,43 @@
   "checkInterval": 30,                 // 界面定时刷新间隔（分钟，最小 1）
   "ua": "",                            // 全局 UA（OkHttp 请求 + webview/tkp2p 直播页）；空=内置浏览器 UA
   "bootStart": false,                  // TVBox 开机自启（设置-内置配置 中可切换；默认值只写一次）
-  "hin2nEntry": true,                  // 首页是否显示「组网」固定入口（顶栏图标 + 历史行卡片）
+  "hin2nEntry": true,                  // 首页是否显示「组网」固定入口（仅当 topEntries/homeEntries
+                                       // 未配置或为空数组时生效；数组非空时以数组内容为准）
+
+  // ==================== 设置页默认值（settings） ====================
+  // 对应「设置」页各项开关的出厂默认值：仅当用户从未在设置页修改过该项时写入一次，
+  // 用户一旦手动更改，该项永远以用户设定为准（重装/升级也不会覆盖）。
+  // 删除本段 = 全部走代码内置默认（与本段下面列出的值一致）。
+  "settings": {
+    // ---- 首页选项 ----
+    "homeShowSource": true,            // 数据源显示：true=首页显示当前源名称，false=隐藏
+    "homeSearchPosition": false,       // 搜索按钮位置：true=上方（顶栏），false=下方（历史行）
+    "homeMenuPosition": true,          // 设置按钮位置：true=上方（顶栏），false=下方（历史行）
+    "homeRec": 1,                      // 首页推荐内容：0=豆瓣热播 1=站点推荐 2=观看历史
+    "homeNum": 4,                      // 历史条数：0=20条 1=40条 2=60条 3=80条 4=100条
+    "homeRecStyle": false,             // 首页多行网格：true=多行 false=单行横滑（默认）
+    "homeDefaultShow": false,          // 启动后直接进入直播：true=开启 false=关闭
+    "showPreview": true,               // 小窗预览：true=浏览列表时右下角小窗试看
+    // ---- 播放器选项 ----
+    "playScale": 0,                    // 画面缩放：0=默认 1=16:9 2=4:3 3=填充 4=原始 5=裁剪
+    "backgroundPlayType": 0,           // 后台播放：0=关闭 1=开启 2=画中画
+    "playType": 1,                     // 默认播放器：0=系统 1=IJK 2=Exo 3=MX 4=Reex 5=Kodi
+    "ijkCodec": "硬解码",               // IJK 解码方式："软解码" | "硬解码"
+    "ijkCachePlay": false,             // IJK 边播边缓存：true=开启 false=关闭
+    "exoRenderer": 0,                  // Exo 扩展渲染器索引（0 起，对应 设置-播放器设置 列表顺序）
+    "exoRendererMode": 1,              // Exo 渲染器模式索引（0 起，同上）
+    "vodPlayerPreferred": 0,           // 点播首选播放器索引（0 起，同上）
+    "playRender": 0,                   // 渲染方式：0=TextureView 1=SurfaceView
+    "videoPurify": true,               // 视频去广告（嗅探净化）：true=开启 false=关闭
+    // ---- 系统选项 ----
+    "homeLocale": 0,                   // 界面语言：0=中文 1=英文
+    "themeSelect": 0,                  // 默认主题序号（0-13，对应上方 themes 清单）
+    "searchView": 1,                   // 搜索展示：0=文字列表 1=缩略图
+    "parseWebview": true,              // 嗅探内核：true=系统 WebView false=XWalkView
+    "dohUrl": 0,                       // 安全 DNS：0=关闭 1=腾讯 2=阿里 3=360 4=Google 5=AdGuard 6=Quad9
+    "fastSearchMode": false,           // 聚合搜索（快搜）：true=多源聚合 false=单源
+    "debugOpen": false                 // 调试模式：true=开启 false=关闭（开启后设置页显示调试入口）
+  },
 
   // ==================== TVBox 自检升级（秒开酒店 IPTV 桌面风格） ====================
   // 启动进入首页后检查：远程 versionCode 大于当前版本 → 弹窗提示 → 确认后后台下载 APK
@@ -191,46 +229,65 @@
     // { "name": "文件管理", "pkg": "com.android.filemanager", "icon": "", "url": "https://example.com/fm.apk" }
   ],
 
-  // ==================== 顶栏入口（topEntries，整体替换内置顶栏图标） ====================
-  // 配置后内置固定图标（wifi/搜索/单双排/主题/收藏/组网）全部隐藏，内容/顺序/图标全按本数组。
-  // 不配置（删除本字段）或空数组 []（数组里只有注释也算空）= 保持内置默认顶栏；
-  // 即必须至少配置 1 项才会发生整体替换。
+  // ==================== 顶栏入口（topEntries） ====================
+  // 顶栏所有入口的内容/顺序/图标全部由本数组决定；默认列出全部内置入口（全部显示）。
+  // 想关闭某个入口 = 直接从数组中删除（或注释掉）该条；想调整顺序 = 移动该条位置；
+  // 想新增入口 = 按同样格式追加（支持打开 TVBox 界面/内置功能/其他 App/自定义点播界面）。
+  // 把本字段整个删除或改成空数组 []（里面只有注释也算空）= 回退到代码内置默认顶栏。
   // 元素字段：
-  //   name   显示名称（顶栏作 contentDescription，历史一行显示在图标右侧）
+  //   name   显示名称（顶栏仅作 contentDescription，历史一行显示在图标右侧）
   //   type   page=打开 TVBox 界面 | feature=内置功能 | app=打开其他 App | vod=自定义点播界面
-  //   target type=page   : vod | live | search | fastsearch | history | collect | push |
-  //                        setting | drive | apps | hin2n
+  //   target type=page   : vod（点播）| live（直播）| search（搜索）| fastsearch（聚合搜索）|
+  //                        history（历史）| collect（收藏）| push（推送）| setting（设置）|
+  //                        drive（文件）| apps（应用）| hin2n（组网）
   //          type=feature: siteSwitch（切数据源）| themeSwitch（切主题）| styleSwitch（单双排）|
   //                        clearCache（清缓存）| reloadHome（重载首页）| wifi（系统 WiFi 设置）|
   //                        date（系统日期设置）
   //          type=vod    : 数据接口地址（http(s):// 或 assets/xxx.json 或 file:///绝对路径），
-  //                        格式与点播 api json 完全一致（取其中 sites），但仅供该界面使用，
+  //                        格式与点播 api json 完全一致（取其中 sites），但仅供该新界面使用，
   //                        app 其它配置不调用，退出界面即恢复
-  //   pkg    type=app 时的包名；未安装且配 url 时后台下载安装
-  //   icon   http(s) 图片地址，或内置 drawable 名（hm_search/hm_vod/hm_live/hm_history/hm_fav/
-  //          hm_push/hm_folder/hm_settings/hm_drawer/hm_wifi/hm_home/ic_theme/ic_hin2n 等），
-  //          空=兜底图标
+  //   pkg    type=app 时的包名；未安装且配 url 时后台下载安装（顶部进度条）
+  //   icon   http(s) 图片地址或内置 drawable 名。全部可用内置图标：
+  //          hm_search(搜索) hm_vod(点播) hm_live(直播) hm_history(历史) hm_fav(收藏)
+  //          hm_push(推送) hm_folder(文件) hm_settings(设置) hm_drawer(抽屉/应用)
+  //          hm_home(首页) hm_wifi(无线) hm_wifi_no(无网络) hm_lan(有线) hm_mobile(移动网络)
+  //          hm_left_right(单行) hm_up_down(多行) ic_theme(主题) ic_hin2n(组网) ic_n2n(组网)
+  //          icon 留空时：wifi 入口按当前网络类型自动选图（hm_wifi/hm_lan/hm_mobile/hm_wifi_no），
+  //          styleSwitch 入口按当前单双排状态自动选图（hm_left_right/hm_up_down），其余用兜底图标
   //   url    type=app 时未安装的 APK 下载地址（可选）
+  // 组网入口（type=page,target=hin2n）图标颜色会随连接状态自动变化（黄=连接中 绿=已连接 红=失败）
   "topEntries": [
-    // { "name": "搜索",   "type": "page",    "target": "search",      "icon": "hm_search" },
-    // { "name": "切源",   "type": "feature", "target": "siteSwitch",  "icon": "hm_drawer" },
-    // { "name": "主题",   "type": "feature", "target": "themeSwitch", "icon": "ic_theme" },
-    // { "name": "组网",   "type": "page",    "target": "hin2n",       "icon": "ic_hin2n" },
-    // { "name": "文件",   "type": "app",     "pkg": "com.android.filemanager",
-    //   "icon": "hm_folder", "url": "https://example.com/filemanager.apk" },
-    // { "name": "我的影院","type": "vod",    "target": "assets/vod-custom.json", "icon": "hm_vod" }
+    { "name": "网络",   "type": "feature", "target": "wifi",        "icon": "" },
+    { "name": "搜索",   "type": "page",    "target": "search",      "icon": "hm_search" },
+    { "name": "单双排", "type": "feature", "target": "styleSwitch", "icon": "" },
+    { "name": "主题",   "type": "feature", "target": "themeSwitch", "icon": "ic_theme" },
+    { "name": "应用",   "type": "page",    "target": "apps",        "icon": "hm_drawer" },
+    { "name": "设置",   "type": "page",    "target": "setting",     "icon": "hm_settings" },
+    { "name": "组网",   "type": "page",    "target": "hin2n",       "icon": "ic_n2n" }
+    // 追加示例：
+    // ,{ "name": "切源",   "type": "feature", "target": "siteSwitch", "icon": "hm_drawer" }
+    // ,{ "name": "文件",   "type": "app",     "pkg": "com.android.filemanager",
+    //    "icon": "hm_folder", "url": "https://example.com/filemanager.apk" }
+    // ,{ "name": "我的影院","type": "vod",    "target": "assets/vod-custom.json", "icon": "hm_vod" }
   ],
 
-  // ==================== 首页历史一行入口（homeEntries，整体替换） ====================
-  // 配置后首页「历史/点播/直播/搜索/收藏/推送/文件/设置/组网」一行整体替换为本数组，
-  // 字段与 topEntries 完全相同（name/type/target/pkg/icon/url）；
-  // 不配置（删除本字段）或空数组 []（数组里只有注释也算空）= 保持内置默认一行；
-  // 即必须至少配置 1 项才会发生整体替换。
-  // 该行与下方推荐列表在同一个滚动容器内，焦点移出屏幕时会随列表一起滚动。
+  // ==================== 首页历史一行入口（homeEntries） ====================
+  // 首页「历史/点播/直播/搜索/收藏/推送/文件/设置/组网」一行的内容/顺序/图标全部由本数组决定；
+  // 默认列出全部内置入口（全部显示）。关闭某个入口 = 删除（或注释掉）该条；字段与 topEntries 相同。
+  // 把本字段整个删除或改成空数组 []（里面只有注释也算空）= 回退到代码内置默认一行。
+  // 该行入口过多超出屏幕时可左右滑动；长按「历史」入口可切换首页推荐模式并重载。
   "homeEntries": [
-    // { "name": "历史", "type": "page", "target": "history", "icon": "hm_history" },
-    // { "name": "点播", "type": "page", "target": "vod",     "icon": "hm_vod" },
-    // { "name": "直播", "type": "page", "target": "live",    "icon": "hm_live" },
-    // { "name": "影院", "type": "vod",  "target": "https://example.com/vod.json", "icon": "hm_vod" }
+    { "name": "历史", "type": "page", "target": "history", "icon": "hm_history" },
+    { "name": "点播", "type": "page", "target": "vod",     "icon": "hm_vod" },
+    { "name": "直播", "type": "page", "target": "live",    "icon": "hm_live" },
+    { "name": "搜索", "type": "page", "target": "search",  "icon": "hm_search" },
+    { "name": "收藏", "type": "page", "target": "collect", "icon": "hm_fav" },
+    { "name": "推送", "type": "page", "target": "push",    "icon": "hm_push" },
+    { "name": "文件", "type": "page", "target": "drive",   "icon": "hm_folder" },
+    { "name": "设置", "type": "page", "target": "setting", "icon": "hm_settings" },
+    { "name": "组网", "type": "page", "target": "hin2n",   "icon": "ic_hin2n" }
+    // 追加示例：
+    // ,{ "name": "应用", "type": "page", "target": "apps",   "icon": "hm_drawer" }
+    // ,{ "name": "影院", "type": "vod",  "target": "https://example.com/vod.json", "icon": "hm_vod" }
   ]
 }

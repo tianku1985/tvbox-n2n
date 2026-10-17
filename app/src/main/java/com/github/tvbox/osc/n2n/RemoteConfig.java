@@ -404,6 +404,12 @@ public class RemoteConfig {
             Hawk.put(K_BOOT, j.optBoolean("bootStart", false));
             Hawk.put(K_BOOT_DEFAULT_SET, true);
         }
+        // 设置页各项默认值（"settings" 段）：仅当用户从未在设置页修改过该项时写入，
+        // 用户在设置页更改后该项以用户设定为准，JSON 不再覆盖。
+        JSONObject st = j.optJSONObject("settings");
+        if (st != null) {
+            applySettingsDefaults(st);
+        }
         applyEndpoint(ctx, j, "api", HawkConfig.API_URL, "点播接口");
         applyEndpoint(ctx, j, "live", HawkConfig.LIVE_URL, "直播接口");
         applyEndpoint(ctx, j, "epg", HawkConfig.EPG_URL, "EPG 接口");
@@ -413,6 +419,68 @@ public class RemoteConfig {
             if (ti >= 0) {
                 Hawk.put(HawkConfig.THEME_SELECT, ti);
             }
+        }
+    }
+
+    /**
+     * 设置页默认值（JSON "settings" 段 → Hawk）。键名与含义见 assets/tvbox-config.json 注释。
+     * 全部为 putIfAbsent 语义：用户在设置页修改过（Hawk 已有该键）后，JSON 不再覆盖。
+     */
+    private static void applySettingsDefaults(JSONObject st) {
+        // ---- 首页选项 ----
+        putBool(st, "homeShowSource", HawkConfig.HOME_SHOW_SOURCE);   // 数据源名称显示
+        putBool(st, "homeSearchPosition", HawkConfig.HOME_SEARCH_POSITION); // 搜索按钮位置
+        putBool(st, "homeMenuPosition", HawkConfig.HOME_MENU_POSITION);     // 设置按钮位置
+        putInt(st, "homeRec", HawkConfig.HOME_REC);                   // 首页推荐: 0=豆瓣 1=站点 2=历史
+        putInt(st, "homeNum", HawkConfig.HOME_NUM);                   // 历史条数档位 0-4
+        putBool(st, "homeRecStyle", HawkConfig.HOME_REC_STYLE);       // 首页默认多行（网格）
+        putBool(st, "homeDefaultShow", HawkConfig.HOME_DEFAULT_SHOW); // 启动直接进直播
+        // ---- 播放器选项 ----
+        putBool(st, "showPreview", HawkConfig.SHOW_PREVIEW);          // 窗口预览
+        putInt(st, "playScale", HawkConfig.PLAY_SCALE);               // 画面缩放 0-5
+        putInt(st, "backgroundPlayType", HawkConfig.BACKGROUND_PLAY_TYPE); // 后台播放 0/1/2
+        putInt(st, "playType", HawkConfig.PLAY_TYPE);                 // 播放器类型
+        putStr(st, "ijkCodec", HawkConfig.IJK_CODEC);                 // IJK 解码方式
+        putBool(st, "ijkCachePlay", HawkConfig.IJK_CACHE_PLAY);       // IJK 边播边缓存
+        putInt(st, "exoRenderer", HawkConfig.EXO_RENDERER);           // Exo 扩展渲染器索引
+        putInt(st, "exoRendererMode", HawkConfig.EXO_RENDERER_MODE);  // Exo 渲染器模式索引
+        putInt(st, "vodPlayerPreferred", HawkConfig.VOD_PLAYER_PREFERRED); // 点播首选播放器索引
+        putInt(st, "playRender", HawkConfig.PLAY_RENDER);             // 渲染方式 0=TextureView 1=SurfaceView
+        putBool(st, "videoPurify", HawkConfig.VIDEO_PURIFY);          // 视频去广告（嗅探净化）
+        // ---- 系统选项 ----
+        putInt(st, "homeLocale", HawkConfig.HOME_LOCALE);             // 语言 0=中文 1=英文
+        putInt(st, "themeSelect", HawkConfig.THEME_SELECT);           // 主题索引（缺省值）
+        putInt(st, "searchView", HawkConfig.SEARCH_VIEW);             // 搜索展示 0=文字 1=缩略图
+        putBool(st, "parseWebview", HawkConfig.PARSE_WEBVIEW);        // 嗅探内核
+        putInt(st, "dohUrl", HawkConfig.DOH_URL);                     // 安全 DNS
+        putBool(st, "fastSearchMode", HawkConfig.FAST_SEARCH_MODE);   // 聚合搜索（快搜）
+        putBool(st, "debugOpen", HawkConfig.DEBUG_OPEN);              // 调试模式开关
+    }
+
+    private static void putBool(JSONObject st, String key, String hawkKey) {
+        try {
+            if (st.has(key) && !Hawk.contains(hawkKey)) {
+                Hawk.put(hawkKey, st.optBoolean(key));
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void putInt(JSONObject st, String key, String hawkKey) {
+        try {
+            if (st.has(key) && !Hawk.contains(hawkKey)) {
+                Hawk.put(hawkKey, st.optInt(key));
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void putStr(JSONObject st, String key, String hawkKey) {
+        try {
+            if (st.has(key) && !Hawk.contains(hawkKey)) {
+                Hawk.put(hawkKey, st.optString(key, ""));
+            }
+        } catch (Throwable ignored) {
         }
     }
 

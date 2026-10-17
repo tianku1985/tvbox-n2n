@@ -51,18 +51,19 @@ TVBox 的所有定制配置统一来自 APK 内置文件：
 - **没有远程地址、没有网络拉取、没有远程 APK 自动更新**。设置页原「远程配置」卡片改为「内置配置」卡片，只剩一个「开机启动」开关；原「配置接口」「同步配置」两行 UI 已删除。
 - 需要不同配置（本地定制或"远程"下发）时：**直接改源码里的 assets JSON，重新编译 APK**。
 - 文件支持 JSONC：`//` 行注释、`/* */` 块注释、尾逗号、UTF-8 BOM（解析器 `RemoteConfig.parseLoose`，注释不会穿透字符串，URL 安全）。
-- App 启动 `App.onCreate` 第一步 `RemoteConfig.bootstrap(this)` **同步**读取并应用（文件仅几 KB）。
+- App 启动 `App.onCreate` 顺序：`Hawk.init()` → `RemoteConfig.bootstrap(this)` **同步**读取并应用（文件仅几 KB）→ `initParams()` 硬编码默认值兜底（`putDefault` 不覆盖已有值，因此 JSON 的 settings 优先级高于代码兜底）。
 
 ### 3.2 字段与覆盖规则
 
 | 字段 | 落盘规则 |
 |------|----------|
 | `notice`（字符串或样式对象）/`home`/`tkp2p`/`entries`/`hin2nEntry`/`checkInterval`/`ua` | 每次启动用内置 JSON 覆盖缓存值 |
-| `theme` / `themes` | 每次启动应用（`ThemeManager.updateThemes`）；`theme` 支持序号/中文名/英文 alias |
+| `theme` / `themes` | 每次启动应用（`ThemeManager.updateThemes`）；`theme` 支持序号/中文名/英文 alias；`themes` 每项可带 `bgImage`（单张）或 `bgImages`（多张，随机选一张并在该主题下按索引缓存保持稳定），配图则所有页面用图，否则用 `bgStart→bgEnd` 渐变 |
 | `upgrade` | 每次启动覆盖缓存；`HomeActivity` 进入后由 `UpgradeChecker` 按 `versionCode`/`checkUrl` 决定是否弹窗，每版本每次启动最多提示一次；`force=true` 时弹窗不可取消 |
 | `topEntries` / `homeEntries` | 每次启动覆盖缓存；**数组含 ≥1 项才整体替换**顶栏/首页历史行，缺省或空数组 `[]`（含「数组里只有注释」剥注释后为空）= 删除 Hawk 键、保持内置默认 UI |
 | `api` / `live` / `epg` / `proxy` | **仅当用户从未在 TVBox 内手动配置过该接口**（Hawk 值为空）时写入默认值；手动配置后永不覆盖，四个接口互不影响 |
 | `bootStart`（TVBox 开机自启） | 只作默认值写入**一次**（Hawk `n2n_boot_default_set` 标记），之后以用户开关为准 |
+| `settings`（设置页 25 项默认值） | 每项 `putIfAbsent`：**仅当用户从未在设置页改过该项**时写入一次，用户一旦手动更改该项永以用户为准（映射见 `RemoteConfig.applySettingsDefaults`；含 MediaSettingDialog 子项 `IJK_CACHE_PLAY`/`EXO_RENDERER`/`EXO_RENDERER_MODE`/`VOD_PLAYER_PREFERRED` 与 `HOME_DEFAULT_SHOW`/`PLAY_RENDER`/`VIDEO_PURIFY`/`FAST_SEARCH_MODE`/`DEBUG_OPEN`） |
 | `hin2n.bootStart` / `hin2n.staticRoutes` / `hin2n.configs` | **仅首启且组网数据库为空时播种一次**（`Hin2nSeeder`），之后完全以组网界面里的用户操作为准 |
 
 `version` / `apkUrl` / `hin2nUrl` 三个旧字段已废弃（远程更新与外部 hin2n APK 下载均不存在）。
@@ -71,7 +72,7 @@ TVBox 的所有定制配置统一来自 APK 内置文件：
 
 | 类 | 职责 |
 |----|------|
-| [RemoteConfig.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/RemoteConfig.java) | 读 assets、parseLoose、apply/applyEndpoint；`fetchAuto/fetch/tryPendingUpdate` 保留空壳（立即成功回调），调用方无需改动；同时持有 Hawk 键常量 |
+| [RemoteConfig.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/RemoteConfig.java) | 读 assets、parseLoose、apply/applyEndpoint/applySettingsDefaults（设置页 25 项 putIfAbsent）；`fetchAuto/fetch/tryPendingUpdate` 保留空壳（立即成功回调），调用方无需改动；同时持有 Hawk 键常量 |
 | [Hin2nSeeder.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/Hin2nSeeder.java) | 首启播种 hin2n 配置；字段别名 `ipMode/fromSupernode`、`localIP/localIpAuto`、`acceptMulticast/dropMulticast`(反义) |
 | [Hin2nEntryState.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/Hin2nEntryState.java) | 常驻 EventBus 订阅 hin2n 5 个运行事件，折叠为 IDLE/CONNECTING/CONNECTED/ERROR 四态，供入口图标染色（拨号中=黄/已连接=绿/失败=红/未拨号=原色）；变化时 post `ChangedEvent` |
 | [HomeEntry.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/HomeEntry.java) | 首页：hin2n 固定入口（内置模块直进，`applyStateTint` 染色）、`entries` 第三方 App 入口栏、`topEntries` 顶栏整体替换（隐藏 tvWifi/tvFind/tvStyle/tvTheme/tvDrawer/tvN2n/tvHin2n 七个固定图标后动态建项）、公告条、外观/主题应用、输入框/按钮统一样式（`styleInput/styleButton`）；定时 tick 只做界面刷新 |
@@ -87,8 +88,11 @@ TVBox 的所有定制配置统一来自 APK 内置文件：
 ### 3.4 自定义入口机制（topEntries / homeEntries / entries）
 
 - 数据模型：`RemoteConfig.Entry`（name/type/target/pkg/icon/url），`RemoteConfig.parseEntries()` 兼容字符串数组等异常输入。
+- **出厂 JSON 即显式列出全部内置入口**（topEntries 7 项 / homeEntries 9 项，默认全显）；想关闭某入口 = 从数组删除该条；把字段整个删除或改成空数组 `[]` = 回退代码内置默认 UI。每次启动按 JSON 覆盖 Hawk 缓存。
 - 顶栏：`HomeEntry.populate()` 读 `RemoteConfig.topEntries()`——返回 `null` 走内置默认；返回非空（≥1 项）则隐藏 7 个固定图标并按数组顺序动态生成 ImageView 加入顶栏容器，点击统一调 `EntryDispatcher.handle(activity, entry)`。
-- 首页历史行：`UserFragment.rebuildHomeEntriesIfConfigured()` 读 `RemoteConfig.homeEntries()`；非空时移除 `tvUserHome` 行内全部默认卡片并按数组重建（含 `vod` 类型）。该行与推荐列表同处一个 ScrollView，焦点跟随滚动逻辑对动态卡片同样生效。
+- 首页历史行：`UserFragment.rebuildHomeEntriesIfConfigured()` 读 `RemoteConfig.homeEntries()`；非空时移除 `tvUserHome` 行内全部默认卡片并按数组重建（含 `vod` 类型）。该行与推荐列表同处一个 ScrollView，焦点跟随滚动逻辑对动态卡片同样生效；重建行内「历史」卡片保留长按（切推荐模式并重载首页）。
+- 图标解析 `EntryDispatcher.resolveIcon()`：`icon` 留空时按入口语义自动选图——`wifi` 按当前网络类型（hm_wifi/hm_lan/hm_mobile/hm_wifi_no）、`styleSwitch` 按 `HOME_REC_STYLE`（hm_left_right/hm_up_down），其余用兜底图标；`styleSwitch` 执行后调 `HomeEntry.refresh()` 重建顶栏使图标状态同步。
+- hin2n 状态染色对动态入口同样生效：动态生成的组网入口打 `tag="hin2n_state"`，样式应用后由 `HomeEntry.retintStateIcons()` 统一重染（防止 `iconColor` 为空时的 `clearColorFilter` 抹掉状态色），`HomeActivity`/`UserFragment` 收到 `ChangedEvent` 也会遍历重染。
 - 旧版 `entries`：仅 `app` 类型、追加式（不隐藏任何东西），顶栏容器内展示；`topEntries` 非空时它不再生效。
 - `app` 类型：`PackageManager.getLaunchIntentForPackage(pkg)` 直开；未安装且有 `url` → `ApkDownloader.download()`；图标支持 http(s) URL（OkHttp 加载）或内置 drawable 资源名（`hm_*`、`ic_theme`、`ic_hin2n` 等），空/加载失败有兜底图标。
 
@@ -125,10 +129,19 @@ TVBox 的所有定制配置统一来自 APK 内置文件：
   - `n2n.ui.Hin2nConfigListActivity` —— 配置列表；
   - `n2n.ui.Hin2nConfigEditActivity` —— 28 字段表单。
 - 界面颜色随 TVBox 主题：布局直接用 `?attr/color_theme*` 与主题 colorAccent；自定义控件样式 `Hin2nLabel/Hin2nInput/Hin2nCheck`（[styles.xml](file:///f:/tvbox-n2n/app/src/main/res/values/styles.xml)），勾选框同时给了 `android:buttonTint` 与 appcompat `buttonTint` 保证 API19 白色着色。
+- **Ping 弹窗主题适配**（`Hin2nActivity.showPingDialog()`）：AppTheme 是 `Theme.AppCompat.Light` 系，AlertDialog 默认白底，硬编码白色文字会"白上白"不可见。修复：输入框背景用 JSON `home.inputBgColor`（缺省取当前主题深色背景色）画圆角深色底，文字色按背景亮度（0.299R+0.587G+0.114B < 128 判深色）自动取白/深灰，hint 取文字色 60% 透明。
+- **「点击连接提示添加配置」自愈**（`Hin2nCore.currentSetting()`）：旧逻辑 SP `current_setting_id` 为 -1（旧版本未写入/配置被删未回写）或 JSON 备用存储模式（`sDaoSession==null`）时直接返回 null。修复：按 id 查不到/未设置时，依次回退「`isSelcected=true` 的配置 → 列表第一条」，并把选中的 id 回写 SP，保证只要配置列表非空就一定能取到当前配置。
 
-## 5. 首页入口行随内容列表滚动
+## 5. 首页入口行随内容列表滚动 + 左右拖动
 
-「我的」页 [fragment_user.xml](file:///f:/tvbox-n2n/app/src/main/res/layout/fragment_user.xml) 根布局是单个 ScrollView，入口行（`tvUserHome` 9 张卡）与其下的 `tvHotListForGrid`、`tvHotListForLine` 是同一个垂直 LinearLayout 的子 View，结构上天然一起滚动；遥控器焦点移动到屏外时，[UserFragment.installScrollFollow()](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/fragment/UserFragment.java) 通过全局焦点监听按焦点 View 的屏幕坐标 `smoothScrollTo`（上下各留 24dp margin），保证 D-pad 浏览时入口行也会被带出/带回视口。
+「我的」页 [fragment_user.xml](file:///f:/tvbox-n2n/app/src/main/res/layout/fragment_user.xml) 根布局是单个 ScrollView，入口行与其下的 `tvHotListForGrid`、`tvHotListForLine` 是同一个垂直 LinearLayout 的子 View，结构上天然一起滚动；遥控器焦点移动到屏外时，[UserFragment.installScrollFollow()](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/fragment/UserFragment.java) 通过全局焦点监听按焦点 View 的屏幕坐标 `smoothScrollTo`（上下各留 24dp margin），保证 D-pad 浏览时入口行也会被带出/带回视口。
+
+入口行本身（`tvUserHome` 9 张卡 + 可配置动态卡）外层包了 `HorizontalScrollView`（无滚动条、不抢焦点、fillViewport=false）：入口过多超出屏宽时可**左右滑动/焦点右移自动横滚**，不再截断；`findViewById(R.id.tvUserHome)` 仍指向内层 LinearLayout，所有动态建卡逻辑无需改动。
+
+## 5.1 首页冷启动优化
+
+- `Hin2nCore.init()` 中的 9 个 n2n native 库（v1/v2s/v2/v3 两套 ABI）改为**后台线程异步预热**（`hin2n-load-libs` 线程），不再阻塞主线程 Application.onCreate；`N2NService.onCreate()` 里保留一次幂等的同步 `loadLibraries()` 兜底，保证真正拨号时库必然已加载。
+- 播放器缓存清理（递归文件 IO）本就放后台线程；主题切换走 `switchTheme(act, useCache=true)`——`ApiConfig.loadConfig/loadJar` 全部命中磁盘缓存 + `SourceViewModel.sortCache` 静态 LRU 内存缓存，**只刷 UI 不重新拉取接口数据**（进程内重启 recreate 数据不丢）。
 
 ## 6. 两个开机启动开关
 
