@@ -113,8 +113,20 @@ public class HomeActivity extends BaseActivity {
         res = getResources();
 
         EventBus.getDefault().register(this);
-        ControlManager.get().startServer();
-        App.startWebserver();
+        // 远程控制/局域网 Web 服务端口绑定与 AndServer 路由扫描较慢，移到后台线程，不阻塞首页首帧
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ControlManager.get().startServer();
+                } catch (Throwable ignored) {
+                }
+                try {
+                    App.startWebserver();
+                } catch (Throwable ignored) {
+                }
+            }
+        }, "home-servers").start();
         initView();
         initViewModel();
         useCacheConfig = false;
