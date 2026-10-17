@@ -59,6 +59,8 @@ TVBox 的所有定制配置统一来自 APK 内置文件：
 |------|----------|
 | `notice`（字符串或样式对象）/`home`/`tkp2p`/`entries`/`hin2nEntry`/`checkInterval`/`ua` | 每次启动用内置 JSON 覆盖缓存值 |
 | `theme` / `themes` | 每次启动应用（`ThemeManager.updateThemes`）；`theme` 支持序号/中文名/英文 alias |
+| `upgrade` | 每次启动覆盖缓存；`HomeActivity` 进入后由 `UpgradeChecker` 按 `versionCode`/`checkUrl` 决定是否弹窗，每版本每次启动最多提示一次；`force=true` 时弹窗不可取消 |
+| `topEntries` / `homeEntries` | 每次启动覆盖缓存；**数组含 ≥1 项才整体替换**顶栏/首页历史行，缺省或空数组 `[]`（含「数组里只有注释」剥注释后为空）= 删除 Hawk 键、保持内置默认 UI |
 | `api` / `live` / `epg` / `proxy` | **仅当用户从未在 TVBox 内手动配置过该接口**（Hawk 值为空）时写入默认值；手动配置后永不覆盖，四个接口互不影响 |
 | `bootStart`（TVBox 开机自启） | 只作默认值写入**一次**（Hawk `n2n_boot_default_set` 标记），之后以用户开关为准 |
 | `hin2n.bootStart` / `hin2n.staticRoutes` / `hin2n.configs` | **仅首启且组网数据库为空时播种一次**（`Hin2nSeeder`），之后完全以组网界面里的用户操作为准 |
@@ -72,11 +74,47 @@ TVBox 的所有定制配置统一来自 APK 内置文件：
 | [RemoteConfig.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/RemoteConfig.java) | 读 assets、parseLoose、apply/applyEndpoint；`fetchAuto/fetch/tryPendingUpdate` 保留空壳（立即成功回调），调用方无需改动；同时持有 Hawk 键常量 |
 | [Hin2nSeeder.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/Hin2nSeeder.java) | 首启播种 hin2n 配置；字段别名 `ipMode/fromSupernode`、`localIP/localIpAuto`、`acceptMulticast/dropMulticast`(反义) |
 | [Hin2nEntryState.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/Hin2nEntryState.java) | 常驻 EventBus 订阅 hin2n 5 个运行事件，折叠为 IDLE/CONNECTING/CONNECTED/ERROR 四态，供入口图标染色（拨号中=黄/已连接=绿/失败=红/未拨号=原色）；变化时 post `ChangedEvent` |
-| [HomeEntry.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/HomeEntry.java) | 首页：hin2n 固定入口（内置模块直进，`applyStateTint` 染色）、`entries` 第三方 App 入口栏（仅已安装可开，未装静默）、公告条、外观/主题应用；定时 tick 只做界面刷新 |
+| [HomeEntry.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/HomeEntry.java) | 首页：hin2n 固定入口（内置模块直进，`applyStateTint` 染色）、`entries` 第三方 App 入口栏、`topEntries` 顶栏整体替换（隐藏 tvWifi/tvFind/tvStyle/tvTheme/tvDrawer/tvN2n/tvHin2n 七个固定图标后动态建项）、公告条、外观/主题应用、输入框/按钮统一样式（`styleInput/styleButton`）；定时 tick 只做界面刷新 |
+| [EntryDispatcher.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/EntryDispatcher.java) | 自定义入口统一分发：`page`（vod/live/search/fastsearch/history/collect/push/setting/drive/apps/hin2n）、`feature`（siteSwitch/themeSwitch/styleSwitch/clearCache/reloadHome/wifi/date）、`vod`（开 CustomVodActivity）、`app`（已安装直开，未装且配 url 走 ApkDownloader）；图标解析（http 图片或内置 drawable 名）也在此 |
 | [NoticeBar.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/NoticeBar.java) | 公告渲染（样式、时段、过期、滚动速度、home/live/vod 显隐） |
 | [BootReceiver.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/BootReceiver.java) | BOOT_COMPLETED：hin2n 自连 + 按开关拉起首页 |
+| [UpgradeChecker.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/UpgradeChecker.java) | 进首页后自检升级（公开入口 `check(activity)`）：内联字段或 `checkUrl` 拉取版本信息 → 版本号比较（每版本每进程只提示一次）→ TipDialog（`force` 时 `setCancelable(false)` 且不显示取消按钮）→ 确认后交 ApkDownloader |
+| [ApkDownloader.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/ApkDownloader.java) | 统一下载管线：OkHttp 流式下载到 `getExternalFilesDir`，首页顶部进度条；完成后 FileProvider+`ACTION_INSTALL_PACKAGE`/`ACTION_VIEW` 安装；Android 8+ 缺未知来源权限时先存 `sPendingInstall` 跳设置，`HomeActivity.onResume` 调 `resumePendingInstall(activity)` 自动重装；Activity 已销毁时用 application context 兜底 |
+| [CustomVodActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/CustomVodActivity.java) | 自定义点播界面（`ui.activity` 包），复用 `R.layout.activity_vod`；打开时把接口 JSON 的 `sites` 以 `cv_` 前缀**仅内存注入** `ApiConfig`（不覆盖用户首页源），退出时 `removeCustomSources` 并恢复原 home 源；支持 `http(s)://`、`assets/`、`file:///绝对路径`（**注意：用标准 Gson 解析，不剥 JSONC 注释**） |
 
 设置页：[ModelSettingFragment.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/fragment/ModelSettingFragment.java) 的 `initRemoteConfig()` 只绑定 `llRcBoot`（Hawk `n2n_boot_start`）；布局 `res/layout/fragment_model.xml` 与 `res/layout-v21/fragment_model.xml` 中的卡片标题为「内置配置」。
+
+### 3.4 自定义入口机制（topEntries / homeEntries / entries）
+
+- 数据模型：`RemoteConfig.Entry`（name/type/target/pkg/icon/url），`RemoteConfig.parseEntries()` 兼容字符串数组等异常输入。
+- 顶栏：`HomeEntry.populate()` 读 `RemoteConfig.topEntries()`——返回 `null` 走内置默认；返回非空（≥1 项）则隐藏 7 个固定图标并按数组顺序动态生成 ImageView 加入顶栏容器，点击统一调 `EntryDispatcher.handle(activity, entry)`。
+- 首页历史行：`UserFragment.rebuildHomeEntriesIfConfigured()` 读 `RemoteConfig.homeEntries()`；非空时移除 `tvUserHome` 行内全部默认卡片并按数组重建（含 `vod` 类型）。该行与推荐列表同处一个 ScrollView，焦点跟随滚动逻辑对动态卡片同样生效。
+- 旧版 `entries`：仅 `app` 类型、追加式（不隐藏任何东西），顶栏容器内展示；`topEntries` 非空时它不再生效。
+- `app` 类型：`PackageManager.getLaunchIntentForPackage(pkg)` 直开；未安装且有 `url` → `ApkDownloader.download()`；图标支持 http(s) URL（OkHttp 加载）或内置 drawable 资源名（`hm_*`、`ic_theme`、`ic_hin2n` 等），空/加载失败有兜底图标。
+
+### 3.5 自定义点播界面（type=vod / cv_ 源注入）
+
+1. 入口 target 为接口地址（http(s)/assets/file），`EntryDispatcher` 把地址放入 intent extra 启动 `CustomVodActivity`；
+2. `onCreate` 读取并解析接口 JSON（标准 Gson，与点播 api 同结构），对每个 `SourceBean` 的 key 加 `CUSTOM_SRC_PREFIX = "cv_"`（防与用户源重名冲突），调 `ApiConfig.injectCustomSources(list)` 内存注入，并用 `setHomeSourceTemp(cv源key)` 临时切首页位；
+3. 界面本体就是 VodActivity 逻辑复用，仅源集合不同；
+4. `onDestroy` 调 `ApiConfig.removeCustomSources()` 清除全部 `cv_` 源并恢复进入前的 home 源 key——**不落盘、不污染用户配置**；进程被杀重启后自然恢复。
+
+### 3.6 升级检查与 APK 下载安装管线
+
+- 触发点：`HomeActivity` 启动后 `UpgradeChecker.check(activity)`（幂等）；版本信息优先 `upgrade.checkUrl` 网络获取（与内置 `upgrade` 段同结构），无 checkUrl 用内联字段；
+- 判定：远程 `versionCode > BuildConfig` 版本号且有 `url`，且本次启动未对该版本提示过（进程内标记）；
+- 弹窗：TipDialog 显示 versionName + notes；`force=true` 时只有「立即更新」且 `setCancelable(false)`；
+- 下载：`ApkDownloader.download(context, url, fileName, listener)` → 下载中在当前 Activity 的 `android.R.id.content` 顶部动态注入 28dp 高的进度条覆盖层（ProgressBar+文字，tag 去重，完成延迟 1.2s 移除），不依赖任何布局 id → 下载完成：
+  - 有权限：FileProvider（authority `${applicationId}.fileprovider`，`file_paths.xml` 已声明 external-path `.`）发安装 Intent，Android 7+ 必须走 FileProvider；
+  - Android 8+ 无「安装未知应用」权限：缓存 `sPendingInstall`，跳当前包名的 `ACTION_MANAGE_UNKNOWN_APP_SOURCES` 设置页，授权返回后 `HomeActivity.onResume → resumePendingInstall` 自动继续安装；
+  - 触发下载的 Activity 已销毁：用 `sApp`（application context）直接发安装 Intent 兜底。
+- `entries`/`topEntries` 里 app 类型未安装下载复用同一条管线。
+
+### 3.7 tkp2p:// P2P 直播
+
+- 直播源 URL 前缀 `tkp2p://` 时，`LiveWebViewPlayer.buildTkP2pPage()` 生成内置播放页（`assets/tkp2p/`）并加载真实流地址；
+- 引擎：`engine` 取值归一化为 `auto/hls/media`（配置里写全称 `p2p-media-loader`→`hls`、`media-p2p-engine`→`media` 兼容）；`announce`（tracker 列表）、`zone`、`token`（SwarmCloud）注入页面；
+- ICE：先读 `iceServers`，兼容简写键 `ice`，JSON 数组整体注入 WebRTC 配置。
 
 ## 4. hin2n 入口与 TV 界面
 

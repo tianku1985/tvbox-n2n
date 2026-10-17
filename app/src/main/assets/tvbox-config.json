@@ -22,17 +22,19 @@
     "iconColor": "",                    // 图标颜色，空=白色
     "textColor": "",                    // 文字颜色，空=白色
     "alpha": 100,                       // 入口卡片透明度 0-100
-    "inputBgColor": "",                 // 输入框背景，空=主题半透明色
-    "buttonBgColor": ""                 // 按钮背景，空=主题半透明色
+    "inputBgColor": "",                 // 输入框背景，空=主题半透明色（设置页接口地址、接口配置弹窗输入框）
+    "buttonBgColor": ""                 // 按钮背景，空=主题半透明色（接口配置弹窗「确定/存储权限」按钮）
   },
 
   // ============================ tkp2p:// 原生 P2P 播放 ============================
   "tkp2p": {
-    "engine": "auto",                   // auto | p2p-media-loader | media-p2p-engine
-    "announce": [],                     // tracker 地址列表
-    "token": "",                        // P2P 服务 token
-    "zone": "cn",                       // 区域
-    "ice": []                           // 自定义 ICE servers
+    "engine": "auto",                   // 引擎：auto=按流类型自动 | hls=p2p-media-loader（m3u8）
+                                         //       | media=media-p2p-engine（mp4 等，SwarmCloud）
+                                         // 也兼容全称 p2p-media-loader / media-p2p-engine
+    "announce": [],                     // WebRTC tracker 地址列表（wss://），空=引擎内置默认
+    "token": "",                        // SwarmCloud 服务 token（media 引擎），空=试用
+    "zone": "cn",                       // tracker 区域：eu | hk | us | cn
+    "iceServers": []                    // 自定义 WebRTC ICE servers（也可简写为 "ice"）
   },
 
   // ============================ 主题 ============================
@@ -140,8 +142,9 @@
   ],
 
   // ============================ 顶栏入口（topEntries，整体替换内置顶栏图标） ============================
-  // 配置后顶栏固定图标（wifi/搜索/单双排/主题/收藏/设置/组网）全部隐藏，内容/顺序/图标完全按本数组。
-  // 不配置（删除本字段）则保持内置默认顶栏。元素字段：
+  // 只要本数组含至少 1 项：顶栏固定图标（wifi/搜索/单双排/主题/收藏/设置/组网）全部隐藏，
+  // 内容/顺序/图标完全按本数组。不配置（删除本字段）或空数组 []（里面只有注释也算空）
+  // = 保持内置默认顶栏。元素字段：
   //   name   显示名称（顶栏仅作 contentDescription，历史一行显示在图标右侧）
   //   type   page=打开 TVBox 界面 | feature=内置功能 | app=打开其他 App | vod=自定义点播界面
   //   target type=page   : vod live search fastsearch history collect push setting drive apps hin2n
@@ -162,8 +165,9 @@
   ],
 
   // ============================ 首页历史一行入口（homeEntries，整体替换） ============================
-  // 配置后首页「历史/点播/直播/搜索/收藏/推送/文件/设置/组网」一行整体替换为本数组，
-  // 字段与 topEntries 完全相同；不配置（删除本字段）则保持内置默认一行。
+  // 只要本数组含至少 1 项：首页「历史/点播/直播/搜索/收藏/推送/文件/设置/组网」一行
+  // 整体替换为本数组，字段与 topEntries 完全相同；不配置（删除本字段）或空数组 []
+  // （里面只有注释也算空）= 保持内置默认一行。
   "homeEntries": [
     // { "name": "历史", "type": "page", "target": "history", "icon": "hm_history" },
     // { "name": "点播", "type": "page", "target": "vod",     "icon": "hm_vod" },

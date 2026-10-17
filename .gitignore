@@ -99,3 +99,6 @@ lint/tmp/
 
 *.hprof
 output-metadata.json
+
+# 本地 Git Data API 推送用的远端 sha 记录（不入库）
+gh_ref.txt

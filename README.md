@@ -22,9 +22,10 @@ This repo relies on the following third-party projects:
 - **Android 4.4 兼容版**：`legacy` flavor（minSdk19），drawable 双版本 + 矢量图转 PNG，修复 4.4 黑屏
 
 ## 文档
+- [TVBox 使用说明（用户手册）](docs/usage.md)
+- [hin2n 使用说明（组网）](docs/hin2n.md)
 - [TVBox 开发文档](docs/tvbox-dev.md)
 - [hin2n 模块开发文档](docs/hin2n-dev.md)
-- [hin2n 使用说明](docs/hin2n.md)
 - [内置配置全量 demo（带注释）](docs/tvbox-config.example.jsonc) / [纯 JSON 版](docs/tvbox-config.example.json)
 
 ## 构建

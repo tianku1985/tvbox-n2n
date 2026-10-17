@@ -43,9 +43,9 @@ hin2n/Hin2n_android/app/
     ├── java/wang/switchy/hin2n/
     │   ├── Hin2nCore.java             # 门面：init/loadLibraries/DAO/SP/currentSetting/startOnBoot/崩溃日志
     │   ├── service/N2NService.java    # VpnService：建隧道、静态路由注入、通知、状态事件
-    │   ├── model/                     # EdgeCmd（参数拼装/校验）、EdgeStatus、N2NSettingInfo(Parcelable)、
-    │   │                               #   N2NSettingModel(greenDAO 实体，28 字段)
-    │   ├── storage/db/base/           # greenDAO 生成代码（DaoMaster/DaoSession/N2NSettingModelDao，已实体化）
+    │   ├── model/                     # EdgeCmd（参数拼装/校验）、EdgeStatus、N2NSettingInfo(Parcelable)
+    │   ├── storage/db/base/           # greenDAO 实体与生成代码（model/N2NSettingModel 28 字段实体、
+    │   │                               #   DaoMaster/DaoSession/N2NSettingModelDao，已实体化）
     │   ├── event/                     # EventBus 事件：Start/Stop/Error/SupernodeDisconnect/LogChange…
     │   └── tool/                      # IOUtils、N2nTools、ThreadUtils、LogFileObserver
     └── res/                           # strings/colors/arrays(vpn_session_name, encryption_modes)、

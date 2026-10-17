@@ -1,6 +1,6 @@
 {
   "notice": {
-    "text": "欢迎使用 TVBox",
+    "text": "",
     "position": "bottom",
     "bgColor": "#B31B1B1B",
     "fontColor": "#FFFFD54F",
@@ -31,7 +31,7 @@
     "announce": [],
     "token": "",
     "zone": "cn",
-    "ice": []
+    "iceServers": []
   },
   "theme": "",
   "themes": [
@@ -58,6 +58,14 @@
   "ua": "",
   "bootStart": false,
   "hin2nEntry": true,
+  "upgrade": {
+    "checkUrl": "",
+    "versionCode": 0,
+    "versionName": "",
+    "url": "",
+    "force": false,
+    "notes": ""
+  },
   "hin2n": {
     "bootStart": false,
     "staticRoutes": "",
@@ -92,5 +100,7 @@
       }
     ]
   },
-  "entries": []
+  "entries": [],
+  "topEntries": [],
+  "homeEntries": []
 }

@@ -1,6 +1,7 @@
 package com.github.tvbox.osc.n2n;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
@@ -45,6 +46,10 @@ public class ApkDownloader {
     /** 正在下载的地址（去重） */
     private static final Set<String> DOWNLOADING = new HashSet<>();
     private static WeakReference<Activity> sAct = new WeakReference<>(null);
+    /** 应用上下文：发起下载的 Activity 已销毁时仍可调起安装（配合 NEW_TASK） */
+    private static WeakReference<Context> sApp = new WeakReference<>(null);
+    /** 已下载完成、等待「未知来源」授权后安装的 APK（从系统设置返回时重试） */
+    private static volatile File sPendingInstall = null;
 
     public interface Listener {
         void onDone(File apk, boolean success, String msg);
@@ -75,6 +80,8 @@ public class ApkDownloader {
             return;
         }
         DOWNLOADING.add(url);
+        sAct = new WeakReference<>(act);
+        sApp = new WeakReference<>(act.getApplicationContext());
         showOverlay(act, name, 0);
         OkGo.<File>get(url).tag(url).execute(new AbsCallback<File>() {
             @Override
@@ -131,7 +138,12 @@ public class ApkDownloader {
                     if (listener != null) {
                         listener.onDone(apk, true, "");
                     } else {
-                        install(sAct.get(), apk);
+                        Activity a = sAct.get();
+                        if (a != null && !a.isFinishing() && !a.isDestroyed()) {
+                            install(a, apk);
+                        } else {
+                            installWithAppContext(apk);
+                        }
                     }
                 } else {
                     fail(url, name, "下载文件为空", listener);
@@ -166,20 +178,64 @@ public class ApkDownloader {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                     && !act.getPackageManager().canRequestPackageInstalls()) {
+                // 记住待安装文件，用户从系统设置返回后由 resumePendingInstall 自动重试
+                sPendingInstall = apk;
                 Toast.makeText(act, "请允许 TVBox 安装应用", Toast.LENGTH_LONG).show();
                 act.startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                         Uri.parse("package:" + act.getPackageName())));
                 return;
             }
-            Uri uri = FileProvider.getUriForFile(act, act.getPackageName() + ".fileprovider", apk);
-            Intent it = new Intent(Intent.ACTION_VIEW);
-            it.setDataAndType(uri, "application/vnd.android.package-archive");
-            it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            it.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            act.startActivity(it);
+            startInstallIntent(act, apk);
         } catch (Throwable t) {
             Toast.makeText(act, "安装失败：" + t.getMessage(), Toast.LENGTH_SHORT).show();
         }
+    }
+
+    /**
+     * Activity onResume 调用：若此前因「未知来源」权限跳了系统设置，
+     * 用户授权返回后自动重新调起安装；未授权则继续等待。
+     */
+    public static void resumePendingInstall(Activity act) {
+        File apk = sPendingInstall;
+        if (act == null || apk == null) {
+            return;
+        }
+        if (!apk.exists()) {
+            sPendingInstall = null;
+            return;
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O
+                || act.getPackageManager().canRequestPackageInstalls()) {
+            sPendingInstall = null;
+            install(act, apk);
+        }
+    }
+
+    /** Activity 不可用时（已切到后台/销毁）用应用上下文调起安装 */
+    private static void installWithAppContext(File apk) {
+        Context app = sApp.get();
+        if (app == null || apk == null || !apk.exists()) {
+            return;
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                    && !app.getPackageManager().canRequestPackageInstalls()) {
+                // 没有界面可引导授权：记录待安装文件，下次进首页 onResume 时再引导
+                sPendingInstall = apk;
+                return;
+            }
+            startInstallIntent(app, apk);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void startInstallIntent(Context ctx, File apk) {
+        Uri uri = FileProvider.getUriForFile(ctx, ctx.getPackageName() + ".fileprovider", apk);
+        Intent it = new Intent(Intent.ACTION_VIEW);
+        it.setDataAndType(uri, "application/vnd.android.package-archive");
+        it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        it.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        ctx.startActivity(it);
     }
 
     // ==================== 顶部下载进度条 ====================

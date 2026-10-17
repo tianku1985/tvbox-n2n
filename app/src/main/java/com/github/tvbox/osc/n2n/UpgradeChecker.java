@@ -130,6 +130,8 @@ public class UpgradeChecker {
                 public void cancel() {
                 }
             });
+            // 强制升级：屏蔽返回键与点击外部取消
+            holder[0].setCancelable(!force);
             holder[0].show();
         } catch (Throwable ignored) {
         }

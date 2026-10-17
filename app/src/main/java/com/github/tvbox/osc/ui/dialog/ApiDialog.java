@@ -78,6 +78,14 @@ public class ApiDialog extends BaseDialog {
         inputProxy = findViewById(R.id.input_proxy);
         inputProxy.setText(Hawk.get(HawkConfig.PROXY_SERVER, ""));
 
+        // 内置 JSON home.inputBgColor / home.buttonBgColor 外观定制
+        com.github.tvbox.osc.n2n.HomeEntry.styleInput(inputApi);
+        com.github.tvbox.osc.n2n.HomeEntry.styleInput(inputLive);
+        com.github.tvbox.osc.n2n.HomeEntry.styleInput(inputEPG);
+        com.github.tvbox.osc.n2n.HomeEntry.styleInput(inputProxy);
+        com.github.tvbox.osc.n2n.HomeEntry.styleButton(findViewById(R.id.inputSubmit));
+        com.github.tvbox.osc.n2n.HomeEntry.styleButton(findViewById(R.id.storagePermission));
+
         findViewById(R.id.inputSubmit).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {

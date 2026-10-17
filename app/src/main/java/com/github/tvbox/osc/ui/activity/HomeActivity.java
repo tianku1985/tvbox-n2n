@@ -600,6 +600,8 @@ public class HomeActivity extends BaseActivity {
     protected void onResume() {
         super.onResume();
         com.github.tvbox.osc.n2n.HomeEntry.refresh(this);
+        // APK 下载完成但缺「未知来源」权限、从系统设置返回后自动继续安装
+        com.github.tvbox.osc.n2n.ApkDownloader.resumePendingInstall(this);
 
         // takagen99 : Switch to show / hide source title
         SourceBean home = ApiConfig.get().getHomeSourceBean();

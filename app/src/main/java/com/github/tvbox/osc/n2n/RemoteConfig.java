@@ -35,14 +35,20 @@ import java.util.List;
  *   },
  *   "home": { "bgImage": "...", "entryBgColor": "...", "iconColor": "...",
  *             "textColor": "...", "alpha": 90 },      // 首页外观
- *   "tkp2p": { "engine": "auto", "announce": [...], "token": "", "zone": "cn" },
+ *   "tkp2p": { "engine": "auto|hls|media", "announce": [...], "token": "",
+ *              "zone": "cn", "iceServers": [...] },   // iceServers 也可简写 ice
  *   "checkInterval": 30,                              // 配置检查间隔（分钟，本地模式下列出兼容）
  *   "ua": "Mozilla/5.0 ...",                          // 全局 UA
  *   "bootStart": true,                                // TVBox 开机自启（用户手动改过后不覆盖）
  *   "api": "...", "live": "...", "epg": "...", "proxy": "...",
  *   "theme": "violet",                                // 主题：索引 / 中文名 / 英文别名
  *   "themes": [ {"name":"红色","alias":"red","style":0,"color":"#D81F26",
- *                "dark":"#8C1418","bgStart":"#3D0A0D","bgEnd":"#D81F26"} ],
+ *                "dark":"#8C1418","bgStart":"#3D0A0D","bgEnd":"#D81F26",
+ *                "bgImage":"url" 或 "bgImages":["url1","url2"]} ],
+ *   "upgrade": {                                      // TVBox APK 自检升级（可被酒店桌面定制使用）
+ *     "checkUrl": "https://.../version.json",         // 远程版本信息地址（优先），或直接内联下列字段
+ *     "versionCode": 2, "versionName": "1.0.2", "url": "https://.../x.apk",
+ *     "force": false, "notes": "更新内容" },
  *   "hin2nEntry": true,                               // 首页是否显示 hin2n 固定入口
  *   "hin2n": {                                        // hin2n 组网模块配置（仅首启 DB 为空时播种）
  *     "bootStart": false,                             // 开机自动连接 n2n
@@ -369,13 +375,19 @@ public class RemoteConfig {
             Hawk.put(K_ENTRIES, j.optJSONArray("entries") != null
                     ? j.optJSONArray("entries").toString() : "");
         }
-        if (j.has("topEntries")) {
-            Hawk.put(K_TOP_ENTRIES, j.optJSONArray("topEntries") != null
-                    ? j.optJSONArray("topEntries").toString() : "[]");
+        // 注意：空数组与「不写该字段」等价 = 保持内置默认 UI。
+        // 否则 demo 里「数组中只放注释示例」剥注释后会被误判为「整体替换成空」，导致图标全消失。
+        JSONArray topArr = j.optJSONArray("topEntries");
+        if (topArr != null && topArr.length() > 0) {
+            Hawk.put(K_TOP_ENTRIES, topArr.toString());
+        } else {
+            Hawk.delete(K_TOP_ENTRIES);
         }
-        if (j.has("homeEntries")) {
-            Hawk.put(K_HOME_ENTRIES, j.optJSONArray("homeEntries") != null
-                    ? j.optJSONArray("homeEntries").toString() : "[]");
+        JSONArray homeArr = j.optJSONArray("homeEntries");
+        if (homeArr != null && homeArr.length() > 0) {
+            Hawk.put(K_HOME_ENTRIES, homeArr.toString());
+        } else {
+            Hawk.delete(K_HOME_ENTRIES);
         }
         if (j.has("upgrade") && j.optJSONObject("upgrade") != null) {
             Hawk.put(K_UPGRADE, j.optJSONObject("upgrade").toString());
