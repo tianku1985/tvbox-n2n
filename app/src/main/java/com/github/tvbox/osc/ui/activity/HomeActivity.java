@@ -1,6 +1,7 @@
 package com.github.tvbox.osc.ui.activity;
 
 import android.Manifest;
+import android.app.Activity;
 import android.content.Context;
 import android.annotation.SuppressLint;
 import android.content.Intent;
@@ -112,8 +113,20 @@ public class HomeActivity extends BaseActivity {
         res = getResources();
 
         EventBus.getDefault().register(this);
-        ControlManager.get().startServer();
-        App.startWebserver();
+        // 远程控制/局域网 Web 服务端口绑定与 AndServer 路由扫描较慢，移到后台线程，不阻塞首页首帧
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ControlManager.get().startServer();
+                } catch (Throwable ignored) {
+                }
+                try {
+                    App.startWebserver();
+                } catch (Throwable ignored) {
+                }
+            }
+        }, "home-servers").start();
         initView();
         initViewModel();
         useCacheConfig = false;
@@ -153,30 +166,7 @@ public class HomeActivity extends BaseActivity {
         tvName.setOnLongClickListener(new View.OnLongClickListener() {
             @Override
             public boolean onLongClick(View v) {
-                File dir = getCacheDir();
-                FileUtils.recursiveDelete(dir);
-                dir = getExternalCacheDir();
-                FileUtils.recursiveDelete(dir);
-                Toast.makeText(HomeActivity.this, getString(R.string.hm_cache_del), Toast.LENGTH_SHORT).show();
-                if(dataInitOk && jarInitOk){
-                    String cspCachePath = FileUtils.getFilePath()+"/csp/";
-                    String jar=ApiConfig.get().getHomeSourceBean().getJar();
-                    String jarUrl=!jar.isEmpty()?jar:ApiConfig.get().getSpider();
-                    File cspCacheDir = new File(cspCachePath + MD5.string2MD5(jarUrl)+".jar");
-                    if (!cspCacheDir.exists()){
-                        reloadHome();
-                        return true;
-                    }
-                    new Thread(() -> {
-                        try {
-                            FileUtils.deleteFile(cspCacheDir);
-                            ApiConfig.get().clearJarLoader();
-                            reloadHome();
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    }).start();
-                }
+                clearHomeCache();
                 return true;
             }
         });
@@ -239,18 +229,7 @@ public class HomeActivity extends BaseActivity {
             @Override
             public void onClick(View view) {
                 FastClickCheckUtil.check(view);
-                int idx = com.github.tvbox.osc.n2n.ThemeManager.cycle();
-                Toast.makeText(HomeActivity.this,
-                        "主题：" + com.github.tvbox.osc.n2n.ThemeManager.name(idx), Toast.LENGTH_SHORT).show();
-                // recreate()/finish 重启会触发 onDestroy 的 appExit 杀进程（表现为"切主题=退出应用"），
-                // 内部重启前置 sSkipAppExit，让本次 onDestroy 跳过杀进程，实现平滑换肤
-                sSkipAppExit = true;
-                com.github.tvbox.osc.base.BaseActivity.resetWallpaper();
-                Intent it = new Intent(HomeActivity.this, HomeActivity.class);
-                it.putExtra("useCache", useCacheConfig);
-                finish();
-                startActivity(it);
-                overridePendingTransition(0, 0);
+                switchTheme(HomeActivity.this, useCacheConfig);
             }
         });
         // Button : Date >> Go into Android Date Settings --------------
@@ -270,6 +249,56 @@ public class HomeActivity extends BaseActivity {
         if (homeRec == limit) homeRec = -1;
         homeRec++;
         Hawk.put(HawkConfig.HOME_REC, homeRec);
+    }
+
+    /**
+     * 一键切换主题（顶栏 tvTheme 与 JSON feature=themeSwitch 入口共用）。
+     * recreate()/finish 重启会触发 onDestroy 的 appExit 杀进程（表现为"切主题=退出应用"），
+     * 内部重启前置 sSkipAppExit，让本次 onDestroy 跳过杀进程，实现平滑换肤。
+     * 切主题只刷新界面 UI、不刷新数据：useCache 强制为 true，点播接口配置与 spider jar
+     * 均走本地缓存，homeContent 命中 SourceViewModel.sortCache 内存缓存（进程未杀，缓存仍在）。
+     */
+    public static void switchTheme(Activity act, boolean useCache) {
+        int idx = com.github.tvbox.osc.n2n.ThemeManager.cycle();
+        Toast.makeText(act, "主题：" + com.github.tvbox.osc.n2n.ThemeManager.name(idx), Toast.LENGTH_SHORT).show();
+        sSkipAppExit = true;
+        com.github.tvbox.osc.base.BaseActivity.resetWallpaper();
+        Intent it = new Intent(act, HomeActivity.class);
+        it.putExtra("useCache", true);
+        act.finish();
+        act.startActivity(it);
+        act.overridePendingTransition(0, 0);
+    }
+
+    /**
+     * 清理缓存并重载首页（tvName 长按与 JSON feature=clearCache 入口共用）：
+     * 清缓存目录 → 删除当前源 csp jar 缓存 → reloadHome。
+     */
+    public void clearHomeCache() {
+        File dir = getCacheDir();
+        FileUtils.recursiveDelete(dir);
+        dir = getExternalCacheDir();
+        FileUtils.recursiveDelete(dir);
+        Toast.makeText(HomeActivity.this, getString(R.string.hm_cache_del), Toast.LENGTH_SHORT).show();
+        if (dataInitOk && jarInitOk) {
+            String cspCachePath = FileUtils.getFilePath() + "/csp/";
+            String jar = ApiConfig.get().getHomeSourceBean().getJar();
+            String jarUrl = !jar.isEmpty() ? jar : ApiConfig.get().getSpider();
+            File cspCacheDir = new File(cspCachePath + MD5.string2MD5(jarUrl) + ".jar");
+            if (!cspCacheDir.exists()) {
+                reloadHome();
+                return;
+            }
+            new Thread(() -> {
+                try {
+                    FileUtils.deleteFile(cspCacheDir);
+                    ApiConfig.get().clearJarLoader();
+                    reloadHome();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }).start();
+        }
     }
 
     public static boolean reHome(Context appContext) {
@@ -300,13 +329,33 @@ public class HomeActivity extends BaseActivity {
                 }
                 showSuccess();
                 // takagen99 : Switch to show / hide source title
-                SourceBean home = ApiConfig.get().getHomeSourceBean();
-                if (HomeShow) {
-                    if (home != null && home.getName() != null && !home.getName().isEmpty()) tvName.setText(home.getName());
-                        tvName.clearAnimation();
-                }
+                applySourceName();
             }
         });
+    }
+
+    /**
+     * 左上角源名按钮显示规则：
+     * 1) 用户已配置点播接口（api_url 非空）且当前源就绪、设置开启显示源名 → 显示当前源名称；
+     * 2) 否则显示内置 json「home.sourceName」配置的默认文字（未配置回退 app 名称）。
+     */
+    private void applySourceName() {
+        boolean apiReady = !Hawk.get(HawkConfig.API_URL, "").isEmpty();
+        SourceBean home = ApiConfig.get().getHomeSourceBean();
+        boolean showSrc = Hawk.get(HawkConfig.HOME_SHOW_SOURCE, false) && apiReady
+                && home != null && home.getKey() != null && !home.getKey().isEmpty()
+                && home.getName() != null && !home.getName().isEmpty();
+        if (showSrc) {
+            tvName.setText(home.getName());
+        } else {
+            String sn = com.github.tvbox.osc.n2n.RemoteConfig.homeSourceName();
+            if (sn.isEmpty()) {
+                tvName.setText(R.string.app_name);
+            } else {
+                tvName.setText(sn);
+            }
+        }
+        tvName.clearAnimation();
     }
 
     private boolean dataInitOk = false;
@@ -344,7 +393,8 @@ public class HomeActivity extends BaseActivity {
         }
 
         if (dataInitOk && jarInitOk) {
-            sourceViewModel.getSort(ApiConfig.get().getHomeSourceBean().getKey());
+            boolean forceSortRefresh = getIntent() != null && getIntent().getBooleanExtra("forceSortRefresh", false);
+            sourceViewModel.getSort(ApiConfig.get().getHomeSourceBean().getKey(), forceSortRefresh);
             if (hasPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
                 LOG.e("有");
             } else {
@@ -421,6 +471,16 @@ public class HomeActivity extends BaseActivity {
                     @Override
                     public void run() {
                         initData();
+                        showWarningTextOnce();
+                        // 远程升级检查：延迟片刻，避免与免责声明弹窗叠加
+                        mHandler.postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (!isFinishing() && !isDestroyed()) {
+                                    com.github.tvbox.osc.n2n.UpgradeChecker.check(HomeActivity.this);
+                                }
+                            }
+                        }, 3000);
                     }
                 }, 50);
             }
@@ -488,6 +548,37 @@ public class HomeActivity extends BaseActivity {
         }, this);
     }
 
+    /** 免责声明是否已在本进程内弹过（每次启动只弹一次） */
+    private static boolean sWarningShown = false;
+
+    /** 点播接口配置的 warningText 生效：配置加载成功后弹一次免责声明 */
+    private void showWarningTextOnce() {
+        if (sWarningShown || isFinishing() || isDestroyed()) return;
+        String warningText = Hawk.get(HawkConfig.WARNING_TEXT, "");
+        if (warningText == null || warningText.trim().isEmpty()) return;
+        sWarningShown = true;
+        try {
+            final TipDialog[] holder = new TipDialog[1];
+            holder[0] = new TipDialog(HomeActivity.this, warningText, getString(R.string.hm_ok), "", new TipDialog.OnListener() {
+                @Override
+                public void left() {
+                    if (holder[0] != null) holder[0].dismiss();
+                }
+
+                @Override
+                public void right() {
+                }
+
+                @Override
+                public void cancel() {
+                }
+            });
+            holder[0].show();
+        } catch (Throwable th) {
+            th.printStackTrace();
+        }
+    }
+
     @Override
     public void onBackPressed() {
         //打断加载
@@ -531,23 +622,19 @@ public class HomeActivity extends BaseActivity {
     protected void onResume() {
         super.onResume();
         com.github.tvbox.osc.n2n.HomeEntry.refresh(this);
+        // APK 下载完成但缺「未知来源」权限、从系统设置返回后自动继续安装
+        com.github.tvbox.osc.n2n.ApkDownloader.resumePendingInstall(this);
 
         // takagen99 : Switch to show / hide source title
-        SourceBean home = ApiConfig.get().getHomeSourceBean();
-        if (Hawk.get(HawkConfig.HOME_SHOW_SOURCE, false)) {
-            if (home != null && home.getName() != null && !home.getName().isEmpty()) {
-                tvName.setText(home.getName());
-                tvName.clearAnimation();
-            }
-        } else {
-            tvName.setText(R.string.app_name);
-        }
+        applySourceName();
 
-        // takagen99: Icon Placement
-        if (Hawk.get(HawkConfig.HOME_SEARCH_POSITION, true)) {
-            tvFind.setVisibility(View.VISIBLE);
-        } else {
-            tvFind.setVisibility(View.GONE);
+        // takagen99: Icon Placement（JSON topEntries 整体替换顶栏时，固定图标显隐由 HomeEntry 全权控制）
+        if (com.github.tvbox.osc.n2n.RemoteConfig.topEntries() == null) {
+            if (Hawk.get(HawkConfig.HOME_SEARCH_POSITION, true)) {
+                tvFind.setVisibility(View.VISIBLE);
+            } else {
+                tvFind.setVisibility(View.GONE);
+            }
         }
         mHandler.post(mRunnable);
     }
@@ -595,8 +682,8 @@ public class HomeActivity extends BaseActivity {
         com.github.tvbox.osc.n2n.HomeEntry.stopTicker();
     }
 
-    // Site Switch on Home Button
-    void showSiteSwitch() {
+    // Site Switch on Home Button（JSON feature=siteSwitch 入口也调用，需 public）
+    public void showSiteSwitch() {
         List<SourceBean> sites = new ArrayList<>();
         for (SourceBean sb : ApiConfig.get().getSourceBeanList()) {
             if (sb.getHide() == 0) sites.add(sb);
@@ -644,12 +731,15 @@ public class HomeActivity extends BaseActivity {
         }
     }
 
-    void reloadHome() {
+    /** 重新加载首页（JSON feature=reloadHome 入口也调用，需 public） */
+    public void reloadHome() {
         sSkipAppExit = true;
         Intent intent = new Intent(getApplicationContext(), HomeActivity.class);
         intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK);
         Bundle bundle = new Bundle();
         bundle.putBoolean("useCache", true);
+        // 切换源 / 配置重载后重建首页：强制重新拉取当前源 homeContent，绕过 sortCache
+        bundle.putBoolean("forceSortRefresh", true);
         intent.putExtras(bundle);
         HomeActivity.this.startActivity(intent);
         finish();

@@ -1,55 +1,210 @@
 {
-  "version": "1",
+  // ============================ 远程配置接口 ============================
+  // 远程 json 地址：配置后，启动时会尝试拉取远程 json 并覆盖「除设置页(settings) 和 n2n(hin2n) 之外」
+  // 的所有配置段（notice/home/tkp2p/themes/entries/topEntries/homeEntries/upgrade/api/live/epg/proxy 等）。
+  // 设置页与 n2n 的配置永远只读写本地内置 json，不被远程覆盖。
+  // 留空或远程无法访问时，全部使用下方内置 json。
+  "remoteConfigUrl": "",
 
+  // ============================ 公告（所有界面可显示，含直播） ============================
   "notice": {
-    "text": "",
-    "position": "bottom",
-    "bgColor": "#B31B1B1B",
-    "fontColor": "#FFFFD54F",
-    "fontSize": 18,
-    "alpha": 100,
-    "duration": 0,
-    "timeStart": "",
-    "timeEnd": "",
-    "expire": "",
-    "speed": 60,
-    "show": {
-      "home": true,
-      "live": true,
-      "vod": true
-    }
+    "text": "",                         // 公告内容，留空不显示
+    "position": "bottom",               // 显示位置：top | bottom
+    "bgColor": "#B31B1B1B",             // 背景色（含透明度）
+    "fontColor": "#FFFFD54F",           // 文字颜色
+    "fontSize": 18,                     // 文字大小（sp）
+    "alpha": 100,                       // 整条公告透明度 0-100
+    "duration": 0,                      // 显示多少秒后自动隐藏，0=一直显示
+    "timeStart": "",                    // 每日显示开始时间 "08:00"，空=不限
+    "timeEnd": "",                      // 每日显示结束时间 "22:00"
+    "expire": "",                       // 过期日期 "2026-12-31"，空=永不过期
+    "speed": 60,                        // 滚动速度（像素/秒），默认由右向左
+    "show": { "home": true, "live": true, "vod": true }  // 分别控制首页/直播/点播是否显示
   },
 
+  // ============================ 首页外观 ============================
   "home": {
-    "bgImage": "",
-    "entryBgColor": "",
-    "iconColor": "",
-    "textColor": "",
-    "alpha": 100,
-    "inputBgColor": "",
-    "buttonBgColor": ""
+    "bgImage": "",                      // 背景图片 URL，空=用主题渐变背景
+    "sourceName": "",                   // 首页左上角默认文字；用户未配置点播接口时显示它（空=显示 app 名称），
+                                        // 配置了点播接口且开启「首页顶部显示数据源名称」后，左上角显示当前源名
+    "entryBgColor": "",                 // 入口卡片背景，空=随主题色
+    "iconColor": "",                    // 图标颜色，空=白色
+    "textColor": "",                    // 文字颜色，空=白色
+    "alpha": 100,                       // 入口卡片透明度 0-100
+    "inputBgColor": "",                 // 输入框背景，空=主题半透明色（设置页接口地址、接口配置弹窗输入框）
+    "buttonBgColor": ""                 // 按钮背景，空=主题半透明色（接口配置弹窗「确定/存储权限」按钮）
   },
 
+  // ============================ tkp2p:// 原生 P2P 播放 ============================
   "tkp2p": {
-    "engine": "auto",
-    "announce": [],
-    "token": "",
-    "zone": "cn",
-    "ice": []
+    "engine": "auto",                   // 引擎：auto=按流类型自动 | hls=p2p-media-loader（m3u8）
+                                         //       | media=media-p2p-engine（mp4 等，SwarmCloud）
+                                         // 也兼容全称 p2p-media-loader / media-p2p-engine
+    "announce": [],                     // WebRTC tracker 地址列表（wss://），空=引擎内置默认
+    "token": "",                        // SwarmCloud 服务 token（media 引擎），空=试用
+    "zone": "cn",                       // tracker 区域：eu | hk | us | cn
+    "iceServers": []                    // 自定义 WebRTC ICE servers（也可简写为 "ice"）
   },
 
+  // ============================ 主题 ============================
+  // 启动默认主题：可填 themes 中的 style 数字、中文名或英文 alias；空=不强制
+  // 每个主题除颜色外还可配背景图："bgImage": "url"（一张）或 "bgImages": ["url1","url2"]（多张，
+  // 多张时随机选一张并在该主题下保持稳定）；配置了背景图则所有页面背景用图，否则用 bgStart/bgEnd 渐变
   "theme": "",
+  "themes": [
+    { "name": "红色", "alias": "red",      "style": 0,  "color": "#D81F26", "dark": "#8C1418", "bgStart": "#3D0A0D", "bgEnd": "#D81F26" },
+    { "name": "蓝色", "alias": "blue",     "style": 1,  "color": "#18A2E7", "dark": "#106D9C", "bgStart": "#0A3D5C", "bgEnd": "#18A2E7" },
+    { "name": "深蓝", "alias": "darkblue", "style": 2,  "color": "#004B93", "dark": "#002547", "bgStart": "#001B40", "bgEnd": "#004B93" },
+    { "name": "橙色", "alias": "orange",   "style": 3,  "color": "#FF7439", "dark": "#B35127", "bgStart": "#4A2210", "bgEnd": "#FF7439" },
+    { "name": "黄色", "alias": "yellow",   "style": 4,  "color": "#FFD55E", "dark": "#B39542", "bgStart": "#4A3D1C", "bgEnd": "#FFD55E" },
+    { "name": "品红", "alias": "magenta",  "style": 5,  "color": "#FF2F70", "dark": "#B3204E", "bgStart": "#4A0D22", "bgEnd": "#FF2F70" },
+    { "name": "粉色", "alias": "pink",     "style": 6,  "color": "#FD9BDB", "dark": "#B06B98", "bgStart": "#4A3044", "bgEnd": "#FD9BDB" },
+    { "name": "翠绿", "alias": "emerald",  "style": 7,  "color": "#00C08B", "dark": "#007A58", "bgStart": "#0A3D2B", "bgEnd": "#00C08B" },
+    { "name": "青色", "alias": "teal",     "style": 8,  "color": "#17B9B0", "dark": "#0E7A74", "bgStart": "#0A3D3D", "bgEnd": "#17B9B0" },
+    { "name": "紫色", "alias": "violet",   "style": 9,  "color": "#9A6BF2", "dark": "#6747A8", "bgStart": "#3A2760", "bgEnd": "#9A6BF2" },
+    { "name": "琥珀", "alias": "amber",    "style": 10, "color": "#F5A524", "dark": "#A86E12", "bgStart": "#4A320B", "bgEnd": "#F5A524" },
+    { "name": "靛蓝", "alias": "indigo",   "style": 11, "color": "#5B5BD6", "dark": "#2E2E90", "bgStart": "#222250", "bgEnd": "#5B5BD6" },
+    { "name": "玫红", "alias": "rose",     "style": 12, "color": "#E11D48", "dark": "#700E24", "bgStart": "#4A0F1F", "bgEnd": "#E11D48" },
+    { "name": "石墨", "alias": "graphite", "style": 13, "color": "#6B7280", "dark": "#3D4250", "bgStart": "#2A2E38", "bgEnd": "#6B7280" }
+    // 自定义主题示例①：带 style 数字 = 覆盖对应内置主题（13=石墨），可改名称/主色/渐变，并支持一张或多张背景图
+    // ,{ "name": "石墨", "alias": "graphite", "style": 13, "color": "#6B7280", "dark": "#3D4250", "bgStart": "#2A2E38", "bgEnd": "#6B7280", "bgImages": ["https://example.com/bg1.jpg", "https://example.com/bg2.jpg"] }
+    // 自定义主题示例②：不带 style = 追加全新主题（索引排在内置主题之后）
+    // ,{ "name": "夜空", "alias": "night", "color": "#3B82F6", "bgImages": ["https://example.com/bg1.jpg", "https://example.com/bg2.jpg"] }
+  ],
 
-  "api": "",
-  "live": "",
-  "epg": "",
-  "proxy": "",
+  // ============================ 各接口地址 ============================
+  // 仅当用户从未在 TVBox 内手动配置过该接口时作为默认值写入一次，手动配置后永不覆盖
+  "api": "",                           // 点播源接口
+  "live": "",                          // 直播源接口
+  "epg": "",                           // 节目单接口
+  "proxy": "",                         // 代理地址
 
-  "checkInterval": 30,
-  "ua": "",
-  "bootStart": false,
-  "hin2nEntry": true,
-  "hin2nUrl": "",
+  // ============================ 全局 ============================
+  "checkInterval": 30,                 // 界面定时刷新间隔（分钟）
+  "ua": "",                            // 全局 UA，空=内置浏览器 UA（webview 直播源同样使用）
+  "bootStart": false,                  // 开机自动启动 TVBox（在 设置-内置配置 中也可切换）
+  "hin2nEntry": true,                  // 首页是否显示「组网」固定入口（仅当下方 topEntries/homeEntries
+                                       // 未配置或为空数组时生效；数组非空时以数组内容为准）
 
-  "entries": []
+  // ============================ 设置页默认值 ============================
+  // 本节所有项只是「出厂默认值」：仅当用户从未在 设置 页修改过该项时写入一次；
+  // 用户一旦在设置页更改过某项，该项永远以用户设定为准，本节不再覆盖。
+  // 删掉某个键 = 该项使用代码内置默认值。
+  "settings": {
+    // ---- 首页选项 ----
+    "homeShowSource": true,            // 首页顶部显示数据源名称
+    "homeSearchPosition": false,       // 搜索按钮位置：true=上方（顶栏） false=下方（历史一行）
+    "homeMenuPosition": true,          // 设置按钮位置：true=上方（顶栏） false=下方（历史一行）
+    "homeRec": 1,                      // 首页内容：0=豆瓣热播 1=站点推荐 2=观看历史
+    "homeNum": 4,                      // 首页历史条数：0=20 1=40 2=60 3=80 4=100
+    "homeRecStyle": false,             // 首页默认多行显示：true=多行网格 false=单行横滑
+    "homeDefaultShow": false,          // 启动后直接进入直播：true=开启 false=关闭
+    // ---- 播放器选项 ----
+    "showPreview": true,               // 点播窗口预览
+    "playScale": 0,                    // 画面缩放：0=默认 1=16:9 2=4:3 3=填充 4=原始 5=裁剪
+    "backgroundPlayType": 0,           // 后台播放：0=关闭 1=开启 2=画中画
+    "playType": 1,                     // 播放器：0=系统 1=IJK 2=Exo 3=MX 4=Reex 5=Kodi
+    "ijkCodec": "硬解码",              // IJK 解码：软解码 | 硬解码
+    "ijkCachePlay": false,             // IJK 边播边缓存：true=开启 false=关闭
+    "exoRenderer": 0,                  // Exo 扩展渲染器索引（0 起，对应 设置-播放器设置 列表顺序）
+    "exoRendererMode": 1,              // Exo 渲染器模式索引（0 起，同上）
+    "vodPlayerPreferred": 0,           // 点播首选播放器索引（0 起，同上）
+    "playRender": 0,                   // 渲染方式：0=TextureView 1=SurfaceView
+    "videoPurify": true,               // 视频去广告（嗅探净化）：true=开启 false=关闭
+    // ---- 系统选项 ----
+    "homeLocale": 0,                   // 语言：0=中文 1=英文
+    "themeSelect": 0,                  // 默认主题索引（用户切换过主题后此项不再生效；
+                                       // 如需每次启动强制某主题请用顶层 "theme" 字段）
+    "searchView": 1,                   // 搜索展示：0=文字列表 1=缩略图
+    "parseWebview": true,              // 嗅探内核：true=系统 WebView false=XWalkView
+    "dohUrl": 0,                       // 安全 DNS：0=关闭 1=腾讯 2=阿里 3=360 4=Google 5=AdGuard 6=Quad9
+    "fastSearchMode": false,           // 聚合搜索（快搜）：true=多源聚合 false=单源
+    "debugOpen": false                 // 调试模式：true=开启 false=关闭（开启后设置页显示调试入口）
+  },
+
+  // ============================ TVBox 远程升级（秒开酒店 IPTV 桌面风格） ============================
+  // 启动时检查：远程 versionCode 大于当前版本 → 弹窗提示 → 确认后后台下载 APK
+  // （顶部进度条）→ 完成后调起系统安装。每个版本每次启动只提示一次。
+  // checkUrl 指向一个返回同结构 json 的地址；不配 checkUrl 时直接使用下方内联字段。
+  "upgrade": {
+    "checkUrl": "",                    // 远程版本信息地址，如 "https://example.com/tvbox-version.json"
+    "versionCode": 0,                  // 内联模式：新版本号（> 当前版本才提示）
+    "versionName": "",                 // 新版本名（仅显示用）
+    "url": "",                         // 新版 APK 下载地址（必填，否则不提示）
+    "force": false,                    // true=强制升级（弹窗无取消按钮）
+    "notes": ""                        // 更新内容说明（可空）
+  },
+
+  // ============================ hin2n 组网（独立 App，包名 wang.switchy.hin2n） ============================
+  // 首页「组网」入口点击：已安装 → 直接拉起 hin2n App；未安装 → 按下方 apkUrl 后台下载并安装
+  // （顶部显示下载进度）。apkUrl 留空且未安装时，仅提示「未安装」。组网配置（社区/超节点/开机自连
+  // 等）全部在 hin2n App 内维护，与本文件无关。
+  "hin2n": {
+    "apkUrl": ""                       // hin2n App 的 APK 下载地址（可选）
+  },
+
+  // ============================ 首页自定义入口（旧版，仅第三方 App，作用于顶栏） ============================
+  // 已安装直接打开；未安装且配置 url 时后台下载 APK（顶部显示进度条），完成后自动调起安装。
+  // 顶栏需要更多类型/自定义顺序时请改用下面的 topEntries（配置后 entries 不再生效）
+  "entries": [
+    // { "name": "文件管理", "pkg": "com.android.filemanager", "icon": "", "url": "" }
+  ],
+
+  // ============================ 顶栏入口（topEntries） ============================
+  // 顶栏所有入口的内容/顺序/图标全部由本数组决定；默认列出全部内置入口（全部显示）。
+  // 想关闭某个入口 = 直接从数组中删除（或注释掉）该条；想调整顺序 = 移动该条位置；
+  // 想新增入口 = 按同样格式追加（支持打开 TVBox 界面/内置功能/其他 App/自定义点播界面）。
+  // 把本字段整个删除或改成空数组 []（里面只有注释也算空）= 回退到代码内置默认顶栏。
+  // 元素字段：
+  //   name   显示名称（顶栏仅作 contentDescription，历史一行显示在图标右侧）
+  //   type   page=打开 TVBox 界面 | feature=内置功能 | app=打开其他 App | vod=自定义点播界面
+  //   target type=page   : vod live search fastsearch history collect push setting drive apps hin2n
+  //          type=feature: siteSwitch themeSwitch styleSwitch clearCache reloadHome wifi date
+  //          type=vod    : 数据接口地址（http(s):// 或 assets/xxx.json 或绝对路径），
+  //                        格式与点播 api json 完全一致（取其中 sites），但仅供该新界面，app 其它配置不调用
+  //   pkg    type=app 时的包名；未安装且配 url 时后台下载安装（顶部进度条）
+  //   icon   http(s) 图片地址或内置 drawable 名。全部可用内置图标：
+  //          hm_search(搜索) hm_vod(点播) hm_live(直播) hm_history(历史) hm_fav(收藏)
+  //          hm_push(推送) hm_folder(文件) hm_settings(设置) hm_drawer(抽屉/应用)
+  //          hm_home(首页) hm_wifi(无线) hm_wifi_no(无网络) hm_lan(有线) hm_mobile(移动网络)
+  //          hm_left_right(单行) hm_up_down(多行) ic_theme(主题) ic_hin2n(组网) ic_n2n(组网)
+  //          icon 留空时：wifi 入口按当前网络类型自动选图（hm_wifi/hm_lan/hm_mobile/hm_wifi_no），
+  //          styleSwitch 入口按当前单双排状态自动选图（hm_left_right/hm_up_down），其余用兜底图标
+  //   url    type=app 时未安装的 APK 下载地址（可选）
+  //   theme  仅 type=vod：自定义点播界面的独立主题（可填主题索引数字、内置主题中文名或英文别名），
+  //          该界面及其打开的影片详情/播放页使用此主题，与主界面互不影响；空=跟随全局主题
+  // 组网入口（type=page,target=hin2n）= 独立 hin2n App 入口：已安装拉起，未安装按 hin2n.apkUrl 下载安装
+  "topEntries": [
+    { "name": "网络",   "type": "feature", "target": "wifi",        "icon": "" },
+    { "name": "搜索",   "type": "page",    "target": "search",      "icon": "hm_search" },
+    { "name": "单双排", "type": "feature", "target": "styleSwitch", "icon": "" },
+    { "name": "主题",   "type": "feature", "target": "themeSwitch", "icon": "ic_theme" },
+    { "name": "应用",   "type": "page",    "target": "apps",        "icon": "hm_drawer" },
+    { "name": "设置",   "type": "page",    "target": "setting",     "icon": "hm_settings" },
+    { "name": "组网",   "type": "page",    "target": "hin2n",       "icon": "ic_n2n" }
+    // 追加示例：
+    // ,{ "name": "切源",   "type": "feature", "target": "siteSwitch", "icon": "hm_drawer" }
+    // ,{ "name": "文件",   "type": "app",     "pkg": "com.android.filemanager", "icon": "hm_folder", "url": "" }
+    // ,{ "name": "我的影院","type": "vod",    "target": "assets/vod-custom.json", "icon": "hm_vod", "theme": "1" }
+  ],
+
+  // ============================ 首页历史一行入口（homeEntries） ============================
+  // 首页「历史/点播/直播/搜索/收藏/推送/文件/设置/组网」一行的内容/顺序/图标全部由本数组决定；
+  // 默认列出全部内置入口（全部显示）。关闭某个入口 = 删除（或注释掉）该条；字段与 topEntries 相同。
+  // 把本字段整个删除或改成空数组 []（里面只有注释也算空）= 回退到代码内置默认一行。
+  // 该行入口过多超出屏幕时可左右滑动；长按「历史」入口可切换首页推荐模式并重载。
+  "homeEntries": [
+    { "name": "历史", "type": "page", "target": "history", "icon": "hm_history" },
+    { "name": "点播", "type": "page", "target": "vod",     "icon": "hm_vod" },
+    { "name": "直播", "type": "page", "target": "live",    "icon": "hm_live" },
+    { "name": "搜索", "type": "page", "target": "search",  "icon": "hm_search" },
+    { "name": "收藏", "type": "page", "target": "collect", "icon": "hm_fav" },
+    { "name": "推送", "type": "page", "target": "push",    "icon": "hm_push" },
+    { "name": "文件", "type": "page", "target": "drive",   "icon": "hm_folder" },
+    { "name": "设置", "type": "page", "target": "setting", "icon": "hm_settings" },
+    { "name": "组网", "type": "page", "target": "hin2n",   "icon": "ic_hin2n" }
+    // 追加示例：
+    // ,{ "name": "应用", "type": "page", "target": "apps",   "icon": "hm_drawer" }
+    // ,{ "name": "影院", "type": "vod",  "target": "https://example.com/vod.json", "icon": "hm_vod", "theme": "1" }
+  ]
 }

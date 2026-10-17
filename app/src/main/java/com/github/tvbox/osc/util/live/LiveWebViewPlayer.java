@@ -211,7 +211,13 @@ public class LiveWebViewPlayer {
         sb.append(URLEncoder.encode(src));
         try {
             org.json.JSONObject cfg = RemoteConfig.tkP2pStyle();
-            String eng = cfg.optString("engine", "auto");
+            // 页面只识别 auto/hls/media；兼容配置里写全称 p2p-media-loader/media-p2p-engine
+            String eng = cfg.optString("engine", "auto").trim();
+            if ("p2p-media-loader".equalsIgnoreCase(eng)) {
+                eng = "hls";
+            } else if ("media-p2p-engine".equalsIgnoreCase(eng)) {
+                eng = "media";
+            }
             if (!eng.isEmpty()) {
                 sb.append("&eng=").append(URLEncoder.encode(eng));
             }
@@ -227,7 +233,11 @@ public class LiveWebViewPlayer {
             if (!zone.isEmpty()) {
                 sb.append("&zone=").append(URLEncoder.encode(zone));
             }
+            // ICE 服务器：标准键 iceServers，兼容简写 ice
             JSONArray ice = cfg.optJSONArray("iceServers");
+            if (ice == null) {
+                ice = cfg.optJSONArray("ice");
+            }
             if (ice != null && ice.length() > 0) {
                 sb.append("&ice=").append(URLEncoder.encode(ice.toString()));
             }

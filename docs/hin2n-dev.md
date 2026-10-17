@@ -1,232 +1,175 @@
-# hin2n 开发使用文档
+# hin2n 模块开发文档
 
-> 基于 [switch-iot/hin2n](https://github.com/switch-iot/hin2n) dev 分支内化，n2n 子模块已实体化。  
-> 已烘焙 3 项定制功能。独立 App，包名 `wang.switchy.hin2n`。
+> hin2n（基于 [switch-iot/hin2n](https://github.com/switch-iot/hin2n) dev 分支，n2n 子模块实体化）在本仓库中已从「独立 App」改造为 **TVBox 的内置 Android library 模块 `:hin2n`**，随主工程一起编译进同一个 APK。
+> 用户使用说明见 [hin2n.md](file:///f:/tvbox-n2n/docs/hin2n.md)。
 
 ---
 
-## 1. 目录结构
+## 1. 模块定位与分层规则
 
 ```
-hin2n/
-└── Hin2n_android/
-    ├── app/
-    │   ├── build.gradle                          # 构建脚本（签名读环境变量）
-    │   ├── TVBoxOSC.jks                          # CI 时从 workflows 拷入
-    │   └── src/main/
-    │       ├── cpp/                              # n2n C 源码（子模块实体化）
-    │       │   ├── n2n_v1/                       # meyerd/n2n_v1 (f9308ec)
-    │       │   ├── n2n_v2/                       # ntop/n2n v2 (53afd3c)
-    │       │   │   ├── include/
-    │       │   │   └── src/
-    │       │   ├── n2n_v2s/                      # meyerd/n2n_v2 (f9308ec)
-    │       │   ├── n2n_v3/                       # ntop/n2n v3 (0177e14)
-    │       │   │   ├── include/
-    │       │   │   └── src/
-    │       │   ├── slog/                         # 简单日志库
-    │       │   ├── tun2tap/                      # TUN↔TAP 桥接
-    │       │   └── uip/                          # uIP 协议栈
-    │       ├── java/wang/switchy/hin2n/
-    │       │   ├── activity/
-    │       │   │   ├── MainActivity.java         # 主界面（+Ping 补丁）
-    │       │   │   └── SettingDetailsActivity.java # 配置页（+静态路由补丁）
-    │       │   └── service/
-    │       │       └── N2NService.java            # VPN 服务（+静态路由注入补丁）
-    │       ├── jniLibs/                          # 预编译 .so（OpenSSL 等）
-    │       │   ├── arm64-v8a/
-    │       │   ├── armeabi-v7a/
-    │       │   ├── x86/
-    │       │   └── x86_64/
-    │       └── res/layout/
-    │           ├── activity_main.xml             # 主界面布局（竖屏，+Ping 项）
-    │           ├── activity_main_land.xml        # 主界面布局（横屏，+Ping 项）
-    │           └── activity_add_item.xml         # 配置详情页（+静态路由输入框）
-    ├── gradle/
-    ├── build.gradle
-    ├── gradlew
-    └── local.properties                          # CI 生成（sdk.dir / ndk.dir）
+┌─────────────────────────────── :app (TVBox, com.github.tvbox.osc.tk) ───────────────────────────────┐
+│  n2n/ 包：TV 引导页 UI、播种、开机广播、RemoteConfig 内置配置、首页入口                              │
+│      │  只允许通过 Hin2nCore 门面 / Intent / Parcelable / EventBus / DAO Model 与模块交互            │
+└──────┼──────────────────────────────────────────────────────────────────────────────────────────────┘
+       │ implementation project(':hin2n')
+┌──────▼────────────────────────────── :hin2n (wang.switchy.hin2n, com.android.library) ──────────────┐
+│  Hin2nCore（门面/初始化/SP/DB/开机自连） · N2NService（VpnService） · n2n native(.so via CMake)       │
+│  model(N2NSettingModel/N2NSettingInfo/EdgeCmd/EdgeStatus) · storage(greenDAO) · tool · event(EventBus)│
+└─────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 2. 子模块来源
+**硬性规则**：
 
-原 hin2n 使用 3 个 git 子模块，已按锁定 commit 实体化到 `cpp/` 下，不再依赖 `git clone --recursive`：
+1. `:hin2n` **不能引用任何 `com.github.tvbox.**` 类**（依赖方向单向）。它保留原 hin2n 的包名 `wang.switchy.hin2n`，资源 `R` 也走该包，可被 app 直接引用（如 `R.array.encryption_modes`）。
+2. `appcompat` 在模块中是 `compileOnly`——编译期需要 `NotificationCompat`，运行期由 app 提供（normal/python 用 1.7.0，legacy 用 1.6.1，二进制兼容）。
+3. 模块无 flavor、无 applicationId、无签名配置；app 的 12 个变体（abi×brand×mode）自动匹配模块唯一的 debug/release 变体。
+4. 原独立 App 的组件（MainActivity/SettingDetailsActivity、Umeng/Bugly 统计、应用更新、dataBinding、BaseRecyclerViewAdapterHelper）已整体删除。
 
-| 目录 | 来源仓库 | 锁定 commit |
-|------|----------|-------------|
-| `cpp/n2n_v1/` | `meyerd/n2n_v1` | `f9308ec` |
-| `cpp/n2n_v2s/` | `meyerd/n2n_v2` | `f9308ec` |
-| `cpp/n2n_v2/` | `ntop/n2n` (v2 tag) | `53afd3c` |
-| `cpp/n2n_v3/` | `ntop/n2n` (v3.1.1 tag) | `0177e14` |
+## 2. 目录结构
 
-`n2n_v2` 和 `n2n_v3` 只内化了 `include/` + `src/` + `COPYING`（CMakeLists.txt 只引用这两目录）。
+```
+hin2n/Hin2n_android/app/
+├── build.gradle                       # com.android.library，compileSdk34/minSdk19，
+│                                      #   ndkVersion 25.2.9519653，CMake 3.22.1
+├── CMakeLists.txt                     # 编译 4 版本 n2n edge + 链接预编译 OpenSSL
+└── src/main/
+    ├── AndroidManifest.xml            # 仅 7 条权限 + N2NService（BIND_VPN_SERVICE + VpnService filter）
+    ├── jniLibs/<abi>/libcrypto.so     # 预编译 OpenSSL（arm64-v8a/armeabi-v7a/x86/x86_64）
+    ├── cpp/
+    │   ├── n2n_v1/  n2n_v2s/  n2n_v2/  n2n_v3/      # 实体化的 n2n C 源码（见 §6）
+    │   ├── slog/  tun2tap/  uip/
+    │   └── edge_jni.c                                 # JNI 桥：startEdge/stopEdge/getEdgeStatus
+    ├── java/wang/switchy/hin2n/
+    │   ├── Hin2nCore.java             # 门面：init/loadLibraries/DAO/SP/currentSetting/startOnBoot/崩溃日志
+    │   ├── service/N2NService.java    # VpnService：建隧道、静态路由注入、通知、状态事件
+    │   ├── model/                     # EdgeCmd（参数拼装/校验）、EdgeStatus、N2NSettingInfo(Parcelable)
+    │   ├── storage/db/base/           # greenDAO 实体与生成代码（model/N2NSettingModel 28 字段实体、
+    │   │                               #   DaoMaster/DaoSession/N2NSettingModelDao，已实体化）
+    │   ├── event/                     # EventBus 事件：Start/Stop/Error/SupernodeDisconnect/LogChange…
+    │   └── tool/                      # IOUtils、N2nTools、ThreadUtils、LogFileObserver
+    └── res/                           # strings/colors/arrays(vpn_session_name, encryption_modes)、
+                                       #   mipmap(ic_launcher + 4 个通知状态图)
+```
 
-## 3. 定制功能
+app 侧集成代码：
 
-### 3.1 静态路由
+| 文件 | 职责 |
+|------|------|
+| [App.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/base/App.java) | `onCreate`：`RemoteConfig.bootstrap` → `Hin2nCore.init` + `installCrashLogger` → `Hin2nSeeder.seed` |
+| [Hin2nCore.java](file:///f:/tvbox-n2n/hin2n/Hin2n_android/app/src/main/java/wang/switchy/hin2n/Hin2nCore.java) | 模块门面：库初始化、native 库加载、DAO 会话、SP 常量、当前配置、开机自连、崩溃落盘 |
+| [Hin2nSeeder.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/Hin2nSeeder.java) | 首启（`dao.count()==0`）把内置 JSON 的 `hin2n` 段播种进 greenDAO 与 SP |
+| [n2n/ui/Hin2nActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/ui/Hin2nActivity.java) | TV 引导页：连接/状态/日志/配置管理/新建/Ping/开机开关 |
+| [n2n/ui/Hin2nConfigListActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/ui/Hin2nConfigListActivity.java) | 配置列表（选中/编辑/删除） |
+| [n2n/ui/Hin2nConfigEditActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/ui/Hin2nConfigEditActivity.java) | 28 字段编辑表单 + 静态路由（`Hin2nCheck/Hin2nInput/Hin2nLabel` 样式随主题） |
+| [BootReceiver.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/BootReceiver.java) | `BOOT_COMPLETED`：先 hin2n 自连，再按 TVBox 开关拉起首页 |
 
-**用途**：VPN 建立时自动注入多条静态路由，让指定网段走 VPN 隧道。
+布局：`activity_hin2n.xml`、`activity_hin2n_list.xml`（+列表项 `item_hin2n_config.xml`）、`activity_hin2n_edit.xml`，shape/button 资源统一前缀 `hin2n_`/`shape_hin2n_`。
 
-**UI**：配置详情页（`activity_add_item.xml`）新增「静态路由」输入框，位于 DNS 服务器行之后。
+## 3. 运行时数据流
 
-**输入格式**：多条 CIDR，空格分隔，如 `192.168.0.0/24 10.8.0.0/16`
+```
+点「连接」
+  Hin2nActivity → VpnService.prepare()（首次弹授权）
+                → startForegroundService(N2NService, extra=N2NSettingInfo)
+N2NService.onStartCommand
+  → Builder() 建 VpnService 隧道（地址/路由/静态路由/DNS，见 §4）
+  → EdgeCmd(info, fd, logPath) 拼命令行参数 + LogFileObserver 监听日志
+  → native startEdge(cmd)：加载 edge_v<ver>.so，JNI 起 edge 线程
+状态回传：native → EdgeStatus → EventBus(主线程) → 引导页刷新 UI/通知栏
+```
 
-**存储**：SharedPreferences `Hin2n` → key `hin2n_static_routes`
+- `N2NService.INSTANCE`：单例引用，UI 直接调 `stop(Runnable)`（回调在主线程 executor 执行）、`getCurrentStatus()`。
+- 状态五值：`DISCONNECT / CONNECTING / CONNECTED / SUPERNODE_DISCONNECT / FAILED`。
+- 日志：`getExternalFilesDir("log")/<vpn_session>.log`，`IOUtils.readTxt(LIMIT)` 给 UI 分页读。
 
-**涉及文件**：
+## 4. 关键定制点（相对上游 hin2n）
 
-| 文件 | 修改内容 |
-|------|----------|
-| [activity_add_item.xml](file:///f:/tvbox-n2n/hin2n/Hin2n_android/app/src/main/res/layout/activity_add_item.xml) | 新增 `til_static_routes` 输入行，`til_mac_addr` 的 `layout_below` 改为引用它 |
-| [SettingDetailsActivity.java](file:///f:/tvbox-n2n/hin2n/Hin2n_android/app/src/main/java/wang/switchy/hin2n/activity/SettingDetailsActivity.java) | 新增 `mStaticRoutes` 字段 + 绑定 + 回填；`btn_save`/`btn_modify` 保存时 `putString().apply()` |
-| [N2NService.java](file:///f:/tvbox-n2n/hin2n/Hin2n_android/app/src/main/java/wang/switchy/hin2n/service/N2NService.java) | DNS 配置块前插入：读 `hin2n_static_routes`，按空格分割，解析 CIDR，逐条 `builder.addRoute(network, prefix)` |
+1. **静态路由注入**（[N2NService.java](file:///f:/tvbox-n2n/hin2n/Hin2n_android/app/src/main/java/wang/switchy/hin2n/service/N2NService.java) `EstablishVpnService`）：读 SP `Hin2n/hin2n_static_routes`，按空白（空格/换行）分词，含 `/` 的是 CIDR、其后是可选网关 IP，逐条 `Builder.addRoute`；`gatewayIp` 非空时加 `0.0.0.0/1`、`128.0.0.0/1` 走全局。
+2. **默认超节点**：编辑页超节点留空时由 `Hin2nSeeder`/UI 按版本补：v1 `hin2n.nton.eu.org:10082`，v2 `:10086`，v2s `:10088`，v3 `supernode.ntop.org:7777`。
+3. **PendingIntent 标志**：API23+ 一律带 `FLAG_IMMUTABLE`，通知渠道由 `Hin2nCore.init` 预建（id 取 `R.string.notification_channel_id_default`），适配 Android 13/14。
+4. **启动 Intent**：通知栏/开机均用 `getLaunchIntentForPackage(getPackageName())`，不再硬编码 MainActivity。
+5. **开机自连**：`Hin2nCore.startOnBoot(ctx)`——开关 `Hin2n/start_at_boot` 打开且存在选中配置且此前已授权 VPN 时，由 `BootReceiver` 直接起服务（不依赖拉起页面）。
 
-**注入逻辑**（N2NService）：
+## 5. 内置 JSON 播种（出厂配置）
 
-```java
-// 读取静态路由配置
-SharedPreferences sp = getSharedPreferences("Hin2n", MODE_PRIVATE);
-String routesStr = sp.getString("hin2n_static_routes", "");
-if (!routesStr.isEmpty()) {
-    String[] routes = routesStr.trim().split("\\s+");
-    for (String route : routes) {
-        String[] parts = route.split("/");
-        if (parts.length == 2) {
-            String network = maskToNetwork(parts[0], Integer.parseInt(parts[1]));
-            builder.addRoute(network, Integer.parseInt(parts[1]));
-        }
-    }
+`app/src/main/assets/tvbox-config.json` 的 `hin2n` 段：
+
+```jsonc
+"hin2n": {
+  "bootStart": false,             // 开机自动连接（SP start_at_boot）
+  "staticRoutes": "",             // "192.168.8.0/24 10.0.0.13 ..."
+  "configs": [ { /* 28 字段，见 docs/tvbox-config.example.jsonc */ } ]
 }
 ```
 
-> **注意**：`VpnService.addRoute()` 要求地址是网络地址（主机位全零），传 host IP 会抛 `IllegalArgumentException: Bad address`。代码中用 `maskToNetwork()` 辅助方法先清零主机位。
+- **仅首启播种一次**（数据库为空时）；卸载重装/清除数据后重新播种；用户后续修改永不被覆盖。
+- 字段别名（`Hin2nSeeder.parseConfig` 兼容）：
+  - `ipMode: 1` ≡ `"fromSupernode": true`；
+  - `"localIP": "auto"` ≡ `"localIpAuto": true`；
+  - `"acceptMulticast": false` ≡ `"dropMulticast": true`（反义）。
+- 28 字段构造顺序必须与 `N2NSettingModel` 构造器（L248 起）/`N2NSettingInfo(Model)` 严格一致，改字段时三处同步。
 
-### 3.2 Ping 测试
+## 6. n2n native 来源与构建
 
-**用途**：从 hin2n 主界面直接 ping 对端 IP，验证 VPN 连通性。
+| 目录 | 来源 | commit |
+|------|------|--------|
+| `cpp/n2n_v1/` | meyerd/n2n_v1 | `f9308ec` |
+| `cpp/n2n_v2s/` | meyerd/n2n_v2 | `f9308ec` |
+| `cpp/n2n_v2/` | ntop/n2n（v2 tag，仅 include/src/COPYING） | `53afd3c` |
+| `cpp/n2n_v3/` | ntop/n2n（v3.1.1，仅 include/src/COPYING） | `0177e14` |
 
-**UI**：主界面侧边栏（`activity_main.xml` / `activity_main_land.xml`）在「关于」项前新增「Ping」菜单项。
+- CMake 按所选版本编译对应 edge 源码 + `edge_jni.c`，链接 `src/main/jniLibs/${ANDROID_ABI}/libcrypto.so`（预编译 OpenSSL，头文件在 cpp include 路径）。
+- 工具链固定：**NDK `25.2.9519653`（r25b）+ CMake `3.22.1`**，模块 build.gradle 与 CI 都写死，不要随意升级（n2n v1 老代码对新 Clang 敏感）。
+- 产物 `libedge_v1.so / libedge_v2.so / libedge_v2s.so / libedge_v3.so` 由 `System.loadLibrary` 按配置版本加载；app 只过滤 `armeabi-v7a`、`arm64-v8a` 两个 ABI（x86/x86_64 的预编译库存档保留，便于模拟器调试时改 abiFilters）。
 
-**涉及文件**：
+## 7. 本地构建
 
-| 文件 | 修改内容 |
-|------|----------|
-| [activity_main.xml](file:///f:/tvbox-n2n/hin2n/Hin2n_android/app/src/main/res/layout/activity_main.xml) | `rl_about` 前插入 `rl_ping` 菜单项（`icon_update` 图标 + "Ping" 文本） |
-| [activity_main_land.xml](file:///f:/tvbox-n2n/hin2n/Hin2n_android/app/src/main/res/layout/activity_main_land.xml) | 同上 |
-| [MainActivity.java](file:///f:/tvbox-n2n/hin2n/Hin2n_android/app/src/main/java/wang/switchy/hin2n/activity/MainActivity.java) | `rl_about` 绑定前插 `rl_ping` 绑定；`initLeftMenu()` 前插入 `showPingDialog()` / `doPing()` 两方法 |
+### 7.1 环境
 
-**执行逻辑**：
+- JDK 17（Gradle 7.5 / AGP 7.4.2；不要用 JDK 21 跑 Gradle）
+- Android SDK：platforms `android-34`
+- NDK `25.2.9519653`、CMake `3.22.1`（SDK Manager 安装同名版本）
+- Python 3.8+（仅 python flavor 需要）
 
-```java
-// showPingDialog(): 弹出输入框让用户输入 host
-// doPing(host): 后台执行 Runtime.exec("ping -c 4 -W 2 " + host)
-//   host 校验：禁空格/;/&/| 防注入
-//   结果用 AlertDialog 展示
+### 7.2 常用命令
+
+```powershell
+# 仓库根目录执行（不是 hin2n/Hin2n_android！模块由根 settings.gradle 以 projectDir 引入）
+.\gradlew.bat :hin2n:assembleDebug                         # 只编模块（产出 aar）
+.\gradlew.bat assembleArm64GenericLegacyDebug              # Android 4.4 兼容版（arm64）
+.\gradlew.bat assembleArmeabiGenericNormalRelease          # 常规 armv7 release
+.\gradlew.bat assemblerelease                              # CI 同款：全部 12 个变体
 ```
 
-### 3.3 Release 签名
+变体命名：`<abi><brand><mode>`，abi∈{armeabi, arm64}，brand∈{generic, hisense}，mode∈{normal, python, legacy}。
+APK 名 `TVBox_<buildType>-<flavors>.apk`（normal 在文件名中显示为 java）。
 
-**修改文件**：[app/build.gradle](file:///f:/tvbox-n2n/hin2n/Hin2n_android/app/build.gradle)
+只想验证 Java/资源而不装 NDK 时可只跑资源与编译任务：
 
-原版硬编码签名路径，改为读环境变量：
-
-```groovy
-release {
-    if (System.getenv("RELEASE_STORE_FILE")) {
-        signingConfig signingConfigs.myConfig
-    }
-}
+```powershell
+.\gradlew.bat :app:processArm64LegacyDebugResources :app:compileArm64LegacyDebugJavaWithJavac
 ```
 
-CI 中通过环境变量注入：`RELEASE_STORE_FILE` / `RELEASE_STORE_PASSWORD` / `RELEASE_KEY_ALIAS` / `RELEASE_KEY_PASSWORD`。
+### 7.3 greenDAO
 
-## 4. CI 构建
+DAO 生成代码已实体化在 `storage/db/base/`，**不要加 greendao gradle 插件**，运行时依赖 `org.greenrobot:greendao:3.2.0` 即可。确需重新生成时用独立的 greendao-generator 工程跑一次再覆盖。
 
-### 4.1 触发方式
+## 8. CI
 
-仅手动触发：Actions → hin2n → Run workflow。
+hin2n 不再单独出 APK：
 
-### 4.2 构建步骤（hin2n.yml）
+- [.github/workflows/test.yml](file:///f:/tvbox-n2n/.github/workflows/test.yml) 是唯一构建入口。setup-java 17 之后有 **Install NDK and CMake** 步骤：`sdkmanager "ndk;25.2.9519653" "cmake;3.22.1"`；源码压缩包已包含 `hin2n/` 目录。
+- [.github/workflows/hin2n.yml](file:///f:/tvbox-n2n/.github/workflows/hin2n.yml) 已停用（手动触发只输出提示），避免旧的独立 App 流水线误用。
+- CI 失败排查顺序：先看日志尾部脚本汇总的 `error:` 行 → native 失败看 `externalNativeBuild...` 任务的 CMake/Clang 报错 → kapt 偶发 runner 故障直接 rerun。
 
-1. Checkout
-2. JDK 8（AGP 4.0.0 + Gradle 6.3 不兼容高版本 JDK）
-3. 安装 Android SDK 组件：`platforms;android-28` `build-tools;28.0.3` `cmake;3.6.4111459` `ndk;21.4.7075529`
-4. 设置 `ANDROID_NDK_HOME` / `ANDROID_NDK_ROOT`
-5. 准备签名：拷入 `TVBoxOSC.jks`，写 `local.properties`（`sdk.dir` / `ndk.dir`）
-6. Gradle 构建：`./gradlew assembleNormalAllarchRelease`
-   - flavor: `channel=normal` × `arch=allarch`
-   - 环境变量：`UMENG_APPKEY=dummy` `BUGLY_APPID=dummy`（绕过上游门控）
-7. 上传 Artifact：`hin2n-apk`
-8. 发布 Release：tag = `hin2n-<run_number>`
+## 9. Android 4.4（API19）兼容要点
 
-### 4.3 产物
+- 模块 minSdk 19；`appcompat` 用 compileOnly 1.6.1，由 legacy 变体提供同版本运行时。
+- app 侧所有 drawable 采用 **drawable/（固定色兜底，禁 `?attr/`、禁 ripple）+ drawable-v21/（主题色/ripple 原版）双版本**；legacy 变体还开了 `vectorDrawables.generatedDensities` 生成 PNG。详见 [tvbox-dev.md](file:///f:/tvbox-n2n/docs/tvbox-dev.md) §7。
+- hin2n 自己的资源（shape_hin2n_* 等）在创建时就只用固定色/`@color`，不带主题属性引用。
+- 通知/PendingIntent 按版本分支，API23 才加 `FLAG_IMMUTABLE`。
 
-- **Artifact**：`hin2n-apk`（多架构 APK）
-- **Release**：tag = `hin2n-<run_number>`
+## 10. 协议
 
-### 4.4 签名
-
-复用 TVBox 的证书：
-
-| 配置项 | 值 |
-|--------|-----|
-| 证书文件 | `.github/workflows/TVBoxOSC.jks` |
-| 别名 | `TVBoxOSC` |
-| 密码 | `TVBoxOSC` |
-| 环境变量 | `RELEASE_STORE_FILE` / `RELEASE_STORE_PASSWORD` / `RELEASE_KEY_ALIAS` / `RELEASE_KEY_PASSWORD` |
-
-## 5. 本地构建
-
-### 5.1 环境要求
-
-- JDK 8（必须，AGP 4.0.0 + Gradle 6.3 不兼容 JDK 11+）
-- Android SDK，compileSdk 28
-- NDK 21.4.7075529
-- CMake 3.6.4111459
-
-### 5.2 步骤
-
-```bash
-cd f:\tvbox-n2n\hin2n\Hin2n_android
-
-# 写 local.properties
-echo "sdk.dir=<你的 Android SDK 路径>" > local.properties
-echo "ndk.dir=<你的 NDK 路径>" >> local.properties
-
-# 设置签名环境变量（可选，debug 构建不需要）
-export RELEASE_STORE_FILE=./TVBoxOSC.jks
-export RELEASE_STORE_PASSWORD=TVBoxOSC
-export RELEASE_KEY_ALIAS=TVBoxOSC
-export RELEASE_KEY_PASSWORD=TVBoxOSC
-
-# 构建
-./gradlew assembleNormalAllarchRelease
-```
-
-APK 输出路径：`app/build/outputs/apk/normal/allarch/release/`
-
-### 5.3 注意事项
-
-- 上游 `build.gradle` 有 `gradle.taskGraph.beforeTask` 门控，要求 `UMENG_APPKEY` 和 `BUGLY_APPID` 非空，本地构建需设置哑值：
-  ```bash
-  export UMENG_APPKEY=dummy
-  export BUGLY_APPID=dummy
-  ```
-- `local.properties` 必须写 `ndk.dir`，否则 CMake 找不到 NDK
-- `pyquery==2.0.2` 锁定仅影响 TVBox 的 pyramid 模块，与 hin2n 无关
-
-## 6. n2n 版本说明
-
-hin2n 编译 4 个 n2n 版本的 C 源码为 .so，通过 JNI 在进程内运行 edge：
-
-| 版本 | 目录 | 协议特点 |
-|------|------|----------|
-| v1 | `n2n_v1/` | 早期协议，兼容老 supernode |
-| v2s | `n2n_v2s/` | meyerd 分支的 v2 变体 |
-| v2 | `n2n_v2/` | ntop 官方 v2 |
-| v3 | `n2n_v3/` | ntop 官方 v3（3.1.1），当前默认 |
-
-用户在 hin2n 配置页选择 n2n 版本，App 编译对应版本的 .so 并加载。
-
-## 7. 协议
-
-hin2n 和 n2n 均为 GPL-3.0 协议。
+GPL-3.0（n2n、hin2n 原生要求）。

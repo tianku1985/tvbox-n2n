@@ -24,7 +24,6 @@ import java.io.IOException;
 import org.greenrobot.eventbus.Subscribe;
 import org.greenrobot.eventbus.ThreadMode;
 import wang.switchy.hin2n.R;
-import wang.switchy.hin2n.activity.MainActivity;
 import wang.switchy.hin2n.event.*;
 import wang.switchy.hin2n.model.EdgeCmd;
 import wang.switchy.hin2n.model.EdgeStatus;
@@ -62,6 +61,8 @@ public class N2NService extends VpnService {
     public void onCreate() {
         super.onCreate();
         INSTANCE = this;
+        // native 库在 App.onCreate 中是后台异步预热的；真正启动 edge 前同步确保已加载（幂等）
+        wang.switchy.hin2n.Hin2nCore.loadLibraries();
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this);
         }
@@ -136,64 +137,113 @@ public class N2NService extends VpnService {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        // 关键：startForegroundService 启动后必须在 5 秒内调用 startForeground，
+        // 否则 Android 8+ 会抛 RemoteServiceException 杀进程（表现为「点击连接闪退」）。
+        // 所以前台通知必须在任何可能阻塞/抛异常的逻辑（包括 native startEdge）之前建立。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                Intent i = getPackageManager().getLaunchIntentForPackage(getPackageName());
+                int piFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0;
+                PendingIntent pendingIntent = i != null
+                        ? PendingIntent.getActivity(this, 0, i, piFlags)
+                        : null;
+                Notification notification = new NotificationCompat.Builder(this, getString(R.string.notification_channel_id_default))
+                        .setTicker("Nature")
+                        .setSmallIcon(R.mipmap.ic_launcher)
+                        .setLargeIcon(BitmapFactory.decodeResource(getResources(), R.mipmap.ic_launcher))
+                        .setColor(ContextCompat.getColor(this, R.color.colorPrimary))
+                        .setContentTitle("hin2n")
+                        .setContentText("hin2n service is running")
+                        .setContentIntent(pendingIntent)
+                        .build();
+                notification.flags |= Notification.FLAG_NO_CLEAR;
+                startForeground(1, notification);
+            } catch (Throwable t) {
+                Log.e("N2NService", "startForeground failed", t);
+            }
+        }
+
         if (intent == null) {
             EventBus.getDefault().post(new ErrorEvent());
             return super.onStartCommand(intent, flags, startId);
         }
 
-        Bundle setting = intent.getBundleExtra("Setting");
-        mN2nSettingInfo = setting.getParcelable("n2nSettingInfo");
-
-        int vpnServiceFd = -1;
-        if (mN2nSettingInfo.getIpMode() == 0) {
-            vpnServiceFd = EstablishVpnService(mN2nSettingInfo.getIp(), getIpAddrPrefixLength(mN2nSettingInfo.getNetmask()));
-            if (vpnServiceFd < 0) {
+        // 兜底：启动链路任何 Throwable（含 UnsatisfiedLinkError 等 Error）都不允许杀进程，
+        // 否则系统会自动重启 app，且错误原因无日志可查
+        try {
+            Bundle setting = intent.getBundleExtra("Setting");
+            mN2nSettingInfo = setting == null ? null : setting.getParcelable("n2nSettingInfo");
+            if (mN2nSettingInfo == null) {
+                appendEdgeLog("[启动失败] 启动参数缺失（Setting/n2nSettingInfo 为空）");
+                EventBus.getDefault().post(new ErrorEvent());
                 return super.onStartCommand(intent, flags, startId);
             }
-        }
 
-        String session = getResources().getStringArray(R.array.vpn_session_name)[mN2nSettingInfo.getVersion()];
-        cmd = new EdgeCmd(mN2nSettingInfo, vpnServiceFd, getExternalFilesDir("log") + "/" + session + ".log");
-        mFileObserver = new LogFileObserver(cmd.logPath);
-        mFileObserver.stopWatching();
-        IOUtils.clearLogTxt(cmd.logPath);
-        mFileObserver.startWatching();
-        try {
-            if (!startEdge(cmd)) {
-                EventBus.getDefault().post(new ErrorEvent());
+            int vpnServiceFd = -1;
+            if (mN2nSettingInfo.getIpMode() == 0) {
+                vpnServiceFd = EstablishVpnService(mN2nSettingInfo.getIp(), getIpAddrPrefixLength(mN2nSettingInfo.getNetmask()));
+                if (vpnServiceFd < 0) {
+                    appendEdgeLog("[启动失败] VpnService 建立失败（ip=" + mN2nSettingInfo.getIp() + "）");
+                    return super.onStartCommand(intent, flags, startId);
+                }
             }
-        } catch (Exception e) {
+
+            String[] sessions = getResources().getStringArray(R.array.vpn_session_name);
+            int version = mN2nSettingInfo.getVersion();
+            if (version < 0 || version >= sessions.length) {
+                appendEdgeLog("[启动失败] 协议版本非法: " + version);
+                EventBus.getDefault().post(new ErrorEvent());
+                return super.onStartCommand(intent, flags, startId);
+            }
+            String session = sessions[version];
+            cmd = new EdgeCmd(mN2nSettingInfo, vpnServiceFd, getExternalFilesDir("log") + "/" + session + ".log");
+            mFileObserver = new LogFileObserver(cmd.logPath);
+            mFileObserver.stopWatching();
+            IOUtils.clearLogTxt(cmd.logPath);
+            mFileObserver.startWatching();
+            // startEdge 是 native 阻塞调用，放后台线程避免阻塞服务主线程（否则可能触发 ANR/前台服务超时）
+            final EdgeCmd edgeCmd = cmd;
+            ThreadUtils.cachedThreadExecutor(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        if (!startEdge(edgeCmd)) {
+                            appendEdgeLog("[启动失败] native startEdge 返回 false");
+                            EventBus.getDefault().post(new ErrorEvent());
+                        }
+                    } catch (Throwable t) {
+                        // 典型场景：native 库未随 APK 打包或加载失败（UnsatisfiedLinkError）
+                        Log.e("N2NService", "startEdge failed", t);
+                        appendEdgeLog("[启动失败] " + t.getClass().getSimpleName() + ": " + t.getMessage()
+                                + "（若为 UnsatisfiedLinkError，请确认 APK 内包含 libedge.so 等 hin2n native 库）");
+                        EventBus.getDefault().post(new ErrorEvent());
+                    }
+                }
+            });
+        } catch (Throwable t) {
+            Log.e("N2NService", "onStartCommand failed", t);
+            appendEdgeLog("[启动失败] " + t);
             EventBus.getDefault().post(new ErrorEvent());
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            String CHANNEL_ONE_ID = "wang.switchy.hin2n";
-            String CHANNEL_ONE_NAME = "Channel One";
-            NotificationChannel notificationChannel = new NotificationChannel(CHANNEL_ONE_ID,
-                    CHANNEL_ONE_NAME, NotificationManager.IMPORTANCE_HIGH);
-            notificationChannel.enableLights(true);
-            notificationChannel.setLightColor(Color.RED);
-            notificationChannel.setShowBadge(true);
-            notificationChannel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
-            NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-            manager.createNotificationChannel(notificationChannel);
-
-            Intent i = new Intent(this, MainActivity.class);
-            PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, i, 0);
-            NotificationCompat.Builder notificationBuilder = new NotificationCompat.Builder(this,CHANNEL_ONE_ID)
-                    .setTicker("Nature")
-                    .setSmallIcon(R.mipmap.ic_launcher)
-                    .setLargeIcon(BitmapFactory.decodeResource(getResources(), R.mipmap.ic_launcher))
-                    .setColor(ContextCompat.getColor(this, R.color.colorPrimary))
-                    .setContentTitle("hin2n")
-                    .setContentText("hin2n service is running")
-                    .setContentIntent(pendingIntent);
-            Notification notification = notificationBuilder.build();
-            notification.flags |= Notification.FLAG_NO_CLEAR;
-            startForeground(1, notification);
-        }
-
         return super.onStartCommand(intent, flags, startId);
+    }
+
+    /** 把启动失败原因追加进 edge 日志文件（界面日志页会实时展示，避免「无日志输出」） */
+    private void appendEdgeLog(String line) {
+        try {
+            if (cmd != null && cmd.logPath != null) {
+                java.io.File f = new java.io.File(cmd.logPath);
+                java.io.File dir = f.getParentFile();
+                if (dir != null && !dir.exists()) {
+                    dir.mkdirs();
+                }
+                java.io.FileWriter w = new java.io.FileWriter(f, true);
+                w.append(line).append("\n");
+                w.close();
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     public boolean isStopInProgress() {
@@ -213,7 +263,11 @@ public class N2NService extends VpnService {
             @Override
             public void run() {
                 /* Blocking call */
-                stopEdge();
+                try {
+                    stopEdge();
+                } catch (Throwable t) {
+                    Log.e("N2NService", "stopEdge failed", t);
+                }
                 mStopInProgress = true;
                 ThreadUtils.mainThreadExecutor(new Runnable() {
                     @Override
@@ -290,9 +344,14 @@ public class N2NService extends VpnService {
 
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void onLogChangeEvent(final LogChangeEvent event) {
-        EdgeStatus status = getEdgeStatus();
-        Log.d("status",status.runningStatus.name());
-        reportEdgeStatus(status);
+        try {
+            EdgeStatus status = getEdgeStatus();
+            Log.d("status", status.runningStatus.name());
+            reportEdgeStatus(status);
+        } catch (Throwable t) {
+            // native 库异常时不能让 EventBus 订阅线程崩溃（否则整个 app 退出重启）
+            Log.e("N2NService", "getEdgeStatus failed", t);
+        }
     }
 
 
@@ -351,8 +410,12 @@ public class N2NService extends VpnService {
                 mNotificationManager.cancel(sNotificationId);
                 break;
             case CMD_ADD_NOTIFICATION:
-                Intent mainIntent = new Intent(this, MainActivity.class);
-                PendingIntent mainPendingIntent = PendingIntent.getActivity(this, 0, mainIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+                Intent mainIntent = getPackageManager().getLaunchIntentForPackage(getPackageName());
+                int piFlags = PendingIntent.FLAG_UPDATE_CURRENT
+                        | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
+                PendingIntent mainPendingIntent = mainIntent != null
+                        ? PendingIntent.getActivity(this, 0, mainIntent, piFlags)
+                        : null;
 
                 NotificationCompat.Builder builder = new NotificationCompat.Builder(this, getString(R.string.notification_channel_id_default))
                         .setSmallIcon(R.mipmap.ic_launcher)
@@ -373,8 +436,12 @@ public class N2NService extends VpnService {
                 mNotificationManager.notify(sNotificationId, notification);
                 break;
             case CMD_UPDATE_NOTIFICATION:
-                Intent mainIntent1 = new Intent(this, MainActivity.class);
-                PendingIntent mainPendingIntent1 = PendingIntent.getActivity(this, 0, mainIntent1, PendingIntent.FLAG_UPDATE_CURRENT);
+                Intent mainIntent1 = getPackageManager().getLaunchIntentForPackage(getPackageName());
+                int piFlags1 = PendingIntent.FLAG_UPDATE_CURRENT
+                        | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
+                PendingIntent mainPendingIntent1 = mainIntent1 != null
+                        ? PendingIntent.getActivity(this, 0, mainIntent1, piFlags1)
+                        : null;
 
                 NotificationCompat.Builder builder2 = new NotificationCompat.Builder(this, getString(R.string.notification_channel_id_default))
                         .setSmallIcon(R.mipmap.ic_launcher)

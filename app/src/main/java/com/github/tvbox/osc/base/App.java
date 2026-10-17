@@ -62,9 +62,14 @@ public class App extends MultiDexApplication {
     public void onCreate() {
         super.onCreate();
         SubtitleHelper.initSubtitleColor(this);
-        initParams();
-        // 启动即加载远程配置 JSON：远程未设置或无法访问时自动读取 assets 本地兜底配置
+        // Hawk 必须先初始化：内置 JSON 的设置项默认值依赖 Hawk
+        Hawk.init(this).build();
+        Hawk.put(HawkConfig.DEBUG_OPEN, false);
+        // 加载 APK 内置配置 JSON（assets/tvbox-config.json，已移除远程地址配置）。
+        // 先于 initParams()：JSON 中的「设置页默认值」仅当用户从未手动修改时写入，
+        // initParams() 里的硬编码默认值只作最终兜底，不会覆盖 JSON。
         com.github.tvbox.osc.n2n.RemoteConfig.bootstrap(this);
+        initParams();
         // takagen99 : Initialize Locale
         initLocale();
         // OKGo
@@ -100,7 +105,16 @@ public class App extends MultiDexApplication {
         dir = getExternalCacheDir();
         FileUtils.recursiveDelete(dir);*/
 
-        FileUtils.cleanPlayerCache();
+        // 清理播放器缓存是递归文件 IO，放后台线程避免拖慢冷启动
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    FileUtils.cleanPlayerCache();
+                } catch (Throwable ignored) {
+                }
+            }
+        }, "clean-player-cache").start();
 
         // Add JS support
         QuickJSLoader.init();
@@ -133,10 +147,7 @@ public class App extends MultiDexApplication {
 
 
     private void initParams() {
-        // Hawk
-        Hawk.init(this).build();
-        Hawk.put(HawkConfig.DEBUG_OPEN, false);
-
+        // Hawk 已在 onCreate 最前面初始化（内置 JSON 的设置默认值需要它）
         // 首页选项
         putDefault(HawkConfig.HOME_SHOW_SOURCE, true);       //数据源显示: true=开启, false=关闭
         putDefault(HawkConfig.HOME_SEARCH_POSITION, false);  //按钮位置-搜索: true=上方, false=下方

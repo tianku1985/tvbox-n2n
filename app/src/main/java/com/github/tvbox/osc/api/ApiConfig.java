@@ -3,6 +3,8 @@ package com.github.tvbox.osc.api;
 import static com.github.tvbox.osc.util.RegexUtils.getPattern;
 import android.app.Activity;
 import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.TextUtils;
 import android.util.Base64;
 
@@ -63,6 +65,12 @@ import com.github.tvbox.osc.util.LOG;
  */
 public class ApiConfig {
     private static ApiConfig instance;
+    /** 回调统一回投主线程（调用方均在回调里做 UI 操作） */
+    private static final Handler MAIN = new Handler(Looper.getMainLooper());
+
+    private static void postMain(Runnable r) {
+        MAIN.post(r);
+    }
     private final LinkedHashMap<String, SourceBean> sourceBeanList;
     private SourceBean mHomeSource;
     private ParseBean mDefaultParse;
@@ -146,14 +154,33 @@ public class ApiConfig {
         }
         File cache = new File(App.getInstance().getFilesDir().getAbsolutePath() + "/" + MD5.encode(apiUrl));
         if (useCache && cache.exists()) {
-            try {
-                parseJson(apiUrl, cache);
-                callback.success();
-                return;
-            } catch (Throwable th) {
-                th.printStackTrace();
-            }
+            // 缓存解析（文件 IO + Gson）放工作线程，避免阻塞首页主线程
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        parseJson(apiUrl, cache);
+                        postMain(new Runnable() {
+                            @Override
+                            public void run() {
+                                callback.success();
+                            }
+                        });
+                        return;
+                    } catch (Throwable th) {
+                        th.printStackTrace();
+                    }
+                    // 缓存损坏时按原逻辑回落网络拉取
+                    fetchConfig(apiUrl, cache, callback);
+                }
+            }, "cfg-cache").start();
+            return;
         }
+        fetchConfig(apiUrl, cache, callback);
+    }
+
+    /** 网络拉取配置并解析（可从任意线程调用；回调均回投主线程） */
+    private void fetchConfig(final String apiUrl, final File cache, final LoadConfigCallback callback) {
         String TempKey = null, configUrl = "", pk = ";pk;";
         if (apiUrl.contains(pk)) {
             String[] a = apiUrl.split(pk);
@@ -180,42 +207,74 @@ public class ApiConfig {
                 .execute(new AbsCallback<String>() {
                     @Override
                     public void onSuccess(Response<String> response) {
-                        try {
-                            String json = response.body();
-                            parseJson(apiUrl, json);
-                            try {
-                                File cacheDir = cache.getParentFile();
-                                if (!cacheDir.exists())
-                                    cacheDir.mkdirs();
-                                if (cache.exists())
-                                    cache.delete();
-                                FileOutputStream fos = new FileOutputStream(cache);
-                                fos.write(json.getBytes("UTF-8"));
-                                fos.flush();
-                                fos.close();
-                            } catch (Throwable th) {
-                                th.printStackTrace();
+                        final String json = response.body();
+                        // 解析 + 写缓存放工作线程，避免主线程掉帧
+                        new Thread(new Runnable() {
+                            @Override
+                            public void run() {
+                                try {
+                                    parseJson(apiUrl, json);
+                                    try {
+                                        File cacheDir = cache.getParentFile();
+                                        if (!cacheDir.exists())
+                                            cacheDir.mkdirs();
+                                        if (cache.exists())
+                                            cache.delete();
+                                        FileOutputStream fos = new FileOutputStream(cache);
+                                        fos.write(json.getBytes("UTF-8"));
+                                        fos.flush();
+                                        fos.close();
+                                    } catch (Throwable th) {
+                                        th.printStackTrace();
+                                    }
+                                    postMain(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            callback.success();
+                                        }
+                                    });
+                                } catch (Throwable th) {
+                                    th.printStackTrace();
+                                    postMain(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            callback.error("解析配置失败");
+                                        }
+                                    });
+                                }
                             }
-                            callback.success();
-                        } catch (Throwable th) {
-                            th.printStackTrace();
-                            callback.error("解析配置失败");
-                        }
+                        }, "cfg-parse").start();
                     }
 
                     @Override
                     public void onError(Response<String> response) {
                         super.onError(response);
-                        if (cache.exists()) {
-                            try {
-                                parseJson(apiUrl, cache);
-                                callback.success();
-                                return;
-                            } catch (Throwable th) {
-                                th.printStackTrace();
+                        final String errMsg = response.getException() != null ? response.getException().getMessage() : "";
+                        new Thread(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (cache.exists()) {
+                                    try {
+                                        parseJson(apiUrl, cache);
+                                        postMain(new Runnable() {
+                                            @Override
+                                            public void run() {
+                                                callback.success();
+                                            }
+                                        });
+                                        return;
+                                    } catch (Throwable th) {
+                                        th.printStackTrace();
+                                    }
+                                }
+                                postMain(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        callback.error("拉取配置失败\n" + errMsg);
+                                    }
+                                });
                             }
-                        }
-                        callback.error("拉取配置失败\n" + (response.getException() != null ? response.getException().getMessage() : ""));
+                        }, "cfg-err").start();
                     }
 
                     public String convertResponse(okhttp3.Response response) throws Throwable {
@@ -234,31 +293,68 @@ public class ApiConfig {
                 });
     }
 
-    public void loadJar(boolean useCache, String spider, LoadConfigCallback callback) {
+    public void loadJar(final boolean useCache, String spider, final LoadConfigCallback callback) {
         String[] urls = spider.split(";md5;");
-        String jarUrl = urls[0];
-        String md5 = urls.length > 1 ? urls[1].trim() : "";
-        File cache = new File(App.getInstance().getFilesDir().getAbsolutePath() + "/csp/"+MD5.string2MD5(jarUrl)+".jar");
+        final String jarUrlRaw = urls[0];
+        final String md5 = urls.length > 1 ? urls[1].trim() : "";
+        final File cache = new File(App.getInstance().getFilesDir().getAbsolutePath() + "/csp/"+MD5.string2MD5(jarUrlRaw)+".jar");
         if (!md5.isEmpty() || useCache) {
-            if (cache.exists() && (useCache || MD5.getFileMd5(cache).equalsIgnoreCase(md5))) {
-                if (jarLoader.load(cache.getAbsolutePath())) {
-                    callback.success();
-                } else {
-                    callback.error("从缓存加载jar失败");
-                }
+            if (cache.exists()) {
+                // md5 校验 + dex 加载放工作线程（DexClassLoader 加载非常耗时）
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        boolean hit = useCache || MD5.getFileMd5(cache).equalsIgnoreCase(md5);
+                        if (hit) {
+                            if (jarLoader.load(cache.getAbsolutePath())) {
+                                postMain(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        callback.success();
+                                    }
+                                });
+                            } else {
+                                postMain(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        callback.error("从缓存加载jar失败");
+                                    }
+                                });
+                            }
+                        } else {
+                            loadJarNet(jarUrlRaw, cache, callback);
+                        }
+                    }
+                }, "jar-cache").start();
                 return;
             }
-        }else {
-            if (Boolean.parseBoolean(jarCache) && cache.exists() && !FileUtils.isWeekAgo(cache)) {
-                if (jarLoader.load(cache.getAbsolutePath())) {
-                    callback.success();
-                    return;
-                }
+        } else {
+            if (Boolean.parseBoolean(jarCache) && cache.exists()) {
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!FileUtils.isWeekAgo(cache) && jarLoader.load(cache.getAbsolutePath())) {
+                            postMain(new Runnable() {
+                                @Override
+                                public void run() {
+                                    callback.success();
+                                }
+                            });
+                        } else {
+                            loadJarNet(jarUrlRaw, cache, callback);
+                        }
+                    }
+                }, "jar-cache").start();
+                return;
             }
         }
+        loadJarNet(jarUrlRaw, cache, callback);
+    }
 
-        boolean isJarInImg = jarUrl.startsWith("img+");
-        jarUrl = jarUrl.replace("img+", "");
+    /** 网络下载 spider jar 并加载（可从任意线程调用；回调均回投主线程） */
+    private void loadJarNet(String jarUrlRaw, final File cache, final LoadConfigCallback callback) {
+        boolean isJarInImg = jarUrlRaw.startsWith("img+");
+        String jarUrl = jarUrlRaw.replace("img+", "");
         OkGo.<File>get(jarUrl)
                 .headers("User-Agent", userAgent)
                 .headers("Accept", requestAccept)
@@ -300,23 +396,50 @@ public class ApiConfig {
 
                     @Override
                     public void onSuccess(Response<File> response) {
-                        File file = response.body();
-                        if (file != null && file.exists()) {
-                            try {
-                                if (jarLoader.load(file.getAbsolutePath())) {
-                                    callback.success();
+                        final File file = response.body();
+                        // dex 加载放工作线程
+                        new Thread(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (file != null && file.exists()) {
+                                    try {
+                                        if (jarLoader.load(file.getAbsolutePath())) {
+                                            postMain(new Runnable() {
+                                                @Override
+                                                public void run() {
+                                                    callback.success();
+                                                }
+                                            });
+                                        } else {
+                                            LOG.e("echo---jar Loader returned false");
+                                            postMain(new Runnable() {
+                                                @Override
+                                                public void run() {
+                                                    callback.error("从网络上加载jar写入缓存后加载失败");
+                                                }
+                                            });
+                                        }
+                                    } catch (Exception e) {
+                                        LOG.e("echo---jar Loader threw exception: " + e.getMessage());
+                                        final String em = "JAR加载异常: " + e.getMessage();
+                                        postMain(new Runnable() {
+                                            @Override
+                                            public void run() {
+                                                callback.error(em);
+                                            }
+                                        });
+                                    }
                                 } else {
-                                    LOG.e("echo---jar Loader returned false");
-                                    callback.error("从网络上加载jar写入缓存后加载失败");
+                                    LOG.e("echo---jar File not found");
+                                    postMain(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            callback.error("从网络上加载jar地址字节数据为空");
+                                        }
+                                    });
                                 }
-                            } catch (Exception e) {
-                                LOG.e("echo---jar Loader threw exception: " + e.getMessage());
-                                callback.error("JAR加载异常: " + e.getMessage());
                             }
-                        } else {
-                            LOG.e("echo---jar File not found");
-                            callback.error("从网络上加载jar地址字节数据为空");
-                        }
+                        }, "jar-load").start();
                     }
 
                     @Override
@@ -325,8 +448,19 @@ public class ApiConfig {
                         if (ex != null) {
                             LOG.i("echo---jar Request failed: " + ex.getMessage());
                         }
-                        if(cache.exists())jarLoader.load(cache.getAbsolutePath());
-                        callback.error(ex != null ? "从网络上加载jar失败：" + ex.getMessage() : "未知网络错误");
+                        final String em = ex != null ? "从网络上加载jar失败：" + ex.getMessage() : "未知网络错误";
+                        new Thread(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (cache.exists()) jarLoader.load(cache.getAbsolutePath());
+                                postMain(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        callback.error(em);
+                                    }
+                                });
+                            }
+                        }, "jar-err").start();
                     }
                 });
     }
@@ -352,6 +486,8 @@ public class ApiConfig {
         spider = DefaultConfig.safeJsonString(infoJson, "spider", "");
         // wallpaper
         wallpaper = DefaultConfig.safeJsonString(infoJson, "wallpaper", "");
+        // 免责声明（点播接口配置 warningText，为空则不弹窗）
+        Hawk.put(HawkConfig.WARNING_TEXT, DefaultConfig.safeJsonString(infoJson, "warningText", ""));
         // 直播播放请求头
         livePlayHeaders = infoJson.getAsJsonArray("livePlayHeaders");
         // 远端站点源
@@ -785,6 +921,71 @@ public class ApiConfig {
         if (!sourceBeanList.containsKey(key))
             return null;
         return sourceBeanList.get(key);
+    }
+
+    /** 自定义点播界面注入的源 key 前缀（与主配置隔离，退出界面时整体移除） */
+    public static final String CUSTOM_SRC_PREFIX = "cv_";
+
+    /**
+     * 自定义点播列表界面专用：解析与主点播接口相同格式的 json，仅取 sites 数组，
+     * 全部以 "cv_" 前缀注入源表；其它字段（live/epg/wallpaper/parses 等）一律忽略，
+     * 不影响 app 其它配置。返回注入成功的源列表（保持 json 中的顺序）。
+     */
+    public synchronized List<SourceBean> injectCustomSources(String jsonStr) {
+        removeCustomSources();
+        List<SourceBean> out = new ArrayList<>();
+        try {
+            JsonObject infoJson = new Gson().fromJson(jsonStr, JsonObject.class);
+            JsonArray sites = infoJson.has("video")
+                    ? infoJson.getAsJsonObject("video").getAsJsonArray("sites")
+                    : infoJson.get("sites").getAsJsonArray();
+            int idx = 0;
+            for (JsonElement opt : sites) {
+                try {
+                    JsonObject obj = (JsonObject) opt;
+                    SourceBean sb = new SourceBean();
+                    String siteKey = obj.has("key") ? obj.get("key").getAsString().trim() : ("site" + idx);
+                    String injectKey = CUSTOM_SRC_PREFIX + (idx++) + "_" + siteKey;
+                    sb.setKey(injectKey);
+                    sb.setName(obj.has("name") ? obj.get("name").getAsString().trim() : siteKey);
+                    // 缺 type/api 的站点按 type=0 / 空串兜底，单个站点解析失败不影响其它站点注入
+                    sb.setType(DefaultConfig.safeJsonInt(obj, "type", 0));
+                    sb.setApi(obj.has("api") && !obj.get("api").isJsonNull() ? obj.get("api").getAsString().trim() : "");
+                    sb.setSearchable(DefaultConfig.safeJsonInt(obj, "searchable", 1));
+                    sb.setQuickSearch(DefaultConfig.safeJsonInt(obj, "quickSearch", 1));
+                    sb.setFilterable(siteKey.startsWith("py_") ? 1 : DefaultConfig.safeJsonInt(obj, "filterable", 1));
+                    sb.setHide(DefaultConfig.safeJsonInt(obj, "hide", 0));
+                    sb.setPlayerUrl(DefaultConfig.safeJsonString(obj, "playUrl", ""));
+                    sb.setExt(DefaultConfig.safeJsonString(obj, "ext", ""));
+                    sb.setJar(DefaultConfig.safeJsonString(obj, "jar", ""));
+                    sb.setPlayerType(DefaultConfig.safeJsonInt(obj, "playerType", -1));
+                    sb.setCategories(DefaultConfig.safeJsonStringList(obj, "categories"));
+                    sb.setClickSelector(DefaultConfig.safeJsonString(obj, "click", ""));
+                    sb.setStyle(DefaultConfig.safeJsonString(obj, "style", ""));
+                    sourceBeanList.put(injectKey, sb);
+                    out.add(sb);
+                } catch (Throwable perSite) {
+                    idx++;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return out;
+    }
+
+    /** 移除全部自定义点播界面注入的源（退出自定义点播界面时调用） */
+    public synchronized void removeCustomSources() {
+        List<String> keys = new ArrayList<>(sourceBeanList.keySet());
+        for (String k : keys) {
+            if (k != null && k.startsWith(CUSTOM_SRC_PREFIX)) {
+                sourceBeanList.remove(k);
+            }
+        }
+    }
+
+    /** 仅切换内存中的当前源（不写 Hawk）：自定义点播界面用，退出后由调用方恢复 */
+    public void setHomeSourceTemp(SourceBean sourceBean) {
+        this.mHomeSource = sourceBean;
     }
 
     public void setSourceBean(SourceBean sourceBean) {

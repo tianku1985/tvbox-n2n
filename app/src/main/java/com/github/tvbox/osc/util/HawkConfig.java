@@ -61,6 +61,8 @@ public class HawkConfig {
     public static final String FAST_SEARCH_MODE = "fast_search_mode";
     public static final String SCREEN_DISPLAY = "screen_display";
     public static final String SEARCH_FILTER_KEY = "search_filter_key";
+    // 点播接口配置的免责声明（warningText），配置加载成功后弹窗提示
+    public static final String WARNING_TEXT = "warning_text";
 
     // Live Settings
     public static final String LIVE_CHANNEL = "last_live_channel_name";

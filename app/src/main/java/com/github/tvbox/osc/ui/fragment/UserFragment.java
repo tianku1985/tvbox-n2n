@@ -3,8 +3,10 @@ package com.github.tvbox.osc.ui.fragment;
 import android.content.Intent;
 import android.os.Bundle;
 import android.view.View;
+import android.view.ViewTreeObserver;
 import android.view.animation.BounceInterpolator;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.Toast;
 
 import com.chad.library.adapter.base.BaseQuickAdapter;
@@ -12,6 +14,7 @@ import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.api.ApiConfig;
 import com.github.tvbox.osc.base.BaseLazyFragment;
 import com.github.tvbox.osc.bean.Movie;
+import com.github.tvbox.osc.n2n.RemoteConfig;
 import com.github.tvbox.osc.bean.VodInfo;
 import com.github.tvbox.osc.cache.RoomDataManger;
 import com.github.tvbox.osc.event.ServerEvent;
@@ -53,6 +56,8 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
     private LinearLayout tvHistory;
     private LinearLayout tvCollect;
     private LinearLayout tvPush;
+    /** hin2n 组网内置模块入口（随入口行一起滚动） */
+    private LinearLayout tvHin2nHome;
     public static HomeHotVodAdapter homeHotVodAdapter;
     private List<Movie.Video> homeSourceRec;
     public static TvRecyclerView tvHotListForGrid;
@@ -122,6 +127,8 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         tvCollect = findViewById(R.id.tvFavorite);
         tvHistory = findViewById(R.id.tvHistory);
         tvPush = findViewById(R.id.tvPush);
+        tvHin2nHome = findViewById(R.id.tvHin2nHome);
+        tvHin2nHome.setVisibility(RemoteConfig.hin2nEntryEnabled() ? View.VISIBLE : View.GONE);
         tvDrive.setOnClickListener(this);
         tvVod.setOnClickListener(this);
         tvLive.setOnClickListener(this);
@@ -130,6 +137,7 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         tvHistory.setOnClickListener(this);
         tvPush.setOnClickListener(this);
         tvCollect.setOnClickListener(this);
+        tvHin2nHome.setOnClickListener(this);
         tvDrive.setOnFocusChangeListener(focusChangeListener);
         tvVod.setOnFocusChangeListener(focusChangeListener);
         tvLive.setOnFocusChangeListener(focusChangeListener);
@@ -138,9 +146,18 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         tvHistory.setOnFocusChangeListener(focusChangeListener);
         tvPush.setOnFocusChangeListener(focusChangeListener);
         tvCollect.setOnFocusChangeListener(focusChangeListener);
+        tvHin2nHome.setOnFocusChangeListener(focusChangeListener);
+        // JSON "homeEntries" 配置存在时整体替换历史一行入口：内容/顺序/图标全部按 JSON
+        rebuildHomeEntriesIfConfigured();
+        // 焦点在入口行与下方内容列表之间移动时，外层 ScrollView 跟随滚动，
+        // 让「历史」一行入口随内容列表一起上/下滚动（D-pad 上下）。
+        installScrollFollow();
         tvHotListForLine = findViewById(R.id.tvHotListForLine);
         tvHotListForGrid = findViewById(R.id.tvHotListForGrid);
-        tvHotListForGrid.setHasFixedSize(true);
+        // 多行网格嵌在外层 ScrollView 中且高度为 wrap_content：必须为 false，
+        // 否则首次测量时 adapter 为空，网格高度被固定为极小值，数据到达后不再重新测量，
+        // 导致网格内部滚动、入口行无法随内容一起滚动（根因）
+        tvHotListForGrid.setHasFixedSize(false);
         int spanCount = 5;
         if (Hawk.get(HawkConfig.HOME_REC, 0) == 1 && homeSourceRec!=null) {
             style=ImgUtil.initStyle();
@@ -148,7 +165,10 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         if(style!=null && Hawk.get(HawkConfig.HOME_REC, 0) == 1) {
             spanCount=ImgUtil.spanCountByStyle(style,spanCount);
         }
-        tvHotListForGrid.setLayoutManager(new V7GridLayoutManager(this.mContext, spanCount)); 
+        tvHotListForGrid.setLayoutManager(new V7GridLayoutManager(this.mContext, spanCount));
+        // 多行模式：关闭网格列表内部滚动，内容完全展开、由外层 ScrollView 统一滚动，
+        // 入口行（历史一行）即可随下方内容一起上/下滚动（与单行模式行为一致）
+        tvHotListForGrid.setNestedScrollingEnabled(false);
         String tvRate="";
         if(Hawk.get(HawkConfig.HOME_REC, 0) == 0){
             tvRate="豆瓣热播";
@@ -270,6 +290,92 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         }
     }
 
+    /**
+     * JSON "homeEntries" 整体替换历史一行：移除布局内置的固定入口卡片，
+     * 按 JSON 数组顺序动态生成相同样式的卡片，点击统一走 EntryDispatcher
+     * （page=打开界面 / feature=内置功能 / app=其他 App / vod=自定义点播界面）。
+     * 未配置时保持布局原样。
+     */
+    private void rebuildHomeEntriesIfConfigured() {
+        java.util.List<RemoteConfig.Entry> entries = RemoteConfig.homeEntries();
+        if (entries == null) {
+            return;
+        }
+        LinearLayout row = findViewById(R.id.tvUserHome);
+        if (row == null) {
+            return;
+        }
+        row.removeAllViews();
+        android.content.res.Resources res = getResources();
+        int h = res.getDimensionPixelSize(R.dimen.vs_100);
+        int margin = res.getDimensionPixelSize(R.dimen.vs_5);
+        int pad = res.getDimensionPixelSize(R.dimen.vs_15);
+        int minW = res.getDimensionPixelSize(R.dimen.vs_150);
+        int iconW = res.getDimensionPixelSize(R.dimen.vs_40);
+        int iconMargin = res.getDimensionPixelSize(R.dimen.vs_3);
+        int tvPad = res.getDimensionPixelSize(R.dimen.vs_3);
+        for (final RemoteConfig.Entry e : entries) {
+            LinearLayout card = new LinearLayout(mContext);
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, h);
+            clp.setMargins(margin, margin, margin, margin);
+            card.setLayoutParams(clp);
+            card.setGravity(android.view.Gravity.CENTER);
+            card.setMinimumWidth(minW);
+            card.setOrientation(LinearLayout.HORIZONTAL);
+            card.setPadding(pad, pad, pad, pad);
+            card.setBackgroundResource(R.drawable.shape_user_home);
+            card.setClickable(true);
+            card.setFocusable(true);
+            card.setContentDescription(e.name);
+
+            android.widget.ImageView iv = new android.widget.ImageView(mContext);
+            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(iconW,
+                    LinearLayout.LayoutParams.MATCH_PARENT);
+            ilp.setMargins(iconMargin, iconMargin, iconMargin, iconMargin);
+            iv.setLayoutParams(ilp);
+            iv.setAlpha(0.9f);
+            com.github.tvbox.osc.n2n.EntryDispatcher.loadIcon(mContext, iv, e);
+            card.addView(iv);
+
+            android.widget.TextView tv = new android.widget.TextView(mContext);
+            LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            tv.setLayoutParams(tlp);
+            tv.setGravity(android.view.Gravity.CENTER);
+            tv.setPadding(tvPad, tvPad, tvPad, tvPad);
+            tv.setText(e.name);
+            tv.setTextColor(0xE6FFFFFF); // color_FFFFFF_90
+            tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
+                    res.getDimensionPixelSize(R.dimen.ts_24));
+            tv.setTypeface(android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.NORMAL));
+            tv.setFocusable(false);
+            tv.setClickable(false);
+            card.addView(tv);
+
+            card.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    FastClickCheckUtil.check(v);
+                    com.github.tvbox.osc.n2n.EntryDispatcher.open(mActivity, e);
+                }
+            });
+            // 长按「历史」入口：切换推荐模式并重载首页（与固定卡片行为一致）
+            if ("page".equals(e.type) && "history".equals(e.target)) {
+                card.setOnLongClickListener(new View.OnLongClickListener() {
+                    @Override
+                    public boolean onLongClick(View v) {
+                        HomeActivity.homeRecf();
+                        return HomeActivity.reHome(mContext);
+                    }
+                });
+            }
+            card.setOnFocusChangeListener(focusChangeListener);
+            row.addView(card);
+        }
+    }
+
     private void initHomeHotVod(HomeHotVodAdapter adapter) {
         if (Hawk.get(HawkConfig.HOME_REC, 0) == 1) {
             if (homeSourceRec != null) {
@@ -338,6 +444,45 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         return result;
     }
 
+    /**
+     * 首页滚动联动：入口行（历史/点播/直播/…/组网）与下方内容列表同处一个 ScrollView。
+     * 横向 TvRecyclerView 内部移动焦点时 ScrollView 默认不会自动滚动，
+     * 这里监听全局焦点变化，把新聚焦视图滚动到可视区内（上下留出边距）。
+     */
+    private void installScrollFollow() {
+        View root = getView();
+        if (!(root instanceof ScrollView)) {
+            return;
+        }
+        final ScrollView sv = (ScrollView) root;
+        final int margin = (int) (24 * getResources().getDisplayMetrics().density);
+        sv.getViewTreeObserver().addOnGlobalFocusChangeListener(new ViewTreeObserver.OnGlobalFocusChangeListener() {
+            @Override
+            public void onGlobalFocusChanged(View oldFocus, View newFocus) {
+                if (newFocus == null || sv.getHeight() <= 0) {
+                    return;
+                }
+                // 只关心本 Fragment 内的视图
+                if (!sv.isShown()) {
+                    return;
+                }
+                int[] svPos = new int[2];
+                int[] fPos = new int[2];
+                sv.getLocationOnScreen(svPos);
+                newFocus.getLocationOnScreen(fPos);
+                int top = fPos[1] - svPos[1] + sv.getScrollY();
+                int bottom = top + newFocus.getHeight();
+                int visibleTop = sv.getScrollY();
+                int visibleBottom = visibleTop + sv.getHeight();
+                if (bottom > visibleBottom - margin) {
+                    sv.smoothScrollTo(0, bottom - sv.getHeight() + margin);
+                } else if (top < visibleTop + margin) {
+                    sv.smoothScrollTo(0, Math.max(0, top - margin));
+                }
+            }
+        });
+    }
+
     private final View.OnFocusChangeListener focusChangeListener = new View.OnFocusChangeListener() {
         @Override
         public void onFocusChange(View v, boolean hasFocus) {
@@ -372,6 +517,13 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
             jumpActivity(CollectActivity.class);
         } else if (v.getId() == R.id.tvDrive) {
             jumpActivity(DriveActivity.class);
+        } else if (v.getId() == R.id.tvHin2nHome) {
+            // 组网入口：独立 hin2n App（已安装拉起，未安装走下载安装管线）
+            RemoteConfig.Entry e = new RemoteConfig.Entry();
+            e.type = "page";
+            e.name = "组网";
+            e.target = "hin2n";
+            com.github.tvbox.osc.n2n.EntryDispatcher.open(mActivity, e);
         }
     }
 

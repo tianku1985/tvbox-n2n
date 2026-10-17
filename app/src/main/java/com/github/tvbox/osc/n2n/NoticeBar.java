@@ -3,6 +3,7 @@ package com.github.tvbox.osc.n2n;
 import android.app.Activity;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -19,6 +20,7 @@ import org.json.JSONObject;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Locale;
 
 /**
@@ -37,10 +39,27 @@ public class NoticeBar {
     private static final String TAG_PREFIX = "tvbox_notice_bar_";
 
     private static final Handler H = new Handler(Looper.getMainLooper());
-    private static Runnable speedRun = null;
-    /** 当前正在显示的公告条与「展示 duration 秒后自动隐藏」回调（重新渲染时重置计时） */
-    private static TextView activeView = null;
-    private static Runnable hideRun = null;
+    /** 每屏（home/live/vod）独立状态，避免跨屏互踩和 duration 计时被 ticker 重置 */
+    private static final HashMap<String, ScreenState> STATES = new HashMap<>();
+
+    private static final class ScreenState {
+        TextView view;
+        Runnable speedRun;
+        Runnable hideRun;
+        /** 当前显示文本，用于判断 ticker 重新渲染是否同一内容 */
+        String content;
+        /** hideRun 预定执行时间（uptimeMillis），0 表示常显或无隐藏任务 */
+        long deadline;
+    }
+
+    private static ScreenState getOrCreate(String screen) {
+        ScreenState ss = STATES.get(screen);
+        if (ss == null) {
+            ss = new ScreenState();
+            STATES.put(screen, ss);
+        }
+        return ss;
+    }
 
     /** 在指定界面渲染公告条（幂等，可重复调用） */
     public static void show(Activity act, String screen) {
@@ -59,33 +78,34 @@ public class NoticeBar {
         if (act == null) {
             return;
         }
-        cancelAutoHide();
+        ScreenState ss = STATES.get(screen);
+        if (ss != null) {
+            hideScreen(ss);
+            STATES.remove(screen);
+        }
         TextView tv = SCREEN_HOME.equals(screen) ? act.findViewById(R.id.tvNotice) : findOverlay(act, screen);
         if (tv != null) {
             tv.setVisibility(View.GONE);
-            stopSpeedScroll();
-        }
-        if (activeView == tv) {
-            activeView = null;
         }
     }
 
     /** 停止自定义滚动（Activity.onDestroy 调用，避免静态泄漏） */
     public static void stopScroll() {
-        stopSpeedScroll();
-        cancelAutoHide();
+        for (ScreenState ss : STATES.values()) {
+            cancelAutoHide(ss);
+            stopSpeedScroll(ss);
+        }
     }
 
     // ==================== 渲染 ====================
 
     private static void render(final Activity act, final TextView tv, String screen) {
-        cancelAutoHide();
-        activeView = null;
+        final ScreenState ss = getOrCreate(screen);
+        ss.view = tv;
         String notice = RemoteConfig.notice();
         JSONObject st = RemoteConfig.noticeStyle();
         if (notice == null || notice.trim().isEmpty() || !enabledFor(screen, st)) {
-            tv.setVisibility(View.GONE);
-            stopSpeedScroll();
+            hideScreen(ss);
             return;
         }
         // 过期时间（yyyy-MM-dd，过期不显示）
@@ -94,8 +114,7 @@ public class NoticeBar {
             try {
                 Date exp = new SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(expire);
                 if (exp != null && new Date().after(new Date(exp.getTime() + 24L * 3600 * 1000 - 1))) {
-                    tv.setVisibility(View.GONE);
-                    stopSpeedScroll();
+                    hideScreen(ss);
                     return;
                 }
             } catch (Throwable ignored) {
@@ -112,8 +131,7 @@ public class NoticeBar {
                 int e = toMinute(timeEnd);
                 boolean in = (s <= e) ? (now >= s && now <= e) : (now >= s || now <= e);
                 if (!in) {
-                    tv.setVisibility(View.GONE);
-                    stopSpeedScroll();
+                    hideScreen(ss);
                     return;
                 }
             } catch (Throwable ignored) {
@@ -148,9 +166,9 @@ public class NoticeBar {
         if (speed > 0) {
             tv.setSelected(false);
             tv.setEllipsize(null);
-            startSpeedScroll(act, tv, text, speed);
+            startSpeedScroll(act, tv, text, speed, ss);
         } else {
-            stopSpeedScroll();
+            stopSpeedScroll(ss);
             tv.setScroller(null);
             tv.scrollTo(0, 0);
             tv.setTranslationX(0f);
@@ -161,29 +179,52 @@ public class NoticeBar {
             }
             tv.setSelected(true);   // 选中态才会触发 marquee 滚动
         }
-        activeView = tv;
-        // duration：展示多少秒后自动消失（0 或缺省 = 一直显示；重新渲染会重置计时）
+        // duration：从「该内容首次展示」起计时；ticker 周期性重渲染同一内容时不重置计时，
+        // 已到期的立即隐藏，未到期的按剩余时间重排回调（避免反复 render 导致永不消失）。
         int duration = st.optInt("duration", 0);
         if (duration > 0) {
-            hideRun = new Runnable() {
+            long now = SystemClock.uptimeMillis();
+            if (!text.equals(ss.content) || ss.deadline <= 0) {
+                ss.content = text;
+                ss.deadline = now + duration * 1000L;
+            }
+            long remain = ss.deadline - now;
+            if (remain <= 0) {
+                hideScreen(ss);
+                return;
+            }
+            cancelAutoHide(ss);
+            final TextView ftv = tv;
+            ss.hideRun = new Runnable() {
                 @Override
                 public void run() {
-                    hideRun = null;
-                    if (activeView == tv) {
-                        activeView = null;
-                    }
-                    tv.setVisibility(View.GONE);
-                    stopSpeedScroll();
+                    ss.hideRun = null;
+                    ss.deadline = 0;
+                    ftv.setVisibility(View.GONE);
+                    stopSpeedScroll(ss);
                 }
             };
-            H.postDelayed(hideRun, duration * 1000L);
+            H.postDelayed(ss.hideRun, remain);
+        } else {
+            cancelAutoHide(ss);
+            ss.deadline = 0;
+            ss.content = text;
         }
     }
 
-    private static void cancelAutoHide() {
-        if (hideRun != null) {
-            H.removeCallbacks(hideRun);
-            hideRun = null;
+    private static void hideScreen(ScreenState ss) {
+        cancelAutoHide(ss);
+        stopSpeedScroll(ss);
+        ss.deadline = 0;
+        if (ss.view != null) {
+            ss.view.setVisibility(View.GONE);
+        }
+    }
+
+    private static void cancelAutoHide(ScreenState ss) {
+        if (ss.hideRun != null) {
+            H.removeCallbacks(ss.hideRun);
+            ss.hideRun = null;
         }
     }
 
@@ -281,8 +322,8 @@ public class NoticeBar {
 
     // ==================== 自定义速度滚动（由右向左） ====================
 
-    private static void startSpeedScroll(final Activity act, final TextView tv, final String text, final int speedPxPerSec) {
-        stopSpeedScroll();
+    private static void startSpeedScroll(final Activity act, final TextView tv, final String text, final int speedPxPerSec, final ScreenState ss) {
+        stopSpeedScroll(ss);
         tv.setScroller(null);
         tv.scrollTo(0, 0);
         tv.setTranslationX(0f);
@@ -320,27 +361,28 @@ public class NoticeBar {
                 tv.setScroller(scroller);
                 tv.scrollTo(0, 0);
                 scroller.startScroll(0, 0, periodPx, 0, Math.max(1, duration));
-                speedRun = new Runnable() {
+                ss.speedRun = new Runnable() {
                     @Override
                     public void run() {
+                        if (ss.speedRun == null) {
+                            return;
+                        }
                         if (scroller.isFinished()) {
                             tv.scrollTo(0, 0);
                             scroller.startScroll(0, 0, periodPx, 0, Math.max(1, duration));
                         }
-                        if (speedRun != null) {
-                            H.postDelayed(speedRun, 300);
-                        }
+                        H.postDelayed(ss.speedRun, 300);
                     }
                 };
-                H.postDelayed(speedRun, 300);
+                H.postDelayed(ss.speedRun, 300);
             }
         }, 60);
     }
 
-    private static void stopSpeedScroll() {
-        if (speedRun != null) {
-            H.removeCallbacks(speedRun);
-            speedRun = null;
+    private static void stopSpeedScroll(ScreenState ss) {
+        if (ss.speedRun != null) {
+            H.removeCallbacks(ss.speedRun);
+            ss.speedRun = null;
         }
     }
 

@@ -1,8 +1,6 @@
 package com.github.tvbox.osc.n2n;
 
 import android.app.Activity;
-import android.app.AlertDialog;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -12,7 +10,6 @@ import android.view.View;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import com.bumptech.glide.Glide;
 import com.bumptech.glide.request.target.SimpleTarget;
@@ -33,12 +30,10 @@ import java.util.List;
  *
  * 公告条渲染与滚动（含首页/直播/点播三处显示开关、由右向左方向）统一由 {@link NoticeBar} 负责；
  * 远程 JSON 的 notice/home 样式字段见 RemoteConfig 类注释；
- * 入口未安装 App 时通过 ApkInstaller 后台下载 APK 并拉起安装。
+ * hin2n 组网已拆分为独立 App（包名 wang.switchy.hin2n），顶栏 tvHin2n 与历史行 tvHin2nHome
+ * 点击统一走 EntryDispatcher：已安装直接拉起，未安装且配置 hin2n.apkUrl 时后台下载安装。
  */
 public class HomeEntry {
-
-    /** hin2n 包名（switch-iot/hin2n，默认 applicationId） */
-    public static final String HIN2N_PKG = "wang.switchy.hin2n";
 
     private static final Handler TICKER = new Handler(Looper.getMainLooper());
     private static Runnable tickRun = null;
@@ -48,14 +43,18 @@ public class HomeEntry {
         if (act == null) {
             return;
         }
-        // ---- hin2n 固定入口 ----
+        // ---- hin2n 固定入口（独立 App：已安装拉起，未安装走下载安装管线） ----
         ImageView tvHin2n = act.findViewById(R.id.tvHin2n);
         if (tvHin2n != null) {
             tvHin2n.setVisibility(RemoteConfig.hin2nEntryEnabled() ? View.VISIBLE : View.GONE);
             tvHin2n.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    launchApp(act, HIN2N_PKG, "hin2n", RemoteConfig.hin2nUrl());
+                    RemoteConfig.Entry e = new RemoteConfig.Entry();
+                    e.type = "page";
+                    e.name = "组网";
+                    e.target = "hin2n";
+                    EntryDispatcher.open(act, e);
                 }
             });
         }
@@ -87,13 +86,36 @@ public class HomeEntry {
         applyBackground(act);
         applyHomeStyle(act);
         NoticeBar.show(act, NoticeBar.SCREEN_HOME);
-        // 自定义入口栏：按远程 JSON 动态生成图标，点击拉起对应 App
+        // 自定义入口栏：按远程 JSON 动态生成图标
         LinearLayout bar = act.findViewById(R.id.entryBar);
         if (bar == null) {
             return;
         }
         bar.removeAllViews();
+        // topEntries 配置存在时整体替换顶栏：隐藏全部内置固定图标，顺序/内容/图标全按 JSON
+        List<RemoteConfig.Entry> top = RemoteConfig.topEntries();
+        if (top != null) {
+            int[] fixedIds = {R.id.tvWifi, R.id.tvFind, R.id.tvStyle, R.id.tvTheme,
+                    R.id.tvDrawer, R.id.tvN2n, R.id.tvHin2n};
+            for (int id : fixedIds) {
+                View v = act.findViewById(id);
+                if (v != null) {
+                    v.setVisibility(View.GONE);
+                }
+            }
+            buildTopEntries(act, bar, top);
+            applyHomeStyleToEntries(act);
+            return;
+        }
+        // 旧版 "entries"：仅 app 类型，点击拉起对应 App（未安装且配 url 时后台下载安装）
         List<RemoteConfig.Entry> entries = RemoteConfig.entries();
+        buildTopEntries(act, bar, entries);
+        // 外观：入口配色对动态生成的图标同样生效
+        applyHomeStyleToEntries(act);
+    }
+
+    /** 顶栏动态入口渲染：图标按钮（vs_50），点击统一走 EntryDispatcher */
+    private static void buildTopEntries(final Activity act, LinearLayout bar, List<RemoteConfig.Entry> entries) {
         int size = act.getResources().getDimensionPixelSize(R.dimen.vs_50);
         int margin = act.getResources().getDimensionPixelSize(R.dimen.vs_15);
         int pad = act.getResources().getDimensionPixelSize(R.dimen.vs_10);
@@ -108,58 +130,14 @@ public class HomeEntry {
             iv.setClickable(true);
             iv.setFocusable(true);
             iv.setContentDescription(e.name);
-            if (e.icon != null && !e.icon.isEmpty()) {
-                Glide.with(act).load(e.icon).into(iv);
-            } else {
-                iv.setImageResource(R.drawable.hm_drawer);   // 无图标时用应用抽屉图标兜底
-            }
+            EntryDispatcher.loadIcon(act, iv, e);
             iv.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    launchApp(act, e.pkg, e.name, e.url);
+                    EntryDispatcher.open(act, e);
                 }
             });
             bar.addView(iv);
-        }
-        // 外观：入口配色对动态生成的图标同样生效
-        applyHomeStyleToEntries(act);
-    }
-
-    /** 按包名拉起第三方 App；未安装则后台下载 APK 并拉起安装 */
-    private static void launchApp(Activity act, String pkg, String name, final String url) {
-        try {
-            Intent it = act.getPackageManager().getLaunchIntentForPackage(pkg);
-            if (it != null) {
-                act.startActivity(it);
-            } else {
-                showInstallDialog(act, name, url);
-            }
-        } catch (Throwable t) {
-            Toast.makeText(act, "打开 " + name + " 失败: " + t.getMessage(), Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    /** 未安装提示：有下载地址则后台下载并拉起安装；无地址时提示去远程配置补充 */
-    private static void showInstallDialog(final Activity act, String name, final String url) {
-        boolean hasUrl = url != null && !url.trim().isEmpty();
-        if (hasUrl) {
-            AlertDialog.Builder b = new AlertDialog.Builder(act);
-            b.setTitle("未安装「" + name + "」");
-            b.setMessage("是否在后台下载并安装？\n\n下载地址：\n" + url.trim());
-            b.setPositiveButton("后台下载", new DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    ApkInstaller.downloadAndInstall(act, name, url.trim());
-                }
-            });
-            b.setNegativeButton("取消", null);
-            b.show();
-        } else {
-            AlertDialog.Builder b = new AlertDialog.Builder(act);
-            b.setTitle("未安装「" + name + "」");
-            b.setMessage("未安装「" + name + "」。\n请在「设置 → 配置地址」下方的远程配置接口中补充下载地址。");
-            b.setNegativeButton("确定", null);
-            b.show();
         }
     }
 
@@ -167,8 +145,9 @@ public class HomeEntry {
 
     /**
      * 远程背景图应用到内容层（android.R.id.content）背景。
-     * BaseActivity.onCreate 统一调用，因此 JSON 的 home.bgImage 会在「所有页面」生效，
-     * 而不仅限于首页；未配置时保持各页面原样。
+     * BaseActivity.onCreate 统一调用，因此背景图会在「所有页面」生效，而不仅限于首页。
+     * 取值优先级：home.bgImage（全局固定）> 当前主题 themes[].bgImages/bgImage（一个或多个，
+     * 多张随机选一张后按主题保持稳定）> 都不配置时保持各页面原样（主题渐变背景）。
      */
     public static void applyBackground(Activity act) {
         if (act == null || act.isFinishing() || act.isDestroyed()) {
@@ -176,6 +155,13 @@ public class HomeEntry {
         }
         JSONObject home = RemoteConfig.homeStyle();
         String bg = home != null ? home.optString("bgImage", "").trim() : "";
+        if (bg.isEmpty()) {
+            try {
+                String themed = ThemeManager.currentBgImage();
+                bg = themed != null ? themed : "";
+            } catch (Throwable ignored) {
+            }
+        }
         if (bg.isEmpty()) {
             return;
         }

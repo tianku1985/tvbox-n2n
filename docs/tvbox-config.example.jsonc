@@ -1,206 +1,309 @@
 // ============================================================================
-// TVBox-n2n 远程配置接口 · 参考配置文件（带中文注释与用法）
+// TVBox-n2n 内置配置 · 全量参考（JSONC 注释版）
 // ----------------------------------------------------------------------------
-// 本文件为「带注释版」参考，方便阅读与修改；
-//   · 直接部署时请使用去掉注释的 docs/tvbox-config.example.json（标准 JSON）。
-//   · 若服务器支持 JSONC（如部分静态托管/CDN），也可直接使用本文件。
+// 本文件是 app/src/main/assets/tvbox-config.json 的「带注释全量 demo」，
+// 两者结构保持一致；出厂内置文件以 app/src/main/assets/tvbox-config.json 为准。
 //
-// 【用法】
-//   1. 把本文件内容（去掉 // 注释后）保存为一份 UTF-8 编码的 .json 文件；
-//   2. 上传到你自己的 HTTP(S) 静态托管地址，例如 GitHub Pages / 对象存储 / Nginx；
-//      务必保证接口可通过 GET 访问且返回 200（可用的直链，不要带下载跳转）。
-//      接口地址支持 http:// 与 https://（未写协议时会自动补 http://）。
-//   3. 打开 TVBox →「设置」→「设置其他」页面；
-//   4. 在顶部「配置地址」下方的「远程配置」卡片里，点击「配置接口」；
-//      填入第 2 步得到的 JSON 地址并确定，App 会立即拉取一次；
-//   5. 之后 App 会按「checkInterval」设定的间隔（默认 30 分钟）定时拉取刷新，
-//      每次进入首页也会自动拉取（5 分钟内不重复请求）；
-//      想手动刷新时，点「同步配置」即可立即拉取。
+// 【配置方式（已无远程地址配置）】
+//   1. 复制本文件内容到 app/src/main/assets/tvbox-config.json（该文件本身就支持注释）；
+//   2. 按需修改后重新编译安装 APK 即可；App 每次启动同步读取，无需联网。
+//   3. 解析器兼容 JSONC：// 行注释、/* 块注释、尾逗号、UTF-8 BOM；
+//      注释不会穿透字符串（URL 里出现 // 不受影响）。
 //
-// 【覆盖规则】
-//   · notice / notice 样式 / home 外观 / tkp2p / theme / entries / hin2nEntry /
-//     hin2nUrl / checkInterval / ua：每次拉取成功都覆盖为新值；
-//   · api / live / epg / proxy（点播/直播/EPG/代理地址）：仅当你「尚未在 tvbox 内配置」
-//     （当前值为空）时才作为默认值写入；一旦你在 tvbox 设置里配置过某个接口，
-//     JSON 即不再覆盖该接口（四个接口互不影响，可只交给 JSON 管其中几个）；
-//   · version：与 App 本地版本号不同即视为一次升级，应用后提示「已升级至 vX」；
-//   · bootStart：仅作为「默认值」写入一次，之后以用户在界面上的开关为准，
-//     重复拉取不会把用户手动改过的值改回去。
-//   · 所有字段均为可选：接口里没写或值为空的字段，保持 App 本地现状不变。
+// 【覆盖/生效规则】
+//   · notice/home/tkp2p/theme/themes/entries/topEntries/homeEntries/upgrade/
+//     hin2nEntry/checkInterval/ua：每次启动按本文件应用（改完重装即生效）；
+//   · api/live/epg/proxy：仅当用户从未在 TVBox 内手动配置过对应接口时作为默认值，
+//       用户一旦手动配置，该接口不再被文件覆盖（四项互不影响）；
+//   · bootStart（TVBox 开机自启）：只作默认值写入一次，之后以界面开关为准；
+//   · settings（设置页默认值）：仅当用户从未在设置页修改过该项时写入一次，
+//       用户一旦在设置页更改，该项永远以用户设定为准；
+//   · hin2n.bootStart/staticRoutes/configs：仅应用首次启动（组网数据库为空）时
+//       播种一次，之后以组网界面内的用户增删改为准；
+//   · 所有字段均可选，不写即保持默认。
 //
-// 【本地兜底】
-//   · App 启动即拉取本接口；若接口未配置或无法访问，会自动读取内置的
-//     assets/tvbox-config.json 作为兜底配置（内容格式与本文件一致，默认全部为空）。
-//
-// 【校验提示】
-//   · 根节点必须是 JSON 对象 {}，不能是数组；
-//   · 每个 entry 的 pkg 必填（为空则该项被忽略），name/icon/url 可选；
-//   · 拉取失败（超时 8 秒、非 200、非法 JSON）不会清空旧配置，界面会提示「同步失败」。
+// 【颜色格式】统一使用 #RRGGBB 或 #AARRGGBB（AA=透明度十六进制，如 B3≈70%）。
+// 【已删除字段】version / apkUrl / hin2nUrl（远程更新与外部 hin2n APK 已废弃）。
 // ============================================================================
 {
-  // ==================== 公告 ====================
-  // notice 支持两种写法：
-  //   ① 简单字符串（旧格式）："notice": "公告文本" —— 样式用 App 内置默认值；
-  //   ② 对象（新格式，推荐）：可完全自定义样式与显示策略，见下。
+  // ==================== 远程配置接口 ====================
+  // 远程 json 地址：配置后启动时会拉取远程 json，覆盖「除设置页(settings) 和 n2n(hin2n) 之外」
+  // 的所有段（notice/home/tkp2p/themes/entries/topEntries/homeEntries/upgrade/api/live/epg/proxy 等）。
+  // 设置页与 n2n 的配置永远只读写本地内置 json，不被远程覆盖。
+  // 留空或远程无法访问时全部使用本文件内置配置。
+  "remoteConfigUrl": "",
+
+  // ==================== 公告（首页/直播/点播均可显示） ====================
+  // 最简写法："notice": "公告文本"；要自定义样式时写成下面的对象。
   "notice": {
-    "text": "欢迎使用 TVBox：本通知由远程 JSON 接口下发，修改接口内容即可全网更新。",
-
-    // 显示位置："bottom"（底部，默认）或 "top"（顶部）
-    "position": "bottom",
-
-    // 背景颜色，#RRGGBB 或 #AARRGGBB；留空保持默认半透明黑
-    "bgColor": "#66000000",
-
-    // 字体颜色；留空保持默认 #FFFFD54F
-    "fontColor": "#FFFFD54F",
-
-    // 字体大小（sp 单位）；留空或 0 保持默认
-    "fontSize": 18,
-
-    // 整体透明度 0-100（100 不透明）；留空保持不透明
-    "alpha": 100,
-
-    // 自动消失：公告显示多少秒后自动隐藏（秒）；0 或留空 = 一直显示。
-    // 定时拉取刷新公告时会重新计时。
-    "duration": 0,
-
-    // 显示时间段 "HH:mm"：只在时间段内显示，超出自动隐藏；可跨零点（如 22:00-06:00）。
-    // 两个都填才生效；留空则全天显示。
-    "timeStart": "00:00",
-    "timeEnd": "23:59",
-
-    // 过期时间 "yyyy-MM-dd"：超过该日期（含当天整天）不再显示；留空不过期。
-    "expire": "2027-12-31",
-
-    // 滚动速度（像素/秒）：>0 使用自定义平滑滚动（由右向左、背景固定、只有文本滚动）；
-    // 0 或留空使用系统 marquee 滚动。
-    "speed": 60,
-
-    // 是否在指定界面显示公告（不写默认首页/直播/点播三个界面均显示）。
-    // 首页 / 直播播放页 / 点播页可分别开关；也可用 showOnHome / showOnLive / showOnVod。
-    "show": {
-      "home": true,
-      "live": true,
-      "vod": true
-    }
+    "text": "",                         // 公告内容，留空不显示
+    "position": "bottom",               // 显示位置：bottom（默认，底部） | top（顶部）
+    "bgColor": "#B31B1B1B",             // 背景色 #RRGGBB 或 #AARRGGBB
+    "fontColor": "#FFFFD54F",           // 文字颜色
+    "fontSize": 18,                     // 文字大小（sp），0=默认
+    "alpha": 100,                       // 整条公告透明度 0-100
+    "duration": 0,                      // 显示多少秒后自动隐藏，0=一直显示
+    "timeStart": "",                    // 每日显示开始时间 "HH:mm"，可跨零点；空=不限
+    "timeEnd": "",                      // 每日显示结束时间 "HH:mm"
+    "expire": "",                       // 过期日期 "yyyy-MM-dd"（当天结束前仍显示），空=永不过期
+    "speed": 60,                        // 自定义滚动速度（像素/秒），由右向左；0=系统跑马灯
+    "show": { "home": true, "live": true, "vod": true } // 分别控制首页/直播/点播是否显示
+                                        // 也兼容 showOnHome/showOnLive/showOnVod 写法
   },
 
   // ==================== 首页外观 ====================
-  // 下发后立即生效，定时拉取到新值也会实时刷新界面。
   "home": {
-    // 背景图片 URL（jpg/png/webp 均可）；留空保持 App 原有背景。
-    // 该背景在 App「所有页面」生效（首页/点播/直播/设置等），不仅限于首页。
-    "bgImage": "https://example.com/bg.jpg",
-
-    // 顶栏入口图标的背景颜色（wifi/搜索/风格/抽屉/n2n/hin2n/自定义入口全部生效）；
-    // 留空保持默认描边背景。支持 #RRGGBB / #AARRGGBB。
-    "entryBgColor": "#33FFFFFF",
-
-    // 入口图标着色（单色模板）；留空保持图标原色。
-    "iconColor": "",
-
-    // 顶栏文字颜色（App 名称与时间）；留空保持默认白色。
-    "textColor": "#FFFFFFFF",
-
-    // 入口整体透明度 0-100；留空保持不透明。
-    "alpha": 100,
-
-    // 输入框和按钮的背景颜色（设置页等通用控件底色）；留空保持默认。
-    "inputBgColor": "#26FFFFFF",
-    "buttonBgColor": "#334FC3F7"
+    "bgImage": "",                      // 全局背景图 URL（jpg/png/webp），空=用主题渐变；
+                                        //   对所有页面生效（不仅首页）
+    "sourceName": "",                   // 首页左上角默认文字；用户未配置点播接口时显示它（空=显示 app 名称）。
+                                        //   用户配置过点播接口且开启「首页顶部显示数据源名称」后，
+                                        //   左上角改为显示当前源名称
+    "entryBgColor": "",                 // 顶栏/入口卡片底色，空=随主题色
+    "iconColor": "",                    // 图标着色，空=白色
+    "textColor": "",                    // 顶栏文字（日期/标题）颜色，空=白色
+    "alpha": 100,                       // 入口卡片透明度 0-100
+    "inputBgColor": "",                 // 输入框底色，空=主题半透明色
+                                        //   （设置页接口地址行、接口配置弹窗 4 个输入框）
+    "buttonBgColor": ""                 // 按钮底色，空=主题半透明色
+                                        //   （接口配置弹窗「确定 / 存储权限」按钮）
   },
 
-  // ==================== tkp2p:// 播放配置 ====================
-  // 直播源中「tkp2p://」前缀的地址会用内置 P2P 播放页播放
-  // （p2p-media-loader 负责 HLS 类直播、media-p2p-engine 负责 MP4 等 WebRTC 链路）。
+  // ==================== tkp2p:// 原生 P2P 直播 ====================
+  // 直播源写成 tkp2p://<真实流地址> 时，用内置播放页（assets/tkp2p/）拉起 P2P 链路。
   "tkp2p": {
-    // 引擎选择："auto"（按地址自动：.m3u8 走 p2p-media-loader，其余走 media-p2p-engine，
-    //           失败自动回退普通播放）、"hls"（强制 p2p-media-loader）、"media"（强制 media-p2p-engine）
-    "engine": "auto",
-
-    // p2p-media-loader 的 WebRTC tracker 列表（wss:// 开头），可多个
+    "engine": "auto",                   // auto=按流类型自动选择
+                                        // hls=p2p-media-loader（m3u8/HLS，WebRTC DataChannel）
+                                        // media=media-p2p-engine（mp4/webm/mp3，SwarmCloud）
+                                        // 也兼容全称 p2p-media-loader / media-p2p-engine
     "announce": [
-      "wss://tracker.openwebtorrent.com",
-      "wss://tracker.webtorrent.dev"
+      // "wss://tracker.example.com"    // WebRTC tracker 列表，空=引擎内置默认
     ],
-
-    // media-p2p-engine（SwarmCloud）的 token（官方申请）；留空用试用 token
-    "token": "",
-
-    // SwarmCloud tracker 区域：eu / hk / us / cn
-    "zone": "cn",
-
-    // 自定义 ICE/STUN 服务器（JSON 数组，标准 iceServers 格式）；留空用内置默认
-    "ice": []
+    "token": "",                        // SwarmCloud 服务 token（media 引擎用），空=试用
+    "zone": "cn",                       // tracker 区域：eu | hk | us | cn
+    "iceServers": [
+      // { "urls": "stun:stun.example.com:3478" }
+      // { "urls": "turn:turn.example.com:3478", "username": "u", "credential": "p" }
+    ]                                   // 自定义 WebRTC ICE servers；键名也可简写为 "ice"
   },
 
-  // ==================== 主题一键切换 ====================
-  // 首页顶栏的调色板图标可一键循环切换主题，切换后立即生效。
-  // 此处可下发默认主题；支持 索引（0 起）/ 中文名 / 英文别名。
-  // 中文名：奈飞 哆啦 百事 鸣人 小黄 八神 樱花 翡翠 深海 紫罗兰 暗金
-  // 英文别名：netflix dorae pepsi naruto minion yagami sakura emerald ocean violet amber
-  "theme": "violet",
+  // ==================== 主题 ====================
+  // 启动默认主题：填序号（从 0 起）/中文名/英文 alias 均可；空=不强制（保留用户选择）。
+  "theme": "",
+  // 主题清单：
+  //   · 带 "style":0..13 = 覆盖对应内置主题（颜色/名称/背景均可改，索引不变，用户已选主题不错位）；
+  //   · 不写 style = 追加自定义主题（color 必填，其余缺省自动派生）。
+  //   · 每个主题可带背景图："bgImage":"url"（一张）或 "bgImages":["url1","url2"]（多张随机选一张
+  //     并在该主题下保持稳定）；配了背景图则所有页面用图，否则用 bgStart→bgEnd 渐变。
+  "themes": [
+    { "name": "红色", "alias": "red",      "style": 0,  "color": "#D81F26", "dark": "#8C1418", "bgStart": "#3D0A0D", "bgEnd": "#D81F26" },
+    { "name": "蓝色", "alias": "blue",     "style": 1,  "color": "#18A2E7", "dark": "#106D9C", "bgStart": "#0A3D5C", "bgEnd": "#18A2E7" },
+    { "name": "深蓝", "alias": "darkblue", "style": 2,  "color": "#004B93", "dark": "#002547", "bgStart": "#001B40", "bgEnd": "#004B93" },
+    { "name": "橙色", "alias": "orange",   "style": 3,  "color": "#FF7439", "dark": "#B35127", "bgStart": "#4A2210", "bgEnd": "#FF7439" },
+    { "name": "黄色", "alias": "yellow",   "style": 4,  "color": "#FFD55E", "dark": "#B39542", "bgStart": "#4A3D1C", "bgEnd": "#FFD55E" },
+    { "name": "品红", "alias": "magenta",  "style": 5,  "color": "#FF2F70", "dark": "#B3204E", "bgStart": "#4A0D22", "bgEnd": "#FF2F70" },
+    { "name": "粉色", "alias": "pink",     "style": 6,  "color": "#FD9BDB", "dark": "#B06B98", "bgStart": "#4A3044", "bgEnd": "#FD9BDB" },
+    { "name": "翠绿", "alias": "emerald",  "style": 7,  "color": "#00C08B", "dark": "#007A58", "bgStart": "#0A3D2B", "bgEnd": "#00C08B" },
+    { "name": "青色", "alias": "teal",     "style": 8,  "color": "#17B9B0", "dark": "#0E7A74", "bgStart": "#0A3D3D", "bgEnd": "#17B9B0" },
+    { "name": "紫色", "alias": "violet",   "style": 9,  "color": "#9A6BF2", "dark": "#6747A8", "bgStart": "#3A2760", "bgEnd": "#9A6BF2" },
+    { "name": "琥珀", "alias": "amber",    "style": 10, "color": "#F5A524", "dark": "#A86E12", "bgStart": "#4A320B", "bgEnd": "#F5A524" },
+    { "name": "靛蓝", "alias": "indigo",   "style": 11, "color": "#5B5BD6", "dark": "#2E2E90", "bgStart": "#222250", "bgEnd": "#5B5BD6" },
+    { "name": "玫红", "alias": "rose",     "style": 12, "color": "#E11D48", "dark": "#700E24", "bgStart": "#4A0F1F", "bgEnd": "#E11D48" },
+    { "name": "石墨", "alias": "graphite", "style": 13, "color": "#6B7280", "dark": "#3D4250", "bgStart": "#2A2E38", "bgEnd": "#6B7280" }
+    // 自定义主题示例①（带 style 数字 = 覆盖内置主题，索引不变）：
+    // ,{ "name": "石墨", "alias": "graphite", "style": 13, "color": "#6B7280", "dark": "#3D4250",
+    //    "bgStart": "#2A2E38", "bgEnd": "#6B7280",
+    //    "bgImages": ["https://example.com/bg1.jpg", "https://example.com/bg2.jpg"] }
+    // 自定义主题示例②（无 style = 追加全新主题，可带一张或多张背景图）：
+    // ,{ "name": "夜空", "alias": "night", "color": "#3B82F6",
+    //    "bgImages": ["https://example.com/bg1.jpg", "https://example.com/bg2.jpg"] }
+  ],
 
-  // ==================== 点播 / 直播 / EPG / 代理地址 ====================
-  // 默认从本 JSON 读取：当你未在 tvbox 设置里配置对应接口（当前值为空）时，
-  // 自动采用这里的地址；一旦你在 tvbox 内配置过某个接口，该接口即不再被 JSON 覆盖。
-  // 修改这些地址后需重启 App 生效。留空表示 JSON 不接管该接口。
-  "api": "",      // 点播接口地址
-  "live": "",     // 直播接口地址（支持 txt / json 格式）
-  "epg": "",      // EPG 接口地址
-  "proxy": "",    // 代理地址
+  // ==================== 接口地址（仅作未配置时的默认值） ====================
+  // 只在用户从未在 TVBox 内手动配置过该接口时写入一次；手动配置后永不覆盖（四项互不影响）。
+  "api": "",                           // 点播源接口（JSON 格式见 docs/vod.config.example.json）
+  "live": "",                          // 直播源接口（txt / m3u / json）
+  "epg": "",                           // 节目单接口
+  "proxy": "",                         // 代理地址
 
-  // ==================== JSON 版本检查升级 ====================
-  // 每次拉取到的 version 与本机不同即视为一次「配置升级」，
-  // App 会应用新配置并提示「远程配置已升级至 vX」。留空则不检查。
-  "version": "3",
+  // ==================== 全局 ====================
+  "checkInterval": 30,                 // 界面定时刷新间隔（分钟，最小 1）
+  "ua": "",                            // 全局 UA（OkHttp 请求 + webview/tkp2p 直播页）；空=内置浏览器 UA
+  "bootStart": false,                  // TVBox 开机自启（设置-内置配置 中可切换；默认值只写一次）
+  "hin2nEntry": true,                  // 首页是否显示「组网」固定入口（仅当 topEntries/homeEntries
+                                       // 未配置或为空数组时生效；数组非空时以数组内容为准）
 
-  // ==================== 定时检查 ====================
-  // App 每隔多少分钟自动拉取一次本 JSON 接口并刷新公告/入口/外观；
-  // 最小 1 分钟，默认 30。留空或非法值按默认处理。
-  "checkInterval": 30,
+  // ==================== 设置页默认值（settings） ====================
+  // 对应「设置」页各项开关的出厂默认值：仅当用户从未在设置页修改过该项时写入一次，
+  // 用户一旦手动更改，该项永远以用户设定为准（重装/升级也不会覆盖）。
+  // 删除本段 = 全部走代码内置默认（与本段下面列出的值一致）。
+  "settings": {
+    // ---- 首页选项 ----
+    "homeShowSource": true,            // 数据源显示：true=首页显示当前源名称，false=隐藏
+    "homeSearchPosition": false,       // 搜索按钮位置：true=上方（顶栏），false=下方（历史行）
+    "homeMenuPosition": true,          // 设置按钮位置：true=上方（顶栏），false=下方（历史行）
+    "homeRec": 1,                      // 首页推荐内容：0=豆瓣热播 1=站点推荐 2=观看历史
+    "homeNum": 4,                      // 历史条数：0=20条 1=40条 2=60条 3=80条 4=100条
+    "homeRecStyle": false,             // 首页多行网格：true=多行 false=单行横滑（默认）
+    "homeDefaultShow": false,          // 启动后直接进入直播：true=开启 false=关闭
+    "showPreview": true,               // 小窗预览：true=浏览列表时右下角小窗试看
+    // ---- 播放器选项 ----
+    "playScale": 0,                    // 画面缩放：0=默认 1=16:9 2=4:3 3=填充 4=原始 5=裁剪
+    "backgroundPlayType": 0,           // 后台播放：0=关闭 1=开启 2=画中画
+    "playType": 1,                     // 默认播放器：0=系统 1=IJK 2=Exo 3=MX 4=Reex 5=Kodi
+    "ijkCodec": "硬解码",               // IJK 解码方式："软解码" | "硬解码"
+    "ijkCachePlay": false,             // IJK 边播边缓存：true=开启 false=关闭
+    "exoRenderer": 0,                  // Exo 扩展渲染器索引（0 起，对应 设置-播放器设置 列表顺序）
+    "exoRendererMode": 1,              // Exo 渲染器模式索引（0 起，同上）
+    "vodPlayerPreferred": 0,           // 点播首选播放器索引（0 起，同上）
+    "playRender": 0,                   // 渲染方式：0=TextureView 1=SurfaceView
+    "videoPurify": true,               // 视频去广告（嗅探净化）：true=开启 false=关闭
+    // ---- 系统选项 ----
+    "homeLocale": 0,                   // 界面语言：0=中文 1=英文
+    "themeSelect": 0,                  // 默认主题序号（0-13，对应上方 themes 清单）
+    "searchView": 1,                   // 搜索展示：0=文字列表 1=缩略图
+    "parseWebview": true,              // 嗅探内核：true=系统 WebView false=XWalkView
+    "dohUrl": 0,                       // 安全 DNS：0=关闭 1=腾讯 2=阿里 3=360 4=Google 5=AdGuard 6=Quad9
+    "fastSearchMode": false,           // 聚合搜索（快搜）：true=多源聚合 false=单源
+    "debugOpen": false                 // 调试模式：true=开启 false=关闭（开启后设置页显示调试入口）
+  },
 
-  // ==================== 全局 UA ====================
-  // 拉取本远程配置接口、以及网页型直播（webview:// / video:// / tkp2p://）的
-  // WebView 均使用该 User-Agent；留空使用 App 内置浏览器 UA。
-  "ua": "",
+  // ==================== TVBox 自检升级（秒开酒店 IPTV 桌面风格） ====================
+  // 启动进入首页后检查：远程 versionCode 大于当前版本 → 弹窗提示 → 确认后后台下载 APK
+  // （顶部进度条）→ Android 8+ 引导「未知来源」权限 → 调起系统安装。每个版本每次启动只提示一次。
+  // 不配 url（或 versionCode<=0）则不提示；整段删除即关闭升级检查。
+  "upgrade": {
+    "checkUrl": "",                    // 远程版本信息地址（优先），返回与本段同结构的 json；
+                                       //   如 "https://example.com/tvbox-version.json"
+    "versionCode": 0,                  // 内联模式（无 checkUrl 时）：新版本号，> 当前版本才提示
+    "versionName": "",                 // 新版本名（仅显示用，如 "1.0.2"）
+    "url": "",                         // 新版 APK 下载地址（必填，否则不提示）
+    "force": false,                    // true=强制升级（无取消按钮，返回键也不能关闭弹窗）
+    "notes": ""                        // 更新内容说明（可空，弹窗内换行展示）
+  },
 
-  // 「开机启动」开关的默认值：
-  //   true  = 默认开启（App 安装/首次拉取后自动写入一次）
-  //   false = 默认关闭
-  // 注意：只在远端还没写过默认值时生效一次，用户在设置界面手动改过后不再被覆盖。
-  "bootStart": true,
+  // ==================== hin2n 组网模块（内置模块，无需另装 APK） ====================
+  // 仅在应用首次启动（模块数据库为空）时播种一次；之后全部以用户在组网界面内的修改为准。
+  // 如需修改出厂配置，改源码本文件后重新编译即可。
+  "hin2n": {
+    "bootStart": false,                // 开机自动连接 n2n 组网（组网页内也可切换；与上层 bootStart 互不影响）
+    "staticRoutes": "",                // 静态路由，多条用空格/换行分隔；"CIDR 网关IP" 成对，
+                                       //   网关可省略。例："192.168.8.0/24 10.0.0.13 192.168.9.0/24 10.0.0.13"
+    "configs": [
+      {
+        // ---- 基本字段 ----
+        "version": 3,                  // 协议版本：0=n2n_v1 1=n2n_v2 2=n2n_v2s 3=n2n_v3（两端必须一致）
+        "name": "默认组网",             // 配置名称
+        "ipMode": 0,                   // IP 分配：0=手动填写 ip；1=由超节点分配
+                                       //   （别名写法 "fromSupernode": true）
+        "ip": "10.0.0.6",              // 虚拟 IP（ipMode=0 必填，同网内唯一）
+        "netmask": "255.255.255.0",    // 子网掩码（也可用 -a ip/prefix 时只填 IP）
+        "community": "mynet",          // 组网名称（community，最长 20 字符，两端必须一致）
+        "password": "",                // 组网密钥
+        "devDesc": "tvbox",            // 设备描述（v2/v3）
+        "superNode": "supernode.ntop.org:7777",
+                                       // 超节点 地址:端口；留空按版本取默认：
+                                       //   v1 hin2n.nton.eu.org:10082
+                                       //   v2 hin2n.nton.eu.org:10086
+                                       //   v2s hin2n.nton.eu.org:10088
+                                       //   v3 supernode.ntop.org:7777
+        "selected": true,              // 是否作为当前配置（首条建议 true；多条时第一个 true 生效）
 
-  // 首页是否显示固定的「hin2n」入口图标（true/false）。
-  // 关闭后首页不显示 hin2n 图标，但不影响 entries 里的自定义入口。
-  "hin2nEntry": true,
+        // ---- 高级字段（moreSettings=true 时界面展开；不填取默认） ----
+        "moreSettings": true,
+        "superNodeBackup": "",         // 备用超节点
+        "macAddr": "",                 // 虚拟 MAC，空=随机；格式 "AA:BB:CC:DD:EE:FF"
+        "mtu": 1328,                   // MTU，范围 46-1500
+        "localIP": "",                 // 本地物理 IP，"auto" 或空=自动
+                                       //   （别名写法 "localIpAuto": true，v2s/v3）
+        "holePunchInterval": 20,       // 打洞间隔（秒，v2s）
+        "resolveSupernodeIp": false,   // 预先解析超节点域名（v1/v2s）
+        "localPort": 0,                // 本地端口，0=随机
+        "allowRouting": false,         // 允许路由转发（edge -r）
+        "acceptMulticast": false,      // 接受组播/广播（edge -E）：ARP 依赖它，
+                                       //   注册成功但 ping 不通对端时优先尝试打开
+                                       //   （反义别名 "dropMulticast": true）
+        "httpTunnel": false,           // 优先 HTTP 隧道（edge -H）
+        "traceLevel": 2,               // 日志级别：0=错误 1=警告 2=普通 3=信息 4=调试
+        "gatewayIp": "",               // 虚拟网关（v2/v3）；非空=所有流量走 VPN（全局模式）
+        "dnsServer": "",               // VPN 内 DNS 服务器（v2/v3）
+        "encryptionMode": "Twofish",   // 加密方式：Twofish | AES-CBC | ChaCha20 | Speck-CTR（v2/v3）
+        "headerEnc": false             // 启用包头加密（v2/v3）
+      }
+      // 需要内置多条配置时继续追加对象即可，例如：
+      // ,{ "version": 2, "name": "办公室", "ip": "10.1.0.6", "netmask": "255.255.255.0",
+      //    "community": "office", "superNode": "sn.example.com:5645", "selected": false }
+    ]
+  },
 
-  // hin2n 未安装时使用的 APK 下载地址（HTTP(S) 直链）。
-  // 确认安装后 TVBox 会在后台直接下载 APK（带进度提示），完成后自动拉起系统安装界面；
-  // Android 8+ 首次会先引导开启「允许安装未知应用」。
-  // 留空则提示「请在远程配置接口中补充下载地址」。
-  "hin2nUrl": "https://github.com/tianku1985/tvbox-n2n/releases/latest/download/hin2n.apk",
-
-  // 首页自定义入口列表（可放多个 App 快捷图标）。
-  // 每项字段说明：
-  //   name ：入口显示名称（中文/英文均可）
-  //   pkg  ：目标 App 的 Android 包名，必填；为空则该入口被忽略
-  //   icon ：入口图标 URL（可选，留空则用默认图标）
-  //   url  ：未安装「pkg」对应 App 时后台下载安装用的 APK 直链（可选）
-  // 行为：点击入口 → 若已安装则直接拉起该 App；
-  //       若未安装则弹窗确认后由 TVBox 后台下载 APK 并拉起安装（不跳浏览器）。
+  // ==================== 旧版第三方 App 入口（entries，仅 app 类型，作用于顶栏） ====================
+  // 已安装→直接打开；未安装且配置 url 时后台下载 APK（顶部进度条），完成后自动调起安装。
+  // 顶栏需要更多类型/自定义顺序时请改用下面的 topEntries（配置后 entries 不再生效）。
+  // hin2n 已内化为内置模块，不要在这里配 hin2n（其固定入口由 hin2nEntry 控制）。
   "entries": [
-    {
-      "name": "hin2n",
-      "pkg": "wang.switchy.hin2n",
-      "icon": "https://raw.githubusercontent.com/tianku1985/tvbox-n2n/main/docs/icons/hin2n.png",
-      "url": "https://github.com/tianku1985/tvbox-n2n/releases/latest/download/hin2n.apk"
-    },
-    {
-      "name": "文件管理",
-      "pkg": "com.android.documentsui",
-      "icon": "",
-      "url": ""
-    }
+    // { "name": "文件管理", "pkg": "com.android.filemanager", "icon": "", "url": "https://example.com/fm.apk" }
+  ],
+
+  // ==================== 顶栏入口（topEntries） ====================
+  // 顶栏所有入口的内容/顺序/图标全部由本数组决定；默认列出全部内置入口（全部显示）。
+  // 想关闭某个入口 = 直接从数组中删除（或注释掉）该条；想调整顺序 = 移动该条位置；
+  // 想新增入口 = 按同样格式追加（支持打开 TVBox 界面/内置功能/其他 App/自定义点播界面）。
+  // 把本字段整个删除或改成空数组 []（里面只有注释也算空）= 回退到代码内置默认顶栏。
+  // 元素字段：
+  //   name   显示名称（顶栏仅作 contentDescription，历史一行显示在图标右侧）
+  //   type   page=打开 TVBox 界面 | feature=内置功能 | app=打开其他 App | vod=自定义点播界面
+  //   target type=page   : vod（点播）| live（直播）| search（搜索）| fastsearch（聚合搜索）|
+  //                        history（历史）| collect（收藏）| push（推送）| setting（设置）|
+  //                        drive（文件）| apps（应用）| hin2n（组网）
+  //          type=feature: siteSwitch（切数据源）| themeSwitch（切主题）| styleSwitch（单双排）|
+  //                        clearCache（清缓存）| reloadHome（重载首页）| wifi（系统 WiFi 设置）|
+  //                        date（系统日期设置）
+  //          type=vod    : 数据接口地址（http(s):// 或 assets/xxx.json 或 file:///绝对路径），
+  //                        格式与点播 api json 完全一致（取其中 sites），但仅供该新界面使用，
+  //                        app 其它配置不调用，退出界面即恢复
+  //   pkg    type=app 时的包名；未安装且配 url 时后台下载安装（顶部进度条）
+  //   icon   http(s) 图片地址或内置 drawable 名。全部可用内置图标：
+  //          hm_search(搜索) hm_vod(点播) hm_live(直播) hm_history(历史) hm_fav(收藏)
+  //          hm_push(推送) hm_folder(文件) hm_settings(设置) hm_drawer(抽屉/应用)
+  //          hm_home(首页) hm_wifi(无线) hm_wifi_no(无网络) hm_lan(有线) hm_mobile(移动网络)
+  //          hm_left_right(单行) hm_up_down(多行) ic_theme(主题) ic_hin2n(组网) ic_n2n(组网)
+  //          icon 留空时：wifi 入口按当前网络类型自动选图（hm_wifi/hm_lan/hm_mobile/hm_wifi_no），
+  //          styleSwitch 入口按当前单双排状态自动选图（hm_left_right/hm_up_down），其余用兜底图标
+  //   url    type=app 时未安装的 APK 下载地址（可选）
+  //   theme  仅 type=vod：自定义点播界面的独立主题（可填主题索引数字、内置主题中文名或英文别名），
+  //          该界面及其打开的影片详情/播放页使用此主题，与主界面互不影响；空=跟随全局主题
+  // 组网入口（type=page,target=hin2n）图标颜色会随连接状态自动变化（黄=连接中 绿=已连接 红=失败）
+  "topEntries": [
+    { "name": "网络",   "type": "feature", "target": "wifi",        "icon": "" },
+    { "name": "搜索",   "type": "page",    "target": "search",      "icon": "hm_search" },
+    { "name": "单双排", "type": "feature", "target": "styleSwitch", "icon": "" },
+    { "name": "主题",   "type": "feature", "target": "themeSwitch", "icon": "ic_theme" },
+    { "name": "应用",   "type": "page",    "target": "apps",        "icon": "hm_drawer" },
+    { "name": "设置",   "type": "page",    "target": "setting",     "icon": "hm_settings" },
+    { "name": "组网",   "type": "page",    "target": "hin2n",       "icon": "ic_n2n" }
+    // 追加示例：
+    // ,{ "name": "切源",   "type": "feature", "target": "siteSwitch", "icon": "hm_drawer" }
+    // ,{ "name": "文件",   "type": "app",     "pkg": "com.android.filemanager",
+    //    "icon": "hm_folder", "url": "https://example.com/filemanager.apk" }
+    // ,{ "name": "我的影院","type": "vod",    "target": "assets/vod-custom.json", "icon": "hm_vod", "theme": "1" }
+  ],
+
+  // ==================== 首页历史一行入口（homeEntries） ====================
+  // 首页「历史/点播/直播/搜索/收藏/推送/文件/设置/组网」一行的内容/顺序/图标全部由本数组决定；
+  // 默认列出全部内置入口（全部显示）。关闭某个入口 = 删除（或注释掉）该条；字段与 topEntries 相同。
+  // 把本字段整个删除或改成空数组 []（里面只有注释也算空）= 回退到代码内置默认一行。
+  // 该行入口过多超出屏幕时可左右滑动；长按「历史」入口可切换首页推荐模式并重载。
+  "homeEntries": [
+    { "name": "历史", "type": "page", "target": "history", "icon": "hm_history" },
+    { "name": "点播", "type": "page", "target": "vod",     "icon": "hm_vod" },
+    { "name": "直播", "type": "page", "target": "live",    "icon": "hm_live" },
+    { "name": "搜索", "type": "page", "target": "search",  "icon": "hm_search" },
+    { "name": "收藏", "type": "page", "target": "collect", "icon": "hm_fav" },
+    { "name": "推送", "type": "page", "target": "push",    "icon": "hm_push" },
+    { "name": "文件", "type": "page", "target": "drive",   "icon": "hm_folder" },
+    { "name": "设置", "type": "page", "target": "setting", "icon": "hm_settings" },
+    { "name": "组网", "type": "page", "target": "hin2n",   "icon": "ic_hin2n" }
+    // 追加示例：
+    // ,{ "name": "应用", "type": "page", "target": "apps",   "icon": "hm_drawer" }
+    // ,{ "name": "影院", "type": "vod",  "target": "https://example.com/vod.json", "icon": "hm_vod", "theme": "1" }
   ]
 }

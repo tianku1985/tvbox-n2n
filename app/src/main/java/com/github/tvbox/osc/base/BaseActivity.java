@@ -103,6 +103,11 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
         super.onResume();
         hideSystemUI(true);
         changeWallpaper(false);
+        // 远程配置在后台拉到新版本时可能没有前台页面，回到任意页面后补触发下载安装
+        try {
+            com.github.tvbox.osc.n2n.RemoteConfig.tryPendingUpdate(this);
+        } catch (Throwable ignored) {
+        }
     }
 
     // takagen99 : Check for Gesture or 3-Buttons NavBar
@@ -303,6 +308,11 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
 
     // takagen99: Added Theme Color
     public int getThemeColor() {
+        // JSON 自定义/改色主题：优先返回配置里的精确主色（attr drawable 已套最接近的内置 style）
+        Integer override = com.github.tvbox.osc.n2n.ThemeManager.primaryColorOverride();
+        if (override != null) {
+            return override;
+        }
         TypedArray a = mContext.obtainStyledAttributes(R.styleable.themeColor);
         int themeColor = a.getColor(R.styleable.themeColor_color_theme, 0);
         return themeColor;

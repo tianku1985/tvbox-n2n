@@ -6,7 +6,8 @@ android {
     compileSdk 34
 
     defaultConfig {
-        minSdk 21
+        // 降低到 19 以便 Android 4.4 兼容版可与之合并
+        minSdk 19
         targetSdk 28
     }
 }

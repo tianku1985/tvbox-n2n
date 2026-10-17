@@ -40,7 +40,11 @@ public class DefaultConfig {
         List<MovieSort.SortData> data = new ArrayList<>();
         if (sourceKey != null) {
             SourceBean sb = ApiConfig.get().getSource(sourceKey);
-            ArrayList<String> categories = sb.getCategories();
+            // 源可能尚未注入/已被移除（如自定义点播 cv_ 源时序），判空避免 NPE 直接崩进程
+            ArrayList<String> categories = sb == null ? new ArrayList<>() : sb.getCategories();
+            if (categories == null) {
+                categories = new ArrayList<>();
+            }
             if (!categories.isEmpty()) {
                 for (String cate : categories) {
                     for (MovieSort.SortData sortData : list) {

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- hin2n 配置管理列表（遥控器上下选择，行内 编辑/复制/删除） -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/hin2n_bg"
+    android:orientation="vertical"
+    android:paddingLeft="@dimen/vs_40"
+    android:paddingRight="@dimen/vs_40"
+    android:paddingTop="@dimen/vs_30"
+    android:paddingBottom="@dimen/vs_30">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="配置管理"
+            android:textColor="@color/color_FFFFFF_90"
+            android:textSize="@dimen/ts_40"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btnHin2nListAdd"
+            android:layout_width="@dimen/vs_150"
+            android:layout_height="@dimen/vs_70"
+            android:background="@drawable/shape_hin2n_button"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="新建配置"
+            android:textColor="@android:color/white"
+            android:textSize="@dimen/ts_22" />
+
+        <TextView
+            android:id="@+id/btnHin2nListBack"
+            android:layout_width="@dimen/vs_150"
+            android:layout_height="@dimen/vs_70"
+            android:layout_marginLeft="@dimen/vs_20"
+            android:background="@drawable/shape_hin2n_button"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="返回"
+            android:textColor="@android:color/white"
+            android:textSize="@dimen/ts_22" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvHin2nListEmpty"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/vs_30"
+        android:text="暂无配置，按「新建配置」创建第一条 n2n 配置"
+        android:textColor="@color/color_FFFFFF_50"
+        android:textSize="@dimen/ts_24"
+        android:visibility="gone" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvHin2nList"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="@dimen/vs_20"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:paddingBottom="@dimen/vs_20"
+        android:scrollbars="none" />
+
+</LinearLayout>

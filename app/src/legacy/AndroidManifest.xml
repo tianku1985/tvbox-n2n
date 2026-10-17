@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+        Android 4.4（API 19）兼容版专用清单。
+        nextlib-media3ext:0.7.1 在 AAR 清单里声明 minSdkVersion 21，会导致 API 19 安装包直接解析失败/合并失败，
+        这里通过 tools:overrideLibrary 放行。该库只在用户手动选择 FFmpeg 软解时使用，
+        默认播放链路走 media3 自带的 DefaultRenderersFactory，不依赖它。
+    -->
+    <uses-sdk tools:overrideLibrary="io.github.anilbeesetti.nextlib.media3ext" />
+
+</manifest>

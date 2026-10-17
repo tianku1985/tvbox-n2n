@@ -121,10 +121,23 @@ public class SourceViewModel extends ViewModel {
     };
     // homeContent
     public void getSort(final String sourceKey) {
+        getSort(sourceKey, false);
+    }
+
+    /**
+     * @param force true = 切换源等场景强制重新拉取 homeContent，绕过 homeContent 缓存
+     *              （否则切回之前访问过的源会直接命中 sortCache，列表不刷新）
+     */
+    public void getSort(final String sourceKey, boolean force) {
         LOG.i("echo--getSort-start");
         if (sourceKey == null) {
             sortResult.postValue(null);
             return;
+        }
+
+        // 强制刷新：先丢弃该源的缓存
+        if (force) {
+            sortCache.remove(sourceKey);
         }
 
         // 优先检查缓存
@@ -140,6 +153,11 @@ public class SourceViewModel extends ViewModel {
         }
 
         SourceBean sourceBean = ApiConfig.get().getSource(sourceKey);
+        if (sourceBean == null) {
+            // 源尚未加载完成（如点播接口未配置/未加载完就打开点播界面），避免 NPE 导致进程被杀
+            sortResult.postValue(null);
+            return;
+        }
         final int type = sourceBean.getType();
         if (type == 3) {
             Runnable waitResponse = new Runnable() {

@@ -1,0 +1,90 @@
+// ==============================================================================
+// TVBox-N2N 点播接口 demo —— 单源 / 多源 通用注释模板（.jsonc）
+//
+// 用法：
+//   · 单源：只保留 "sites" 数组中的第 1 个站点对象，删除其余站点；
+//   · 多源：保留 "sites" 数组中的多个站点对象即可，数组第一个未隐藏(hide=0)的站
+//     就是进入点播界面时默认加载的源；点界面左上角源名可在源之间切换，
+//     每次切换都会强制刷新列表（绕过缓存）并弹出「切换源：xxx」提示；
+//   · 作为默认点播接口：填到内置配置 app/src/main/assets/tvbox-config.json 的 "api"
+//     字段，或用户在 设置→接口配置→点播接口 手动填写（URL 或 assets/xxx.json 均可）；
+//   · 作为自定义点播界面（影院）的独立数据源：填到 topEntries/homeEntries 中
+//     type="vod" 入口的 "target" 字段，还可加 "theme" 指定该界面独立主题；
+//   · 本文件带 // 注释仅供说明，实际使用前删除全部注释即为标准 .json。
+//
+// 核心规则：
+//   · 源的加载方式只由每个站点 "api" 字段的后缀决定，与 key 前缀无关：
+//     .jar=JarLoader / .js=QuickJS / .py=Python 源（仅 python flavor APK）/
+//     纯类名（type=3）=从全局 spider jar 加载 / http 接口=type 0(Xml) 1(Json) 4(Json扩展筛选)；
+//   · 本文件可直接通过 JSONC 解析校验（去掉注释后即合法 JSON）。
+// ==============================================================================
+{
+  // 可选：全局 Spider jar。type=3 且 api 只写类名（如 "csp_DoubanAmns"）的站点从这里加载
+  "spider": "./kjtw.jar",
+
+  // ───────────────────────── 站点列表（核心） ─────────────────────────
+  "sites": [
+    // ① 第 1 个站 = 单源模式的唯一站 / 多源模式的默认站
+    {
+      "key": "电影天堂",                    // 唯一标识（历史/收藏按它存储），必填
+      "name": "电影天堂（MacCMS）",         // 界面显示名（左上角/切源弹窗）
+      "type": 1,                            // 1=MacCMS 标准 JSON 接口（0=Xml，4=Json扩展筛选）
+      "api": "http://caiji.dyttzyapi.com/api.php/provide/vod/from/dyttm3u8/at/json/?ac=list",
+      "searchable": 1,                      // 1=可搜索
+      "quickSearch": 0,                     // 1=输入时实时搜
+      "filterable": 0,                      // 1=有筛选
+      "changeable": 1,                      // 1=允许切换线路/源
+      "playerType": -1,                     // -1=跟随全局播放器设置
+      "categories": [                       // 可选：覆盖接口默认分类及顺序
+        "动作片", "喜剧片", "爱情片", "科幻片", "国产剧", "综艺"
+      ]
+    },
+
+    // ② 多源示例：Spider jar 站（api 只写类名 → 从全局 spider 加载）
+    {
+      "key": "豆瓣热门",
+      "name": "豆瓣热门",
+      "type": 3,
+      "api": "csp_DoubanAmns",
+      "searchable": 0,
+      "quickSearch": 0,
+      "filterable": 1,
+      "changeable": 1,
+      "playerType": -1,
+      "ext": "Douban"                       // 传给 Spider 的扩展参数（也可为 JSON 对象）
+    },
+
+    // ③ 多源示例：QuickJS 脚本站（api 以 .js 结尾）
+    {
+      "key": "旺旺网",
+      "name": "旺旺视频",
+      "type": 3,
+      "api": "./js/旺旺.js",                // 相对路径或远程 URL
+      "searchable": 1,
+      "quickSearch": 1,
+      "filterable": 1,
+      "changeable": 1,
+      "playerType": 2,                      // 2=Exo 播放
+      "ext": {
+        "host": "https://api.ztcgi.com",
+        "catesSet": "电影&电视剧&综艺&动漫"
+      }
+    }
+
+    // ④ 临时下线某站又不想删配置：加 "hide": 1（不出现在切源弹窗，也不会被选为默认站）
+    // ,{
+    //   "key": "周六影库",
+    //   "name": "周六影库(.py)",
+    //   "type": 3,
+    //   "api": "./py/周六影库.py",          // 注意：.py 源只有 python flavor 的 APK 能加载
+    //   "hide": 1,
+    //   "searchable": 1,
+    //   "changeable": 1
+    // }
+  ]
+
+  // ───────────────────────── 以下全部可选 ─────────────────────────
+  // "parses"  VIP 解析器列表；"flags" 走解析的播放 flag；"rules" m3u8 广告过滤；
+  // "ijk" IJK 播放器参数；"ads" 广告域名拦截；"lives" 与点播并列的直播源。
+  // 完整字段示例见 docs/vod.config.example.json。
+}

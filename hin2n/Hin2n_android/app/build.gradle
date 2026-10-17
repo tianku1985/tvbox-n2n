@@ -1,92 +1,18 @@
-apply plugin: 'org.greenrobot.greendao'
+// hin2n 独立组网 App：从 TVBox 内置模块拆分，兼容 Android 4.4+（手机+TV）
 apply plugin: 'com.android.application'
 
-def getVersionCode = { ->
-    try {
-        def stdout = new ByteArrayOutputStream()
-        exec {
-            commandLine 'git', 'rev-list', '--all', '--count'
-            standardOutput = stdout
-        }
-        return Integer.parseInt(stdout.toString().trim())
-    }
-    catch (ignored) {
-        return -1;
-    }
-}
-
-def getVersionName = { ->
-    try {
-        def stdout = new ByteArrayOutputStream()
-        exec {
-//          commandLine 'git', 'describe', '--tags', '--always', '--dirty', '--match', 'hin2n_v*'
-            commandLine 'git', 'describe', '--tags', '--always', '--match', 'hin2n_v*'
-            standardOutput = stdout
-        }
-        return stdout.toString().trim()
-    }
-    catch (ignored) {
-        return null;
-    }
-}
-
-def getEnvOrConsole = { env, prompt ->
-    def val = null
-    try {
-        val = System.getenv(env)
-        if (val == null || val == "") {
-            if (System.console() != null) {
-                val = System.console().readLine("\n" + prompt + ": ")
-            }
-        }
-    } catch (ignored) {
-        return null
-    }
-    return val
-}
-
-def getManifestValues = { id_key, variant ->
-    def val = true
-    def id = getEnvOrConsole(id_key, id_key)
-    if (id == null || id == "") {
-        gradle.println(id_key + " is not set")
-        val = false
-    } else {
-        if (variant) {
-            variant.mergedFlavor.manifestPlaceholders.put(id_key + "_VALUE", id)
-        }
-    }
-
-    return val
-}
-
-def getAllManifestValues = { variant ->
-    def v1 = getManifestValues("UMENG_APPKEY", variant)
-    def v2 = getManifestValues("BUGLY_APPID", variant)
-    def v3 = getManifestValues("SHARE_WX_APPID", variant)
-    def v4 = getManifestValues("SHARE_WX_APPSECRET", variant)
-    def v5 = getManifestValues("SHARE_WB_APPID", variant)
-    def v6 = getManifestValues("SHARE_WB_APPSECRET", variant)
-
-    return v1 && v2
-}
-
 android {
-    compileSdkVersion 28
-    buildToolsVersion '28.0.3'
+    namespace 'wang.switchy.hin2n'
+    compileSdkVersion 34
+    // 固定 NDK 版本，保证本地与 GitHub Actions（sdkmanager 安装同名版本）构建一致
+    ndkVersion '25.2.9519653'
+
     defaultConfig {
         applicationId "wang.switchy.hin2n"
-        minSdkVersion 17
+        minSdkVersion 19
         targetSdkVersion 28
-        versionCode getVersionCode()
-        versionName getVersionName()
-        multiDexEnabled true
-        manifestPlaceholders = [UMENG_CHANNEL_VALUE: "normal", ARCH: "all", UMENG_APPKEY_VALUE: "", BUGLY_APPID_VALUE: "",
-                                SHARE_WX_APPID_VALUE: "", SHARE_WX_APPSECRET_VALUE: "",
-                                SHARE_WB_APPID_VALUE: "", SHARE_WB_APPSECRET_VALUE: ""]
-        resConfigs "en", "zh-rCN", "zh-rTW"
-
-        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        versionCode 1
+        versionName "1.0"
         externalNativeBuild {
             cmake {
                 cppFlags ""
@@ -96,95 +22,26 @@ android {
     }
 
     signingConfigs {
-        debug {}
-
-        release {
-            storeFile file(System.getenv("RELEASE_STORE_FILE") ?: "Hin2n.jks")
-            storePassword System.getenv("RELEASE_STORE_PASSWORD")
-            keyAlias System.getenv("RELEASE_KEY_ALIAS") ?: "Hin2n"
-            keyPassword System.getenv("RELEASE_KEY_PASSWORD")
+        if (project.hasProperty('RELEASE_STORE_FILE')) {
+            release {
+                storeFile file(System.getenv('RELEASE_STORE_FILE') ?: RELEASE_STORE_FILE)
+                storePassword System.getenv('RELEASE_STORE_PASSWORD') ?: RELEASE_STORE_PASSWORD
+                keyAlias System.getenv('RELEASE_KEY_ALIAS') ?: RELEASE_KEY_ALIAS
+                keyPassword System.getenv('RELEASE_KEY_PASSWORD') ?: RELEASE_KEY_PASSWORD
+                v1SigningEnabled true
+                v2SigningEnabled true
+            }
         }
     }
 
     buildTypes {
         debug {
-            buildConfigField("boolean", "LOG_DEBUG", "true")
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-
         }
-
         release {
-            buildConfigField("boolean", "LOG_DEBUG", "false")
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-
-            signingConfig signingConfigs.release
-        }
-    }
-
-    gradle.taskGraph.beforeTask { Task task ->
-        if (task.name.contains("Release")) {
-            task.onlyIf {
-                return getAllManifestValues()
-            }
-        }
-    }
-
-    applicationVariants.all { variant ->
-        getAllManifestValues(variant)
-//        if (variant.buildType.name == 'debug') {
-//            variant.mergedFlavor.manifestPlaceholders.UMENG_CHANNEL_VALUE = 'umtest'
-//        }
-
-        variant.outputs.all { output ->
-            def outputFile = output.outputFile
-            if (outputFile != null && outputFile.name.endsWith('.apk')) {
-                output.versionNameOverride = getVersionName()
-                def channel = variant.mergedFlavor.manifestPlaceholders.UMENG_CHANNEL_VALUE
-                def arch = variant.mergedFlavor.manifestPlaceholders.ARCH
-//              def fileName = "${variant.mergedFlavor.versionName}_${channel}_${arch}_${variant.buildType.name}.apk"
-                def fileName = "${variant.mergedFlavor.versionName}_${arch}_${channel}.apk"
-                outputFileName = fileName
-            }
-
-        }
-    }
-
-    flavorDimensions "channel", "arch"
-
-    productFlavors {
-        normal {
-            dimension "channel"
-            manifestPlaceholders += [UMENG_CHANNEL_VALUE: "normal"]
-        }
-//        github {
-//            dimension "channel"
-//            manifestPlaceholders += [UMENG_CHANNEL_VALUE: "github"]
-//        }
-//        bugly {
-//            dimension "channel"
-//            manifestPlaceholders += [UMENG_CHANNEL_VALUE: "bugly"]
-//        }
-        arm {
-            dimension "arch"
-            ndk {
-                abiFilters "armeabi-v7a", "arm64-v8a"
-                manifestPlaceholders += [ARCH: "arm"]
-            }
-        }
-        x86 {
-            dimension "arch"
-            ndk {
-                abiFilters "x86", "x86_64"
-                manifestPlaceholders += [ARCH: "x86"]
-            }
-        }
-        allarch {
-            dimension "arch"
-            ndk {
-                abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
-                manifestPlaceholders += [ARCH: "allarch"]
+            if (project.hasProperty('RELEASE_STORE_FILE')) {
+                signingConfig signingConfigs.release
             }
         }
     }
@@ -192,45 +49,28 @@ android {
     externalNativeBuild {
         cmake {
             path "CMakeLists.txt"
+            version "3.22.1"
         }
     }
-    
-    compileOptions {
-        sourceCompatibility 1.8
-        targetCompatibility 1.8
-    }
-}
 
-greendao {
-    schemaVersion 4
-    daoPackage 'wang.switchy.hin2n.storage.db.base'
-    targetGenDir 'src/main/java'
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    lintOptions {
+        checkReleaseBuilds false
+        abortOnError false
+    }
 }
 
 dependencies {
-    implementation fileTree(include: ['*.jar'], dir: 'libs')
-    implementation 'androidx.drawerlayout:drawerlayout:1.0.0'
-    androidTestImplementation('com.android.support.test.espresso:espresso-core:2.2.2', {
-        exclude group: 'com.android.support', module: 'support-annotations'
-    })
-    implementation 'com.github.CymChad:BaseRecyclerViewAdapterHelper:3.0.8'
-    implementation 'com.android.support:design:28.0.0'
-    testImplementation 'junit:junit:4.12'
-    implementation 'com.android.support:appcompat-v7:28.0.0'
-    implementation 'org.greenrobot:eventbus:latest.integration'
-    implementation 'com.umeng.sdk:common:latest.integration'
-    implementation 'com.umeng.sdk:utdid:latest.integration'
-    implementation 'com.umeng.sdk:analytics:latest.integration'
-    implementation 'org.greenrobot:greendao:3.2.0'
-    implementation files('libs/library-1.3.0.aar')
-    implementation files('libs/library-2.1.3.aar')
-    implementation 'com.orhanobut:logger:1.15'
-    implementation 'com.tencent.bugly:crashreport_upgrade:latest.release'
-    implementation 'com.tencent.bugly:nativecrashreport:latest.release'
-    implementation files('libs/umeng-share-core-6.9.2.jar')
-    implementation files('libs/umeng-share-sina-simplify-6.9.2.jar')
-    implementation files('libs/umeng-share-wechat-simplify-6.9.2.jar')
-    implementation files('libs/umeng-sharetool-6.9.2.jar')
-    implementation files('libs/permission-2.0.3.aar')
-    implementation 'com.github.f0ris.sweetalert:library:latest.release'
+    // n2n 配置数据库（greenDAO 运行时）
+    api 'org.greenrobot:greendao:3.2.0'
+    // EventBus（:hin2n 内部事件通信）
+    api 'org.greenrobot:eventbus:3.3.1'
+    // AppCompat（NotificationCompat、AppCompatActivity、AppCompatCheckBox 等）
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    // RecyclerView（配置管理列表）
+    implementation 'androidx.recyclerview:recyclerview:1.3.2'
 }
