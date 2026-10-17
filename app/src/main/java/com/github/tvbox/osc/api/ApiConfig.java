@@ -352,6 +352,8 @@ public class ApiConfig {
         spider = DefaultConfig.safeJsonString(infoJson, "spider", "");
         // wallpaper
         wallpaper = DefaultConfig.safeJsonString(infoJson, "wallpaper", "");
+        // 免责声明（点播接口配置 warningText，为空则不弹窗）
+        Hawk.put(HawkConfig.WARNING_TEXT, DefaultConfig.safeJsonString(infoJson, "warningText", ""));
         // 直播播放请求头
         livePlayHeaders = infoJson.getAsJsonArray("livePlayHeaders");
         // 远端站点源

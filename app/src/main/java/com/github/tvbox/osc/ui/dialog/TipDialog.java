@@ -22,7 +22,12 @@ public class TipDialog extends BaseDialog {
         TextView rightBtn = findViewById(R.id.rightBtn);
         tipInfo.setText(tip);
         leftBtn.setText(left);
-        rightBtn.setText(right);
+        // 右侧按钮文字为空时隐藏，用于单按钮确认场景（如免责声明）
+        if (right == null || right.isEmpty()) {
+            rightBtn.setVisibility(View.GONE);
+        } else {
+            rightBtn.setText(right);
+        }
         leftBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {

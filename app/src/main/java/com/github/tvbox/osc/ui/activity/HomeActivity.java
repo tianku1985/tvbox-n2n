@@ -422,6 +422,7 @@ public class HomeActivity extends BaseActivity {
                     @Override
                     public void run() {
                         initData();
+                        showWarningTextOnce();
                     }
                 }, 50);
             }
@@ -487,6 +488,37 @@ public class HomeActivity extends BaseActivity {
                 });
             }
         }, this);
+    }
+
+    /** 免责声明是否已在本进程内弹过（每次启动只弹一次） */
+    private static boolean sWarningShown = false;
+
+    /** 点播接口配置的 warningText 生效：配置加载成功后弹一次免责声明 */
+    private void showWarningTextOnce() {
+        if (sWarningShown || isFinishing() || isDestroyed()) return;
+        String warningText = Hawk.get(HawkConfig.WARNING_TEXT, "");
+        if (warningText == null || warningText.trim().isEmpty()) return;
+        sWarningShown = true;
+        try {
+            final TipDialog[] holder = new TipDialog[1];
+            holder[0] = new TipDialog(HomeActivity.this, warningText, getString(R.string.hm_ok), "", new TipDialog.OnListener() {
+                @Override
+                public void left() {
+                    if (holder[0] != null) holder[0].dismiss();
+                }
+
+                @Override
+                public void right() {
+                }
+
+                @Override
+                public void cancel() {
+                }
+            });
+            holder[0].show();
+        } catch (Throwable th) {
+            th.printStackTrace();
+        }
     }
 
     @Override

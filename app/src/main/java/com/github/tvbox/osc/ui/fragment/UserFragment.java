@@ -158,7 +158,10 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         installScrollFollow();
         tvHotListForLine = findViewById(R.id.tvHotListForLine);
         tvHotListForGrid = findViewById(R.id.tvHotListForGrid);
-        tvHotListForGrid.setHasFixedSize(true);
+        // 多行网格嵌在外层 ScrollView 中且高度为 wrap_content：必须为 false，
+        // 否则首次测量时 adapter 为空，网格高度被固定为极小值，数据到达后不再重新测量，
+        // 导致网格内部滚动、入口行无法随内容一起滚动（根因）
+        tvHotListForGrid.setHasFixedSize(false);
         int spanCount = 5;
         if (Hawk.get(HawkConfig.HOME_REC, 0) == 1 && homeSourceRec!=null) {
             style=ImgUtil.initStyle();
@@ -166,7 +169,10 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         if(style!=null && Hawk.get(HawkConfig.HOME_REC, 0) == 1) {
             spanCount=ImgUtil.spanCountByStyle(style,spanCount);
         }
-        tvHotListForGrid.setLayoutManager(new V7GridLayoutManager(this.mContext, spanCount)); 
+        tvHotListForGrid.setLayoutManager(new V7GridLayoutManager(this.mContext, spanCount));
+        // 多行模式：关闭网格列表内部滚动，内容完全展开、由外层 ScrollView 统一滚动，
+        // 入口行（历史一行）即可随下方内容一起上/下滚动（与单行模式行为一致）
+        tvHotListForGrid.setNestedScrollingEnabled(false);
         String tvRate="";
         if(Hawk.get(HawkConfig.HOME_REC, 0) == 0){
             tvRate="豆瓣热播";
