@@ -50,6 +50,8 @@ public class NoticeBar {
         String content;
         /** hideRun 预定执行时间（uptimeMillis），0 表示常显或无隐藏任务 */
         long deadline;
+        /** 当前内容已展示到期：同内容再次 render 时保持隐藏，不再重新计时（修复主界面常显） */
+        boolean expired;
     }
 
     private static ScreenState getOrCreate(String screen) {
@@ -180,16 +182,24 @@ public class NoticeBar {
             tv.setSelected(true);   // 选中态才会触发 marquee 滚动
         }
         // duration：从「该内容首次展示」起计时；ticker 周期性重渲染同一内容时不重置计时，
-        // 已到期的立即隐藏，未到期的按剩余时间重排回调（避免反复 render 导致永不消失）。
+        // 已到期的立即隐藏并保持（expired 防止主界面周期 render 重新武装 deadline 导致永不消失）。
         int duration = st.optInt("duration", 0);
         if (duration > 0) {
             long now = SystemClock.uptimeMillis();
-            if (!text.equals(ss.content) || ss.deadline <= 0) {
+            if (!text.equals(ss.content)) {
+                // 新内容：重新计时并清除过期标记
                 ss.content = text;
                 ss.deadline = now + duration * 1000L;
+                ss.expired = false;
+            } else if (ss.expired || ss.deadline <= 0) {
+                // 同一内容已展示到期：保持隐藏，不再重新显示
+                ss.expired = true;
+                hideScreen(ss);
+                return;
             }
             long remain = ss.deadline - now;
             if (remain <= 0) {
+                ss.expired = true;
                 hideScreen(ss);
                 return;
             }
@@ -200,6 +210,7 @@ public class NoticeBar {
                 public void run() {
                     ss.hideRun = null;
                     ss.deadline = 0;
+                    ss.expired = true;
                     ftv.setVisibility(View.GONE);
                     stopSpeedScroll(ss);
                 }
@@ -209,6 +220,7 @@ public class NoticeBar {
             cancelAutoHide(ss);
             ss.deadline = 0;
             ss.content = text;
+            ss.expired = false;
         }
     }
 

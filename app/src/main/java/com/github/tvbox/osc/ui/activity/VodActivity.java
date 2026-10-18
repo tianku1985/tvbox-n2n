@@ -401,13 +401,23 @@ public class VodActivity extends BaseActivity {
             }
 
             dialog.setTip(getString(R.string.dia_source));
+            final SelectDialog<SourceBean> fDialog = dialog;
             dialog.setAdapter(tvRecyclerView, new SelectDialogAdapter.SelectDialogInterface<SourceBean>() {
                 @Override
                 public void click(SourceBean value, int pos) {
                     ApiConfig.get().setSourceBean(value);
-                    // 反馈 + 强制刷新列表（getSort force=true 绕过 homeContent 缓存）
-                    Toast.makeText(mContext, getString(R.string.dia_source) + "：" + value.getName(), Toast.LENGTH_SHORT).show();
-                    reloadHome();
+                    fDialog.dismiss();
+                    // 提示并自动返回主界面刷新数据（主界面 onResume 检测标志位后强制刷新）
+                    Toast.makeText(mContext, "已切换到「" + value.getName() + "」，即将返回主界面刷新数据", Toast.LENGTH_LONG).show();
+                    HomeActivity.sRefreshOnResume = true;
+                    mHandler.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (!isFinishing() && !isDestroyed()) {
+                                finish();
+                            }
+                        }
+                    }, 1500);
                 }
 
                 @Override

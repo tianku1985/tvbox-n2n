@@ -1,6 +1,6 @@
 # hin2n 模块开发文档
 
-> hin2n（基于 [switch-iot/hin2n](https://github.com/switch-iot/hin2n) dev 分支，n2n 子模块实体化）在本仓库中已从「独立 App」改造为 **TVBox 的内置 Android library 模块 `:hin2n`**，随主工程一起编译进同一个 APK。
+> hin2n（基于 [switch-iot/hin2n](https://github.com/switch-iot/hin2n) dev 分支，n2n 子模块实体化）在本仓库中已从「TVBox 内置 library」拆分为**独立可安装 App `:hin2n`**（applicationId `wang.switchy.hin2n`），由独立的 GitHub Actions 工作流 `hin2n.yml` 构建并发布到固定 tag `hin2n-latest`；TVBox 主工程（`:app`）不再依赖 `:hin2n`，通过 Intent/包名拉起或按 `hin2n.apkUrl` 下载安装。
 > 用户使用说明见 [hin2n.md](file:///f:/tvbox-n2n/docs/hin2n.md)。
 
 ---
@@ -10,10 +10,10 @@
 ```
 ┌─────────────────────────────── :app (TVBox, com.github.tvbox.osc.tk) ───────────────────────────────┐
 │  n2n/ 包：TV 引导页 UI、播种、开机广播、RemoteConfig 内置配置、首页入口                              │
-│      │  只允许通过 Hin2nCore 门面 / Intent / Parcelable / EventBus / DAO Model 与模块交互            │
+│      │  通过 PackageManager/Intent 检测并拉起独立 hin2n App；未安装时按 hin2n.apkUrl 下载            │
 └──────┼──────────────────────────────────────────────────────────────────────────────────────────────┘
-       │ implementation project(':hin2n')
-┌──────▼────────────────────────────── :hin2n (wang.switchy.hin2n, com.android.library) ──────────────┐
+       │ （无编译期依赖，完全解耦）
+┌──────▼────────────────────────────── :hin2n (wang.switchy.hin2n, com.android.application) ──────────┐
 │  Hin2nCore（门面/初始化/SP/DB/开机自连） · N2NService（VpnService） · n2n native(.so via CMake)       │
 │  model(N2NSettingModel/N2NSettingInfo/EdgeCmd/EdgeStatus) · storage(greenDAO) · tool · event(EventBus)│
 └─────────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -21,10 +21,10 @@
 
 **硬性规则**：
 
-1. `:hin2n` **不能引用任何 `com.github.tvbox.**` 类**（依赖方向单向）。它保留原 hin2n 的包名 `wang.switchy.hin2n`，资源 `R` 也走该包，可被 app 直接引用（如 `R.array.encryption_modes`）。
-2. `appcompat` 在模块中是 `compileOnly`——编译期需要 `NotificationCompat`，运行期由 app 提供（normal/python 用 1.7.0，legacy 用 1.6.1，二进制兼容）。
-3. 模块无 flavor、无 applicationId、无签名配置；app 的 12 个变体（abi×brand×mode）自动匹配模块唯一的 debug/release 变体。
-4. 原独立 App 的组件（MainActivity/SettingDetailsActivity、Umeng/Bugly 统计、应用更新、dataBinding、BaseRecyclerViewAdapterHelper）已整体删除。
+1. `:hin2n` **不能引用任何 `com.github.tvbox.**` 类**（依赖方向单向，且两者无模块依赖）。它保留原 hin2n 的包名 `wang.switchy.hin2n`，资源 `R` 也走该包。
+2. `appcompat` 在模块中是 `implementation 'androidx.appcompat:appcompat:1.6.1'`（独立 App，自行携带依赖）。
+3. 模块有独立 `applicationId "wang.switchy.hin2n"` 与条件化签名配置（`project.hasProperty('RELEASE_STORE_FILE')` 时注入）；TVBox 主工程的 12 个变体不再与本模块联动。
+4. 原独立 App 的组件（Umeng/Bugly 统计、应用更新、dataBinding、BaseRecyclerViewAdapterHelper）已整体删除；TV 引导页 Hin2nActivity 作为唯一入口 Activity。
 
 ## 2. 目录结构
 
@@ -158,15 +158,15 @@ DAO 生成代码已实体化在 `storage/db/base/`，**不要加 greendao gradle
 
 ## 8. CI
 
-hin2n 不再单独出 APK：
+hin2n 已拆分为独立 App，拥有独立工作流：
 
-- [.github/workflows/test.yml](file:///f:/tvbox-n2n/.github/workflows/test.yml) 是唯一构建入口。setup-java 17 之后有 **Install NDK and CMake** 步骤：`sdkmanager "ndk;25.2.9519653" "cmake;3.22.1"`；源码压缩包已包含 `hin2n/` 目录。
-- [.github/workflows/hin2n.yml](file:///f:/tvbox-n2n/.github/workflows/hin2n.yml) 已停用（手动触发只输出提示），避免旧的独立 App 流水线误用。
+- [.github/workflows/hin2n.yml](file:///f:/tvbox-n2n/.github/workflows/hin2n.yml) 是 hin2n 唯一构建入口。`push` 到 `main` 且改动 `hin2n/**` 或该工作流文件时触发，也可手动触发；setup-java 17 → Install NDK and CMake（`ndk;25.2.9519653`、`cmake;3.22.1`）→ `./gradlew :hin2n:assembleRelease` → 产物 `hin2n_<tag>.apk` 上传 Artifact，同时以固定名 `hin2n-latest.apk` 发布到固定 tag `hin2n-latest` 的 Release（`allowUpdates: true`）。
+- [.github/workflows/test.yml](file:///f:/tvbox-n2n/.github/workflows/test.yml) 只构建 `:app`（TVBox），不再安装 NDK/CMake，也不再处理 hin2n 的签名与 APK。
 - CI 失败排查顺序：先看日志尾部脚本汇总的 `error:` 行 → native 失败看 `externalNativeBuild...` 任务的 CMake/Clang 报错 → kapt 偶发 runner 故障直接 rerun。
 
 ## 9. Android 4.4（API19）兼容要点
 
-- 模块 minSdk 19；`appcompat` 用 compileOnly 1.6.1，由 legacy 变体提供同版本运行时。
+- 模块 minSdk 19；`appcompat` 用 `implementation 1.6.1`（独立 App，自行携带运行时）。
 - app 侧所有 drawable 采用 **drawable/（固定色兜底，禁 `?attr/`、禁 ripple）+ drawable-v21/（主题色/ripple 原版）双版本**；legacy 变体还开了 `vectorDrawables.generatedDensities` 生成 PNG。详见 [tvbox-dev.md](file:///f:/tvbox-n2n/docs/tvbox-dev.md) §7。
 - hin2n 自己的资源（shape_hin2n_* 等）在创建时就只用固定色/`@color`，不带主题属性引用。
 - 通知/PendingIntent 按版本分支，API23 才加 `FLAG_IMMUTABLE`。

@@ -1,20 +1,110 @@
-# 已停用：hin2n 不再作为独立 App 构建/发布。
-#
-# 自 2026-10 起，hin2n 已改造为 TVBox 的内置 library 模块（settings.gradle 的 :hin2n，
-# 源码位于 hin2n/Hin2n_android/app），其 native 代码随主工程 Test 工作流一起 CMake 编译，
-# 产物就是 TVBox APK 本身，首页「组网」入口打开内置管理页。
-#
-# 保留本文件仅为说明；即使手动触发也只会输出提示并成功退出，不会再产出独立 APK。
-name: hin2n (disabled)
+# hin2n 组网 App 独立构建
+# 与 TVBox 主程序（test.yml）解耦，支持手动触发（workflow_dispatch）或 hin2n/** 代码变更时自动构建。
+# 构建产物：固定名 hin2n-latest.apk（tvbox 内置 json 的 hin2n.apkUrl 指向此文件）。
+
+name: hin2n
 
 on:
+  push:
+    branches: [main]
+    paths: ['hin2n/**', '.github/workflows/hin2n.yml']
   workflow_dispatch:
+    inputs:
+      donotpublish:
+        description: '构建后不发布'
+        required: false
+        type: boolean
+
+permissions:
+  contents: write
 
 jobs:
-  disabled:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Explain
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Build Tag
         run: |
-          echo "hin2n 已内置于 TVBox，不再单独打包。"
-          echo "请运行 Test 工作流构建 TVBox APK（首页-组网 即 hin2n 管理页）。"
+          echo "tag=$(date +'%Y%m%d-%H%M')" >> $GITHUB_ENV
+
+      - name: Release Apk Sign
+        run: |
+          signingConfigs='ICAgIHNpZ25pbmdDb25maWdzIHtcCiAgICAgICAgaWYgKHByb2plY3QuaGFzUHJvcGVydHkoIlJFTEVBU0VfU1RPUkVfRklMRSIpKSB7XAogICAgICAgICAgICBteUNvbmZpZyB7XAogICAgICAgICAgICAgICAgc3RvcmVGaWxlIGZpbGUoUkVMRUFTRV9TVE9SRV9GSUxFKVwKICAgICAgICAgICAgICAgIHN0b3JlUGFzc3dvcmQgUkVMRUFTRV9TVE9SRV9QQVNTV09SRFwKICAgICAgICAgICAgICAgIGtleUFsaWFzIFJFTEVBU0VfS0VZX0FMSUFTXAogICAgICAgICAgICAgICAga2V5UGFzc3dvcmQgUkVMRUFTRV9LRVlfUEFTU1dPUkRcCiAgICAgICAgICAgICAgICB2MVNpZ25pbmdFbmFibGVkIHRydWVcCiAgICAgICAgICAgICAgICB2MlNpZ25pbmdFbmFibGVkIHRydWVcCiAgICAgICAgICAgICAgICBlbmFibGVWM1NpZ25pbmcgPSB0cnVlXAogICAgICAgICAgICAgICAgZW5hYmxlVjRTaWduaW5nID0gdHJ1ZVwKICAgICAgICAgICAgfVwKICAgICAgICB9XAogICAgfVwKXA=='
+          signingConfig='ICAgICAgICAgICAgaWYgKHByb2plY3QuaGFzUHJvcGVydHkoIlJFTEVBU0VfU1RPUkVfRklMRSIpKSB7XAogICAgICAgICAgICAgICAgc2lnbmluZ0NvbmZpZyBzaWduaW5nQ29uZmlncy5teUNvbmZpZ1wKICAgICAgICAgICAgfVwK'
+          signingConfigs="$(echo "$signingConfigs" |base64 -d )"
+          signingConfig="$(echo "$signingConfig" |base64 -d )"
+          # 仅注入 hin2n 模块签名配置
+          sed -i -e "/defaultConfig {/i\\$signingConfigs " -e "/debug {/a\\$signingConfig " -e "/release {/a\\$signingConfig " hin2n/Hin2n_android/app/build.gradle
+          cp -f ${{ github.workspace }}/.github/workflows/TVBoxOSC.jks hin2n/Hin2n_android/app/TVBoxOSC.jks
+          sed -i '$a\RELEASE_STORE_FILE=./TVBoxOSC.jks'     ./gradle.properties
+          sed -i '$a\RELEASE_KEY_ALIAS=TVBoxOSC'            ./gradle.properties
+          sed -i '$a\RELEASE_STORE_PASSWORD=TVBoxOSC'       ./gradle.properties
+          sed -i '$a\RELEASE_KEY_PASSWORD=TVBoxOSC'         ./gradle.properties
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install NDK and CMake
+        run: |
+          set -e
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" "ndk;25.2.9519653" "cmake;3.22.1"
+
+      - uses: gradle/actions/setup-gradle@v6.2.0
+
+      - name: Build hin2n with Gradle
+        run: |
+          chmod +x gradlew
+          set +e
+          ./gradlew :hin2n:assembleRelease --build-cache --parallel --daemon --warning-mode all 2>&1 | tee gradle.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "===== 编译错误行（error: / e: ）====="
+            grep -nE "error:|^e: |Execution failed for task" gradle.log | tail -n 60 || true
+            exit "$rc"
+          fi
+
+      - name: Prepare hin2n APK
+        run: |
+          rm -rf hin2n_apk/
+          mkdir -p hin2n_apk/
+          for file in $(find ~ -path "*hin2n*" -name "*release*.apk" -print); do
+            base=$(basename "$file")
+            cp "$file" "hin2n_apk/hin2n_${{ env.tag }}.apk"
+            break
+          done
+          # 固定名副本（供 tvbox 内置 json 的 hin2n.apkUrl 永远指向此文件）
+          if [ -f "hin2n_apk/hin2n_${{ env.tag }}.apk" ]; then
+            cp -f "hin2n_apk/hin2n_${{ env.tag }}.apk" hin2n_apk/hin2n-latest.apk
+          fi
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: hin2n
+          path: hin2n_apk/*.apk
+
+      - name: Whether Or Not to Publish
+        if: ${{ inputs.donotpublish }}
+        run: |
+          echo "skip publish"
+          echo "tag=" >> $GITHUB_ENV
+
+      - name: Release hin2n
+        uses: ncipollo/release-action@v1
+        if: ${{ env.tag }}
+        with:
+          name: hin2n-latest
+          tag: hin2n-latest
+          allowUpdates: true
+          removeArtifacts: true
+          artifacts: |
+            hin2n_apk/*.apk

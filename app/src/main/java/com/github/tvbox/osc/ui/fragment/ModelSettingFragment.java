@@ -66,7 +66,6 @@ import tv.danmaku.ijk.media.player.IjkMediaPlayer;
  */
 public class ModelSettingFragment extends BaseLazyFragment {
     private TextView tvDebugOpen;
-    private TextView tvApi;
     // Home Section
     private TextView tvHomeApi;
     private TextView tvHomeDefaultShow;
@@ -90,8 +89,9 @@ public class ModelSettingFragment extends BaseLazyFragment {
     private TextView tvDns;
     private TextView tvFastSearchText;
 
-    // 内置配置区（远程地址配置已移除，仅保留 TVBox 开机启动开关）
+    // 内置配置区（远程地址配置已移除，仅保留 TVBox 开机启动 / 设为桌面开关）
     private TextView tvRcBoot;
+    private TextView tvRcLauncher;
 
     public static ModelSettingFragment newInstance() {
         return new ModelSettingFragment().setArguments();
@@ -112,9 +112,7 @@ public class ModelSettingFragment extends BaseLazyFragment {
         tvFastSearchText.setText(Hawk.get(HawkConfig.FAST_SEARCH_MODE, false) ? "已开启" : "已关闭");
         tvDebugOpen = findViewById(R.id.tvDebugOpen);
         tvDebugOpen.setText(Hawk.get(HawkConfig.DEBUG_OPEN, false) ? "开启" : "关闭");
-        tvApi = findViewById(R.id.tvApi);
-        tvApi.setText(Hawk.get(HawkConfig.API_URL, ""));
-        com.github.tvbox.osc.n2n.HomeEntry.styleInput(tvApi);
+        // 配置地址行不再回显已输入的接口地址（点击仍可修改）
         // Home Section
         tvHomeApi = findViewById(R.id.tvHomeApi);
         tvHomeApi.setText(ApiConfig.get().getHomeSourceBean().getName());
@@ -174,7 +172,6 @@ public class ModelSettingFragment extends BaseLazyFragment {
                     @Override
                     public void onchange(String api) {
                         Hawk.put(HawkConfig.API_URL, api);
-                        tvApi.setText(api);
                     }
                 });
                 dialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
@@ -203,7 +200,6 @@ public class ModelSettingFragment extends BaseLazyFragment {
                     @Override
                     public void click(String api) {
                         Hawk.put(HawkConfig.API_URL, api);
-                        tvApi.setText(api);
                         dialog.dismiss();
                     }
 
@@ -842,6 +838,26 @@ public class ModelSettingFragment extends BaseLazyFragment {
                 tvRcBoot.setText(now ? "开" : "关");
                 Toast.makeText(mContext, now ? "已开启：开机后自动启动 TVBox" : "已关闭开机启动",
                         Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        // 设为系统桌面：开启后启用 Launcher 别名并弹系统桌面选择器；关闭后停用别名并引导用户选回原桌面
+        tvRcLauncher = findViewById(R.id.tvRcLauncher);
+        tvRcLauncher.setText(RemoteConfig.launcherEnabled() ? "开" : "关");
+        findViewById(R.id.llRcLauncher).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                FastClickCheckUtil.check(v);
+                boolean now = !RemoteConfig.launcherEnabled();
+                RemoteConfig.setLauncherEnabled(mContext, now);
+                tvRcLauncher.setText(now ? "开" : "关");
+                if (now) {
+                    Toast.makeText(mContext, "已开启：请在系统弹窗中选择 TVBox 为默认桌面", Toast.LENGTH_LONG).show();
+                    RemoteConfig.promptChooseLauncher(mActivity);
+                } else {
+                    Toast.makeText(mContext, "已关闭：请在系统弹窗中选回原来的桌面", Toast.LENGTH_LONG).show();
+                    RemoteConfig.promptChooseLauncher(mActivity);
+                }
             }
         });
     }

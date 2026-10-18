@@ -59,6 +59,20 @@
             </intent-filter>
         </activity>
 
+        <!-- 设为系统桌面：默认停用；RemoteConfig.applyLauncherComponent 按开关动态启停。
+             停用状态下不出现在系统桌面选择器；取消后系统自动回退原桌面。 -->
+        <activity-alias
+            android:name=".LauncherAlias"
+            android:targetActivity=".ui.activity.HomeActivity"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
         <activity
             android:name=".ui.activity.VodActivity"
             android:screenOrientation="sensorLandscape"

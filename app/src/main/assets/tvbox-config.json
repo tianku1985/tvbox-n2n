@@ -6,6 +6,15 @@
   // 留空或远程无法访问时，全部使用下方内置 json。
   "remoteConfigUrl": "",
 
+  // 是否使用远程 json 覆盖「配置界面的所有配置」（设置页全部项 + bootStart + setAsLauncher
+  // + api/live/epg/proxy 接口地址）。仅当本开关为 true 且远程接口正常访问时，远程配置强制
+  // 覆盖用户在设置页的手动修改；false（默认）时远程不碰用户设置，上述项只在用户未配置时作为默认值。
+  "useRemoteConfig": false,
+
+  // 设为系统桌面：true 时启用 TVBox 的桌面入口（开机/回主屏进入 TVBox），启动后弹系统桌面
+  // 选择器确认；设置页「设为桌面」开关可改。取消后停用桌面入口，系统自动回退原来的桌面。
+  "setAsLauncher": false,
+
   // ============================ 公告（所有界面可显示，含直播） ============================
   "notice": {
     "text": "",                         // 公告内容，留空不显示
@@ -140,8 +149,9 @@
   // （顶部显示下载进度）。apkUrl 留空且未安装时，仅提示「未安装」。组网配置（社区/超节点/开机自连
   // 等）全部在 hin2n App 内维护，与本文件无关。
   "hin2n": {
-    "apkUrl": "https://github.com/tianku1985/tvbox-n2n/releases/latest/download/hin2n-latest.apk"
-                                       // hin2n App 的 APK 下载地址（默认指向本仓库最新 Release 的固定名产物）
+    "apkUrl": "https://github.com/tianku1985/tvbox-n2n/releases/download/hin2n-latest/hin2n-latest.apk"
+                                       // hin2n App 的 APK 下载地址（指向固定 tag "hin2n-latest" 的固定名产物，
+                                       // 由独立工作流 hin2n.yml 发布，与 TVBox 版本互不干扰）
   },
 
   // ============================ 首页自定义入口（旧版，仅第三方 App，作用于顶栏） ============================
