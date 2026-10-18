@@ -80,6 +80,10 @@ public class Hin2nConfigListActivity extends BaseActivity {
         mEmpty.setVisibility(list.isEmpty() ? View.VISIBLE : View.GONE);
         mRecyclerView.setVisibility(list.isEmpty() ? View.GONE : View.VISIBLE);
         mAdapter.setData(list);
+        // 空列表时遥控器焦点落到「新建配置」（列表不可见，无焦点目标）
+        if (list.isEmpty()) {
+            findViewById(R.id.btnHin2nListAdd).requestFocus();
+        }
     }
 
     // ---------------- 行操作 ----------------

@@ -93,13 +93,14 @@ N2NService.onStartCommand
 
 ## 5. 内置 JSON 播种（出厂配置）
 
-`app/src/main/assets/tvbox-config.json` 的 `hin2n` 段：
+hin2n 独立 App 的出厂配置位于 `hin2n/Hin2n_android/app/src/main/assets/hin2n-config.json`
+（不再是 tvbox 的 tvbox-config.json——拆分后组网配置完全由 hin2n App 自维护）：
 
 ```jsonc
-"hin2n": {
+{
   "bootStart": false,             // 开机自动连接（SP start_at_boot）
   "staticRoutes": "",             // "192.168.8.0/24 10.0.0.13 ..."
-  "configs": [ { /* 28 字段，见 docs/tvbox-config.example.jsonc */ } ]
+  "configs": [ { /* 28 字段 */ } ]
 }
 ```
 

@@ -99,6 +99,13 @@ public class Hin2nActivity extends BaseActivity implements View.OnClickListener 
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this);
         }
+        // TV 进入页面后默认聚焦「连接」按钮
+        btnConnect.post(new Runnable() {
+            @Override
+            public void run() {
+                btnConnect.requestFocus();
+            }
+        });
     }
 
     @Override

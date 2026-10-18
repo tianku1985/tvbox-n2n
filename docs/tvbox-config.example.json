@@ -96,38 +96,7 @@
     "notes": ""
   },
   "hin2n": {
-    "bootStart": false,
-    "staticRoutes": "",
-    "configs": [
-      {
-        "version": 3,
-        "name": "默认组网",
-        "ipMode": 0,
-        "ip": "10.0.0.6",
-        "netmask": "255.255.255.0",
-        "community": "mynet",
-        "password": "",
-        "devDesc": "tvbox",
-        "superNode": "supernode.ntop.org:7777",
-        "selected": true,
-        "moreSettings": true,
-        "superNodeBackup": "",
-        "macAddr": "",
-        "mtu": 1328,
-        "localIP": "",
-        "holePunchInterval": 20,
-        "resolveSupernodeIp": false,
-        "localPort": 0,
-        "allowRouting": false,
-        "acceptMulticast": false,
-        "httpTunnel": false,
-        "traceLevel": 2,
-        "gatewayIp": "",
-        "dnsServer": "",
-        "encryptionMode": "Twofish",
-        "headerEnc": false
-      }
-    ]
+    "apkUrl": "https://github.com/tianku1985/tvbox-n2n/releases/latest/download/hin2n-latest.apk"
   },
   "entries": [],
   "topEntries": [

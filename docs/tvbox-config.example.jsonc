@@ -181,64 +181,20 @@
     "notes": ""                        // 更新内容说明（可空，弹窗内换行展示）
   },
 
-  // ==================== hin2n 组网模块（内置模块，无需另装 APK） ====================
-  // 仅在应用首次启动（模块数据库为空）时播种一次；之后全部以用户在组网界面内的修改为准。
-  // 如需修改出厂配置，改源码本文件后重新编译即可。
+  // ==================== hin2n 组网（独立 App，包名 wang.switchy.hin2n） ====================
+  // 首页「组网」入口点击：已安装 → 直接拉起 hin2n App；未安装 → 按下方 apkUrl 后台下载并安装
+  // （顶部显示下载进度）。apkUrl 留空且未安装时，仅提示「未安装」。组网配置（社区/超节点/开机
+  // 自连等）全部在 hin2n App 内维护，与本文件无关。
   "hin2n": {
-    "bootStart": false,                // 开机自动连接 n2n 组网（组网页内也可切换；与上层 bootStart 互不影响）
-    "staticRoutes": "",                // 静态路由，多条用空格/换行分隔；"CIDR 网关IP" 成对，
-                                       //   网关可省略。例："192.168.8.0/24 10.0.0.13 192.168.9.0/24 10.0.0.13"
-    "configs": [
-      {
-        // ---- 基本字段 ----
-        "version": 3,                  // 协议版本：0=n2n_v1 1=n2n_v2 2=n2n_v2s 3=n2n_v3（两端必须一致）
-        "name": "默认组网",             // 配置名称
-        "ipMode": 0,                   // IP 分配：0=手动填写 ip；1=由超节点分配
-                                       //   （别名写法 "fromSupernode": true）
-        "ip": "10.0.0.6",              // 虚拟 IP（ipMode=0 必填，同网内唯一）
-        "netmask": "255.255.255.0",    // 子网掩码（也可用 -a ip/prefix 时只填 IP）
-        "community": "mynet",          // 组网名称（community，最长 20 字符，两端必须一致）
-        "password": "",                // 组网密钥
-        "devDesc": "tvbox",            // 设备描述（v2/v3）
-        "superNode": "supernode.ntop.org:7777",
-                                       // 超节点 地址:端口；留空按版本取默认：
-                                       //   v1 hin2n.nton.eu.org:10082
-                                       //   v2 hin2n.nton.eu.org:10086
-                                       //   v2s hin2n.nton.eu.org:10088
-                                       //   v3 supernode.ntop.org:7777
-        "selected": true,              // 是否作为当前配置（首条建议 true；多条时第一个 true 生效）
-
-        // ---- 高级字段（moreSettings=true 时界面展开；不填取默认） ----
-        "moreSettings": true,
-        "superNodeBackup": "",         // 备用超节点
-        "macAddr": "",                 // 虚拟 MAC，空=随机；格式 "AA:BB:CC:DD:EE:FF"
-        "mtu": 1328,                   // MTU，范围 46-1500
-        "localIP": "",                 // 本地物理 IP，"auto" 或空=自动
-                                       //   （别名写法 "localIpAuto": true，v2s/v3）
-        "holePunchInterval": 20,       // 打洞间隔（秒，v2s）
-        "resolveSupernodeIp": false,   // 预先解析超节点域名（v1/v2s）
-        "localPort": 0,                // 本地端口，0=随机
-        "allowRouting": false,         // 允许路由转发（edge -r）
-        "acceptMulticast": false,      // 接受组播/广播（edge -E）：ARP 依赖它，
-                                       //   注册成功但 ping 不通对端时优先尝试打开
-                                       //   （反义别名 "dropMulticast": true）
-        "httpTunnel": false,           // 优先 HTTP 隧道（edge -H）
-        "traceLevel": 2,               // 日志级别：0=错误 1=警告 2=普通 3=信息 4=调试
-        "gatewayIp": "",               // 虚拟网关（v2/v3）；非空=所有流量走 VPN（全局模式）
-        "dnsServer": "",               // VPN 内 DNS 服务器（v2/v3）
-        "encryptionMode": "Twofish",   // 加密方式：Twofish | AES-CBC | ChaCha20 | Speck-CTR（v2/v3）
-        "headerEnc": false             // 启用包头加密（v2/v3）
-      }
-      // 需要内置多条配置时继续追加对象即可，例如：
-      // ,{ "version": 2, "name": "办公室", "ip": "10.1.0.6", "netmask": "255.255.255.0",
-      //    "community": "office", "superNode": "sn.example.com:5645", "selected": false }
-    ]
+    "apkUrl": "https://github.com/tianku1985/tvbox-n2n/releases/latest/download/hin2n-latest.apk"
+                                       // hin2n App 的 APK 下载地址（默认指向本仓库最新 Release 的固定名产物）
   },
 
   // ==================== 旧版第三方 App 入口（entries，仅 app 类型，作用于顶栏） ====================
   // 已安装→直接打开；未安装且配置 url 时后台下载 APK（顶部进度条），完成后自动调起安装。
   // 顶栏需要更多类型/自定义顺序时请改用下面的 topEntries（配置后 entries 不再生效）。
-  // hin2n 已内化为内置模块，不要在这里配 hin2n（其固定入口由 hin2nEntry 控制）。
+  // hin2n 已是独立 App，不要在这里配 hin2n（其固定入口由 topEntries/homeEntries 的
+  // {"type":"page","target":"hin2n"} 项提供，未安装时按上方 hin2n.apkUrl 下载安装）。
   "entries": [
     // { "name": "文件管理", "pkg": "com.android.filemanager", "icon": "", "url": "https://example.com/fm.apk" }
   ],

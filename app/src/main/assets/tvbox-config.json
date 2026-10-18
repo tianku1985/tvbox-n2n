@@ -140,7 +140,8 @@
   // （顶部显示下载进度）。apkUrl 留空且未安装时，仅提示「未安装」。组网配置（社区/超节点/开机自连
   // 等）全部在 hin2n App 内维护，与本文件无关。
   "hin2n": {
-    "apkUrl": ""                       // hin2n App 的 APK 下载地址（可选）
+    "apkUrl": "https://github.com/tianku1985/tvbox-n2n/releases/latest/download/hin2n-latest.apk"
+                                       // hin2n App 的 APK 下载地址（默认指向本仓库最新 Release 的固定名产物）
   },
 
   // ============================ 首页自定义入口（旧版，仅第三方 App，作用于顶栏） ============================
