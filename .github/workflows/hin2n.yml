@@ -33,12 +33,15 @@ jobs:
 
       - name: Release Apk Sign
         run: |
-          signingConfigs='ICAgIHNpZ25pbmdDb25maWdzIHtcCiAgICAgICAgaWYgKHByb2plY3QuaGFzUHJvcGVydHkoIlJFTEVBU0VfU1RPUkVfRklMRSIpKSB7XAogICAgICAgICAgICBteUNvbmZpZyB7XAogICAgICAgICAgICAgICAgc3RvcmVGaWxlIGZpbGUoUkVMRUFTRV9TVE9SRV9GSUxFKVwKICAgICAgICAgICAgICAgIHN0b3JlUGFzc3dvcmQgUkVMRUFTRV9TVE9SRV9QQVNTV09SRFwKICAgICAgICAgICAgICAgIGtleUFsaWFzIFJFTEVBU0VfS0VZX0FMSUFTXAogICAgICAgICAgICAgICAga2V5UGFzc3dvcmQgUkVMRUFTRV9LRVlfUEFTU1dPUkRcCiAgICAgICAgICAgICAgICB2MVNpZ25pbmdFbmFibGVkIHRydWVcCiAgICAgICAgICAgICAgICB2MlNpZ25pbmdFbmFibGVkIHRydWVcCiAgICAgICAgICAgICAgICBlbmFibGVWM1NpZ25pbmcgPSB0cnVlXAogICAgICAgICAgICAgICAgZW5hYmxlVjRTaWduaW5nID0gdHJ1ZVwKICAgICAgICAgICAgfVwKICAgICAgICB9XAogICAgfVwKXA=='
-          signingConfig='ICAgICAgICAgICAgaWYgKHByb2plY3QuaGFzUHJvcGVydHkoIlJFTEVBU0VfU1RPUkVfRklMRSIpKSB7XAogICAgICAgICAgICAgICAgc2lnbmluZ0NvbmZpZyBzaWduaW5nQ29uZmlncy5teUNvbmZpZ1wKICAgICAgICAgICAgfVwK'
-          signingConfigs="$(echo "$signingConfigs" |base64 -d )"
-          signingConfig="$(echo "$signingConfig" |base64 -d )"
-          # 仅注入 hin2n 模块签名配置
-          sed -i -e "/defaultConfig {/i\\$signingConfigs " -e "/debug {/a\\$signingConfig " -e "/release {/a\\$signingConfig " hin2n/Hin2n_android/app/build.gradle
+          # hin2n/Hin2n_android/app/build.gradle 已自带条件签名逻辑：
+          #   project.hasProperty('RELEASE_STORE_FILE') 时创建 signingConfigs.release
+          #   并在 release buildType 上挂载，无需（也不能）再向 build.gradle 注入代码——
+          #   注入锚点 /release {/ 会同时命中 signingConfigs.release 与 buildTypes.release
+          #   两处，把 signingConfig(...) 追加进 SigningConfig 块内部，
+          #   导致项目评估失败（Could not find method signingConfig()）。
+          # 这里只需准备签名材料：
+          #   1) jks 拷贝到模块目录（build.gradle 里 file('./TVBoxOSC.jks') 相对模块目录解析）
+          #   2) 向根 gradle.properties 追加签名属性（对所有子工程可见）
           cp -f ${{ github.workspace }}/.github/workflows/TVBoxOSC.jks hin2n/Hin2n_android/app/TVBoxOSC.jks
           sed -i '$a\RELEASE_STORE_FILE=./TVBoxOSC.jks'     ./gradle.properties
           sed -i '$a\RELEASE_KEY_ALIAS=TVBoxOSC'            ./gradle.properties
