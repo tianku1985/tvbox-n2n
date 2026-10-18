@@ -27,11 +27,12 @@
         android:banner="@drawable/banner"
         android:theme="@style/Theme.AppCompat.NoActionBar">
 
+        <!-- 不锁方向：手机可竖屏操作，TV/盒子自然方向即横屏 -->
         <activity
             android:name=".ui.Hin2nActivity"
             android:exported="true"
             android:launchMode="singleTask"
-            android:screenOrientation="landscape">
+            android:screenOrientation="unspecified">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
@@ -42,11 +43,11 @@
         <activity
             android:name=".ui.Hin2nConfigListActivity"
             android:exported="false"
-            android:screenOrientation="landscape" />
+            android:screenOrientation="unspecified" />
         <activity
             android:name=".ui.Hin2nConfigEditActivity"
             android:exported="false"
-            android:screenOrientation="landscape" />
+            android:screenOrientation="unspecified" />
 
         <service
             android:name=".service.N2NService"

@@ -43,7 +43,7 @@ jobs:
           fi
       - name: Compress Source
         run: |
-          # hin2n 已作为内置 library 模块随主工程编译，源码必须打入源码包
+          # hin2n 是独立可安装 App 模块（hin2n/Hin2n_android，applicationId wang.switchy.hin2n），源码必须打入源码包
           tar -cJf sourceCode-${{ env.tag }}.tar.xz --exclude=.git --exclude=.github --exclude=docs app hin2n pyramid quickjs xwalk gradle build.gradle gradle.properties settings.gradle gradlew gradlew.bat LICENSE .gitignore
 
       - name: Setup Python
@@ -123,6 +123,11 @@ jobs:
             fi
             mv "$file" "apk/$new_base"
           done
+          # hin2n 额外发布固定名副本：tvbox 内置 json 的 hin2n.apkUrl 指向
+          # releases/latest/download/hin2n-latest.apk（永久有效，不随 tag 变化）
+          if [ -f "apk/hin2n_${{ env.tag }}.apk" ]; then
+            cp -f "apk/hin2n_${{ env.tag }}.apk" apk/hin2n-latest.apk
+          fi
           mv sourceCode-${{ env.tag }}.* apk/
       - name: Release Note
         run: |

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <!-- hin2n 配置列表行：名称区可聚焦点击即切换；右侧 编辑/复制/删除 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -54,6 +54,9 @@
         android:id="@+id/btnHin2nItemEdit"
         android:layout_width="@dimen/vs_100"
         android:layout_height="@dimen/vs_60"
+        android:background="@drawable/shape_hin2n_button"
+        android:clickable="true"
+        android:focusable="true"
         android:gravity="center"
         android:text="编辑"
         android:textColor="@android:color/white"
@@ -63,6 +66,10 @@
         android:id="@+id/btnHin2nItemCopy"
         android:layout_width="@dimen/vs_100"
         android:layout_height="@dimen/vs_60"
+        android:layout_marginLeft="@dimen/vs_10"
+        android:background="@drawable/shape_hin2n_button"
+        android:clickable="true"
+        android:focusable="true"
         android:gravity="center"
         android:text="复制"
         android:textColor="@android:color/white"
@@ -72,6 +79,10 @@
         android:id="@+id/btnHin2nItemDelete"
         android:layout_width="@dimen/vs_100"
         android:layout_height="@dimen/vs_60"
+        android:layout_marginLeft="@dimen/vs_10"
+        android:background="@drawable/shape_hin2n_button"
+        android:clickable="true"
+        android:focusable="true"
         android:gravity="center"
         android:text="删除"
         android:textColor="#FFFF8A80"
