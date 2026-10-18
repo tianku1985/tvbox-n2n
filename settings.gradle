@@ -1,7 +1,15 @@
 rootProject.name = "TVBox"
-include ':app'
-include ':quickjs'
-include ':pyramid'
+
+// 传 -Phin2nOnly 时只配置 :hin2n（hin2n 独立 App 的 CI/单独构建用），
+// 跳过 :app/:quickjs/:pyramid——:pyramid 的 Chaquopy 插件在项目评估阶段要读
+// 根目录 local.properties，独立构建环境（CI 只装 NDK/CMake、不建该文件）会直接配置失败
+def hin2nOnly = settings.startParameter.projectProperties.containsKey('hin2nOnly')
+if (!hin2nOnly) {
+    include ':app'
+    include ':quickjs'
+    include ':pyramid'
+}
+
 // hin2n 组网（独立可安装 App，applicationId wang.switchy.hin2n），源码位于 hin2n/Hin2n_android/app
 include ':hin2n'
 project(':hin2n').projectDir = new File(rootDir, 'hin2n/Hin2n_android/app')

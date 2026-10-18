@@ -66,7 +66,9 @@ jobs:
         run: |
           chmod +x gradlew
           set +e
-          ./gradlew :hin2n:assembleRelease --build-cache --parallel --daemon --warning-mode all 2>&1 | tee gradle.log
+          # -Phin2nOnly：settings.gradle 只配置 :hin2n，跳过 :app/:quickjs/:pyramid
+          # （:pyramid 的 Chaquopy 评估需读根目录 local.properties，独立构建环境没有该文件）
+          ./gradlew :hin2n:assembleRelease -Phin2nOnly --build-cache --parallel --daemon --warning-mode all 2>&1 | tee gradle.log
           rc=${PIPESTATUS[0]}
           set -e
           if [ "$rc" -ne 0 ]; then

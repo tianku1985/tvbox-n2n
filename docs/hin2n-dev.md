@@ -138,6 +138,7 @@ hin2n 独立 App 的出厂配置位于 `hin2n/Hin2n_android/app/src/main/assets/
 ```powershell
 # 仓库根目录执行（不是 hin2n/Hin2n_android！模块由根 settings.gradle 以 projectDir 引入）
 .\gradlew.bat :hin2n:assembleDebug                         # 只编模块（产出 aar）
+.\gradlew.bat :hin2n:assembleDebug -Phin2nOnly             # 同上且跳过 :app/:quickjs/:pyramid 配置（CI 同款）
 .\gradlew.bat assembleArm64GenericLegacyDebug              # Android 4.4 兼容版（arm64）
 .\gradlew.bat assembleArmeabiGenericNormalRelease          # 常规 armv7 release
 .\gradlew.bat assemblerelease                              # CI 同款：全部 12 个变体
@@ -160,7 +161,7 @@ DAO 生成代码已实体化在 `storage/db/base/`，**不要加 greendao gradle
 
 hin2n 已拆分为独立 App，拥有独立工作流：
 
-- [.github/workflows/hin2n.yml](file:///f:/tvbox-n2n/.github/workflows/hin2n.yml) 是 hin2n 唯一构建入口。`push` 到 `main` 且改动 `hin2n/**` 或该工作流文件时触发，也可手动触发；setup-java 17 → Install NDK and CMake（`ndk;25.2.9519653`、`cmake;3.22.1`）→ `./gradlew :hin2n:assembleRelease` → 产物 `hin2n_<tag>.apk` 上传 Artifact，同时以固定名 `hin2n-latest.apk` 发布到固定 tag `hin2n-latest` 的 Release（`allowUpdates: true`）。
+- [.github/workflows/hin2n.yml](file:///f:/tvbox-n2n/.github/workflows/hin2n.yml) 是 hin2n 唯一构建入口。`push` 到 `main` 且改动 `hin2n/**` 或该工作流文件时触发，也可手动触发；setup-java 17 → Install NDK and CMake（`ndk;25.2.9519653`、`cmake;3.22.1`）→ `./gradlew :hin2n:assembleRelease -Phin2nOnly`（settings.gradle 据此只配置 `:hin2n`，跳过 `:app`/`:quickjs`/`:pyramid`——`:pyramid` 的 Chaquopy 评估需读根目录 `local.properties`，独立构建环境没有该文件）→ 产物 `hin2n_<tag>.apk` 上传 Artifact，同时以固定名 `hin2n-latest.apk` 发布到固定 tag `hin2n-latest` 的 Release（`allowUpdates: true`）。
 - [.github/workflows/test.yml](file:///f:/tvbox-n2n/.github/workflows/test.yml) 只构建 `:app`（TVBox），不再安装 NDK/CMake，也不再处理 hin2n 的签名与 APK。
 - CI 失败排查顺序：先看日志尾部脚本汇总的 `error:` 行 → native 失败看 `externalNativeBuild...` 任务的 CMake/Clang 报错 → kapt 偶发 runner 故障直接 rerun。
 
