@@ -141,15 +141,6 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1" />
-
-                        <TextView
-                            android:id="@+id/tvApi"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:ellipsize="middle"
-                            android:singleLine="true"
-                            android:textColor="@android:color/white"
-                            android:textSize="@dimen/ts_24" />
                     </LinearLayout>
 
                     <LinearLayout
@@ -199,6 +190,42 @@
 
                         <TextView
                             android:id="@+id/tvRcBoot"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="@dimen/vs_8"
+                            android:layout_marginLeft="@dimen/vs_8"
+                            android:singleLine="true"
+                            android:text="关"
+                            android:textColor="#CCFFFFFF"
+                            android:textSize="@dimen/ts_22" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/llRcLauncher"
+                        android:layout_width="@dimen/vs_150"
+                        android:layout_height="match_parent"
+                        android:layout_marginStart="@dimen/vs_5"
+                        android:layout_marginLeft="@dimen/vs_5"
+                        android:layout_marginEnd="@dimen/vs_5"
+                        android:layout_marginRight="@dimen/vs_5"
+                        android:background="@drawable/shape_setting_model_focus"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:orientation="horizontal"
+                        android:paddingLeft="@dimen/vs_10"
+                        android:paddingRight="@dimen/vs_10">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:singleLine="true"
+                            android:text="设为桌面"
+                            android:textColor="@android:color/white"
+                            android:textSize="@dimen/ts_22"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/tvRcLauncher"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginStart="@dimen/vs_8"

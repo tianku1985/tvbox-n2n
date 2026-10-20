@@ -1,6 +1,7 @@
-name: Test
+name: TVBox
 
-
+# 仅构建 TVBox 主程序（:app 及其库模块 quickjs/pyramid）；
+# hin2n 组网 App 的构建已拆分到独立工作流 hin2n.yml，与本文件互不干扰。
 
 on:
   schedule:
@@ -75,8 +76,6 @@ jobs:
           signingConfig="$(echo "$signingConfig" |base64 -d )"
           sed -i -e "/defaultConfig {/i\\$signingConfigs " -e "/debug {/a\\$signingConfig " -e "/release {/a\\$signingConfig " app/build.gradle
           cp -f ${{ github.workspace }}/.github/workflows/TVBoxOSC.jks app/TVBoxOSC.jks
-          # 独立 hin2n App 模块的签名密钥（其 build.gradle 以 RELEASE_STORE_FILE 属性守卫，路径相对模块目录解析）
-          cp -f ${{ github.workspace }}/.github/workflows/TVBoxOSC.jks hin2n/Hin2n_android/app/TVBoxOSC.jks
           sed -i '$a\RELEASE_STORE_FILE=./TVBoxOSC.jks'     ./gradle.properties
           sed -i '$a\RELEASE_KEY_ALIAS=TVBoxOSC'            ./gradle.properties
           sed -i '$a\RELEASE_STORE_PASSWORD=TVBoxOSC'       ./gradle.properties
@@ -85,21 +84,14 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - name: Install NDK and CMake
-        run: |
-          # hin2n 内置模块通过 CMake 编译 n2n C 源码：安装与模块 build.gradle 一致的 NDK r25b 与 CMake 3.22.1
-          # sdkmanager 在新版 JDK 下才能正常启动，故本步骤放在 setup-java 17 之后
-          set -e
-          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
-          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
-          "$SDK/cmdline-tools/latest/bin/sdkmanager" "ndk;25.2.9519653" "cmake;3.22.1"
       - uses: gradle/actions/setup-gradle@v6.2.0
       - name: Build With Gradle
         run: |
           chmod +x gradlew
+          # 只构建 :app（TVBox 各 flavor）；hin2n 组网 App 由 hin2n.yml 独立构建
           # 输出 tee 落盘，失败时把真正的编译错误行直接打在日志尾部，便于一眼看到
           set +e
-          ./gradlew assemblerelease --build-cache --parallel --daemon --warning-mode all 2>&1 | tee gradle.log
+          ./gradlew :app:assembleRelease --build-cache --parallel --daemon --warning-mode all 2>&1 | tee gradle.log
           rc=${PIPESTATUS[0]}
           set -e
           if [ "$rc" -ne 0 ]; then
@@ -107,27 +99,33 @@ jobs:
             grep -nE "error:|^e: |Execution failed for task" gradle.log | tail -n 60 || true
             exit "$rc"
           fi
+      - name: 诊断 R 资源（仅构建失败时）
+        if: failure()
+        run: |
+          echo "===== 0. 检出的提交 ====="
+          git log --oneline -1
+          echo "===== 1. 源文件中的 id 声明 ====="
+          grep -n 'RcLauncher' app/src/main/res/layout/fragment_model.xml || echo "layout 无 RcLauncher"
+          grep -n 'RcLauncher' app/src/main/res/layout-v21/fragment_model.xml || echo "layout-v21 无 RcLauncher"
+          echo "===== 2. 合并后的 fragment_model.xml（各配置）中的 RcLauncher 计数 ====="
+          find app/build/intermediates -name 'fragment_model.xml' -print 2>/dev/null | head -n 60 | while read f; do printf '%s : ' "$f"; grep -c 'RcLauncher' "$f" 2>/dev/null || true; done
+          echo "===== 3. 符号表 R.txt 中是否含 llRcLauncher ====="
+          find app/build/intermediates -name 'R.txt' -print 2>/dev/null | head -n 40 | while read f; do printf '%s : ' "$f"; grep -c 'llRcLauncher' "$f" || true; done
+          echo "===== 4. R.jar 的 R\$id 中是否含 llRcLauncher ====="
+          find app/build/intermediates -name '*.jar' -print 2>/dev/null | head -n 40 | while read f; do e=$(unzip -Z1 "$f" 2>/dev/null | grep -E 'R\$id\.class$' | head -n1); if [ -n "$e" ]; then echo "--- $f"; echo "    entry=$e"; unzip -p "$f" "$e" | strings | grep -i 'RcLauncher' || echo "    (R\$id 无 RcLauncher)"; fi; done
       - name: Prepare App
         run: |
           rm -rf apk/
           mkdir -p apk/
           for file in `find ~ -name "*release*.apk" -print`; do
             base=$(basename "$file")
-            if [[ "$file" == *Hin2n_android* ]]; then
-              # 独立 hin2n 组网 App：单独命名，避免落入下方通用分支被覆盖
-              new_base="hin2n_${{ env.tag }}.apk"
-            elif [[ "$base" == TVBox_* ]]; then
+            if [[ "$base" == TVBox_* ]]; then
               new_base=$(echo "$base" | sed "s/release/takagen99_${{ env.tag }}/")
             else
               new_base="TVBox_takagen99_${{ env.tag }}.apk"
             fi
             mv "$file" "apk/$new_base"
           done
-          # hin2n 额外发布固定名副本：tvbox 内置 json 的 hin2n.apkUrl 指向
-          # releases/latest/download/hin2n-latest.apk（永久有效，不随 tag 变化）
-          if [ -f "apk/hin2n_${{ env.tag }}.apk" ]; then
-            cp -f "apk/hin2n_${{ env.tag }}.apk" apk/hin2n-latest.apk
-          fi
           mv sourceCode-${{ env.tag }}.* apk/
       - name: Release Note
         run: |

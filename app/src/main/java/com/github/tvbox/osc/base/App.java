@@ -63,7 +63,12 @@ public class App extends MultiDexApplication {
         super.onCreate();
         SubtitleHelper.initSubtitleColor(this);
         // Hawk 必须先初始化：内置 JSON 的设置项默认值依赖 Hawk
-        Hawk.init(this).build();
+        // 存储后端替换为本地 JSON 文件（filesDir/tvbox-config-local.json）+ 明文，
+        // 因此 TVBox 的全部配置都读写保存到这个本地 JSON 文件里
+        Hawk.init(this)
+                .setStorage(new com.github.tvbox.osc.n2n.LocalJsonStorage(this))
+                .setEncryption(new com.github.tvbox.osc.n2n.PlainEncryption())
+                .build();
         Hawk.put(HawkConfig.DEBUG_OPEN, false);
         // 加载 APK 内置配置 JSON（assets/tvbox-config.json，已移除远程地址配置）。
         // 先于 initParams()：JSON 中的「设置页默认值」仅当用户从未手动修改时写入，

@@ -15,9 +15,13 @@
 //     hin2nEntry/checkInterval/ua：每次启动按本文件应用（改完重装即生效）；
 //   · api/live/epg/proxy：仅当用户从未在 TVBox 内手动配置过对应接口时作为默认值，
 //       用户一旦手动配置，该接口不再被文件覆盖（四项互不影响）；
-//   · bootStart（TVBox 开机自启）：只作默认值写入一次，之后以界面开关为准；
+//   · bootStart（TVBox 开机自启）/ setAsLauncher（设为系统桌面）：只作默认值写入一次，
+//       之后以设置页开关为准；
 //   · settings（设置页默认值）：仅当用户从未在设置页修改过该项时写入一次，
 //       用户一旦在设置页更改，该项永远以用户设定为准；
+//   · useRemoteConfig=true 且远程接口（remoteConfigUrl）可正常访问时例外：
+//       远程 json 强制覆盖 settings 全部项 + bootStart + setAsLauncher + api/live/epg/proxy
+//       （用户的手动修改也会被远程值覆盖）；远程访问失败或开关为 false 时仍按上述本地规则；
 //   · hin2n.bootStart/staticRoutes/configs：仅应用首次启动（组网数据库为空）时
 //       播种一次，之后以组网界面内的用户增删改为准；
 //   · 所有字段均可选，不写即保持默认。
@@ -32,6 +36,17 @@
   // 设置页与 n2n 的配置永远只读写本地内置 json，不被远程覆盖。
   // 留空或远程无法访问时全部使用本文件内置配置。
   "remoteConfigUrl": "",
+
+  // 是否使用远程 json 覆盖「配置界面的所有配置」（设置页 settings 全部项 + bootStart
+  // + setAsLauncher + api/live/epg/proxy 接口地址）。
+  // true 且远程接口正常访问时：远程值强制覆盖用户在设置页的手动修改（适合统一管控的
+  // 酒店/门店场景）；false（默认）：远程不碰用户设置，上述项只在用户未配置时作为默认值。
+  "useRemoteConfig": false,
+
+  // 设为系统桌面：true 时把 TVBox 注册为系统桌面候选（替换系统默认桌面，开机/按主页键
+  // 进入 TVBox）。默认值只在首次启动写入一次，之后以「设置 → 设为桌面」开关为准；
+  // 取消后自动停用桌面入口，系统回退到原来的桌面。useRemoteConfig=true 时远程可强制覆盖。
+  "setAsLauncher": false,
 
   // ==================== 公告（首页/直播/点播均可显示） ====================
   // 最简写法："notice": "公告文本"；要自定义样式时写成下面的对象。
@@ -186,8 +201,9 @@
   // （顶部显示下载进度）。apkUrl 留空且未安装时，仅提示「未安装」。组网配置（社区/超节点/开机
   // 自连等）全部在 hin2n App 内维护，与本文件无关。
   "hin2n": {
-    "apkUrl": "https://github.com/tianku1985/tvbox-n2n/releases/latest/download/hin2n-latest.apk"
-                                       // hin2n App 的 APK 下载地址（默认指向本仓库最新 Release 的固定名产物）
+    "apkUrl": "https://github.com/tianku1985/tvbox-n2n/releases/download/hin2n-latest/hin2n-latest.apk"
+                                       // hin2n App 的 APK 下载地址（默认指向本仓库固定 tag「hin2n-latest」
+                                       // 的固定名产物，随 hin2n.yml 工作流每次构建自动更新）
   },
 
   // ==================== 旧版第三方 App 入口（entries，仅 app 类型，作用于顶栏） ====================

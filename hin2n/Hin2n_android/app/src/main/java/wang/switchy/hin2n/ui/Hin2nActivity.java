@@ -1,6 +1,8 @@
 package wang.switchy.hin2n.ui;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.net.VpnService;
@@ -92,6 +94,7 @@ public class Hin2nActivity extends BaseActivity implements View.OnClickListener 
         findViewById(R.id.btnHin2nAdd).setOnClickListener(this);
         findViewById(R.id.btnHin2nPing).setOnClickListener(this);
         findViewById(R.id.btnHin2nClearLog).setOnClickListener(this);
+        findViewById(R.id.btnHin2nCopyLog).setOnClickListener(this);
         findViewById(R.id.btnHin2nBack).setOnClickListener(this);
         btnConnect.setOnClickListener(this);
         btnBoot.setOnClickListener(this);
@@ -219,6 +222,8 @@ public class Hin2nActivity extends BaseActivity implements View.OnClickListener 
             toggleBoot();
         } else if (id == R.id.btnHin2nClearLog) {
             clearLogs();
+        } else if (id == R.id.btnHin2nCopyLog) {
+            copyLog();
         } else if (id == R.id.btnHin2nBack) {
             finish();
         }
@@ -315,6 +320,26 @@ public class Hin2nActivity extends BaseActivity implements View.OnClickListener 
             mLastLog = "";
             tvLog.setText("日志已清空");
         } catch (Throwable ignored) {
+        }
+    }
+
+    /** 一键复制当前日志到系统剪贴板 */
+    private void copyLog() {
+        String text = tvLog.getText() == null ? "" : tvLog.getText().toString();
+        if (text.isEmpty() || "日志加载中...".equals(text) || "日志已清空".equals(text)) {
+            Toast.makeText(this, "暂无可复制的日志", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            if (cm != null) {
+                cm.setPrimaryClip(ClipData.newPlainText("hin2n-log", text));
+                Toast.makeText(this, "日志已复制到剪贴板", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "复制失败：系统剪贴板不可用", Toast.LENGTH_SHORT).show();
+            }
+        } catch (Throwable t) {
+            Toast.makeText(this, "复制失败：" + t.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 

@@ -1,10 +1,28 @@
 {
+  // ============================ 配置存储说明 ============================
+  // 本文件是随 APK 打包的「出厂默认配置」。运行时 TVBox 的全部配置（本节各项 + 设置页全部项
+  // + 接口地址 + 主题 + 开机启动/设为桌面等开关）统一读写保存在设备本地 JSON 文件：
+  //   /data/data/<包名>/files/tvbox-config-local.json
+  // 该本地文件为明文 JSON（每个键形如 {"t":"类型信息","v":"值"}），可直接查看或修改；
+  // 远程 json（remoteConfigUrl）只负责下发/覆盖，最终仍落盘到该本地文件。
+
   // ============================ 远程配置接口 ============================
   // 远程 json 地址：配置后，启动时会尝试拉取远程 json 并覆盖「除设置页(settings) 和 n2n(hin2n) 之外」
   // 的所有配置段（notice/home/tkp2p/themes/entries/topEntries/homeEntries/upgrade/api/live/epg/proxy 等）。
   // 设置页与 n2n 的配置永远只读写本地内置 json，不被远程覆盖。
   // 留空或远程无法访问时，全部使用下方内置 json。
   "remoteConfigUrl": "",
+
+  // 是否使用远程 json 覆盖「配置界面的所有配置」（设置页全部项 + bootStart + setAsLauncher
+  // + api/live/epg/proxy 接口地址）。仅当本开关为 true 且远程接口正常访问时，远程配置强制
+  // 覆盖用户在设置页的手动修改；false（默认）时远程不碰用户设置，上述项只在用户未配置时作为默认值。
+  "useRemoteConfig": false,
+
+  // 设为系统桌面：启用时把 TVBox 作为系统桌面 —— 设备已 root 时直接调用系统服务
+  // （pm disable-user 禁用原来的系统桌面 + pm set-home-activity 设为默认桌面），
+  // 无 root 时退回系统桌面选择器/系统「默认桌面」设置页；设置页「设为桌面」开关可改。
+  // 取消后重新启用原桌面并恢复为默认桌面。
+  "setAsLauncher": false,
 
   // ============================ 公告（所有界面可显示，含直播） ============================
   "notice": {
@@ -82,7 +100,7 @@
   // ============================ 全局 ============================
   "checkInterval": 30,                 // 界面定时刷新间隔（分钟）
   "ua": "",                            // 全局 UA，空=内置浏览器 UA（webview 直播源同样使用）
-  "bootStart": false,                  // 开机自动启动 TVBox（在 设置-内置配置 中也可切换）
+  "bootStart": true,                   // 开机自动启动 TVBox：默认开启；显式写 false（内置或远程 json）可禁用
   "hin2nEntry": true,                  // 首页是否显示「组网」固定入口（仅当下方 topEntries/homeEntries
                                        // 未配置或为空数组时生效；数组非空时以数组内容为准）
 
@@ -140,8 +158,9 @@
   // （顶部显示下载进度）。apkUrl 留空且未安装时，仅提示「未安装」。组网配置（社区/超节点/开机自连
   // 等）全部在 hin2n App 内维护，与本文件无关。
   "hin2n": {
-    "apkUrl": "https://github.com/tianku1985/tvbox-n2n/releases/latest/download/hin2n-latest.apk"
-                                       // hin2n App 的 APK 下载地址（默认指向本仓库最新 Release 的固定名产物）
+    "apkUrl": "https://github.com/tianku1985/tvbox-n2n/releases/download/hin2n-latest/hin2n-latest.apk"
+                                       // hin2n App 的 APK 下载地址（指向固定 tag "hin2n-latest" 的固定名产物，
+                                       // 由独立工作流 hin2n.yml 发布，与 TVBox 版本互不干扰）
   },
 
   // ============================ 首页自定义入口（旧版，仅第三方 App，作用于顶栏） ============================

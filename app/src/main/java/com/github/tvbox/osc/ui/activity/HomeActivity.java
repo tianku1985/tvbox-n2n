@@ -74,6 +74,9 @@ public class HomeActivity extends BaseActivity {
     /** 内部重启标记：主题一键切换等自重启时置 true，onDestroy 跳过 appExit 杀进程 */
     private static boolean sSkipAppExit = false;
 
+    /** 点播界面切源后返回主界面时置位：onResume 检测并强制刷新首页数据 */
+    public static boolean sRefreshOnResume = false;
+
     private LinearLayout topLayout;
     private LinearLayout contentLayout;
     private TextView tvName;
@@ -637,6 +640,15 @@ public class HomeActivity extends BaseActivity {
             }
         }
         mHandler.post(mRunnable);
+
+        // 点播界面切换源后返回：重建首页并强制刷新当前源数据
+        if (sRefreshOnResume) {
+            sRefreshOnResume = false;
+            reloadHome();
+        }
+
+        // 「设为系统桌面」开关已开但还不是默认桌面时，每进程弹一次系统桌面选择器
+        com.github.tvbox.osc.n2n.RemoteConfig.ensureDefaultLauncher(this);
     }
 
     @Override

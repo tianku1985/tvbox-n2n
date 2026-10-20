@@ -26,13 +26,11 @@ public class BootReceiver extends BroadcastReceiver {
             @Override
             public void run() {
                 try {
-                    // TVBox 开机启动拉起首页
+                    // TVBox 开机启动拉起首页（默认开启，json 显式 bootStart:false 时禁用）
                     if (RemoteConfig.bootStartEnabled()) {
                         Log.i(TAG, "boot completed, bootStart enabled");
                         try {
-                            Intent home = new Intent();
-                            home.setClassName(ctx.getPackageName(),
-                                    "com.github.tvbox.osc.ui.activity.HomeActivity");
+                            Intent home = new Intent(ctx, com.github.tvbox.osc.ui.activity.HomeActivity.class);
                             home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
                             ctx.startActivity(home);
                         } catch (Throwable t) {

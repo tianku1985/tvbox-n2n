@@ -1,7 +1,14 @@
 package com.github.tvbox.osc.n2n;
 
 import android.app.Activity;
+import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.os.Build;
+import android.provider.Settings;
+import android.util.Log;
 import android.widget.Toast;
 
 import com.github.tvbox.osc.util.HawkConfig;
@@ -28,6 +35,10 @@ import java.util.List;
  * JSON 结构（所有字段可选，缺省保持本地现状；支持 // 与 /* 注释、尾逗号）：
  * {
  *   "remoteConfigUrl": "https://.../config.json",     // 远程配置地址（空=不启用远程）
+ *   "useRemoteConfig": false,                         // true 且远程可访问时：远程覆盖设置页全部项/
+ *                                                     //   bootStart/setAsLauncher/api/live/epg/proxy
+ *   "bootStart": true,                                // TVBox 开机自启：默认开启；本地/远程 json 写 false 可禁用
+ *   "setAsLauncher": false,                           // 设为系统桌面（有 root 时禁用原桌面并设为默认桌面）
  *   "notice": {                                       // 公告：字符串（旧格式）或对象
  *     "text": "公告文本",
  *     "position": "bottom",                           // top | bottom
@@ -90,8 +101,17 @@ public class RemoteConfig {
     public static final String K_HIN2N = "rc_hin2n_entry";
     public static final String K_BOOT = "n2n_boot_start";      // TVBox 开机自启开关（用户值优先）
     public static final String K_BOOT_DEFAULT_SET = "n2n_boot_default_set"; // 内置默认值是否已写入过
+    public static final String K_LAUNCHER = "rc_set_launcher";            // 设为系统桌面开关（用户值优先）
+    public static final String K_LAUNCHER_DEFAULT_SET = "rc_set_launcher_default_set"; // 内置默认值是否已写入过
     /** 最近一次成功拉取的远程配置原文（断网/下次启动兜底） */
     public static final String K_REMOTE_RAW = "rc_remote_raw";
+
+    /**
+     * Launcher 别名类名后缀（清单中为 {@code android:name=".LauncherAlias"}）。
+     * 同时保留源码包名展开方式作为兜底候选。
+     */
+    private static final String LAUNCHER_ALIAS_SUFFIX = ".LauncherAlias";
+    private static final String LAUNCHER_ALIAS_FIXED = "com.github.tvbox.osc.LauncherAlias";
 
     /** 内置配置（app/src/main/assets/ 下，随 APK 打包） */
     private static final String LOCAL_ASSET = "tvbox-config.json";
@@ -186,7 +206,151 @@ public class RemoteConfig {
     }
 
     public static boolean bootStartEnabled() {
-        return Hawk.get(K_BOOT, false);
+        // 默认开启：随开机自动启动 TVBox；JSON（内置或远程）显式配置 "bootStart": false 时禁用
+        return Hawk.get(K_BOOT, true);
+    }
+
+    /** 是否使用远程配置覆盖本地设置（内置 JSON "useRemoteConfig" 字段，远程可访问时才生效） */
+    public static boolean useRemoteConfig() {
+        try {
+            return sConfig != null && sConfig.optBoolean("useRemoteConfig", false);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    // ==================== 设为系统桌面 ====================
+
+    /** 设为系统桌面开关（JSON "setAsLauncher" 默认值 + 设置页用户开关） */
+    public static boolean launcherEnabled() {
+        return Hawk.get(K_LAUNCHER, false);
+    }
+
+    /** 设置页切换「设为系统桌面」：写入开关并同步 Launcher 别名状态 */
+    public static void setLauncherEnabled(Context ctx, boolean on) {
+        Hawk.put(K_LAUNCHER, on);
+        applyLauncherComponent(ctx);
+    }
+
+    /**
+     * 按当前开关启用/停用 Launcher 别名。
+     * 启用后 TVBox 出现在系统桌面选择器；停用后 Android 自动清除本应用默认桌面资格，
+     * 系统回退到原桌面（或弹出选择器让用户确认）。
+     *
+     * <p>组件名兼容两种展开方式（清单里写的是 {@code android:name=".LauncherAlias"}）：
+     * 清单合并既可能按源码包名展开为 {@code com.github.tvbox.osc.LauncherAlias}，
+     * 也可能按 applicationId 展开为 {@code <包名>.LauncherAlias}。
+     * 这里两个候选都试，且先用 getActivityInfo 确认组件确实存在再设置，
+     * 避免 mutate 不存在的组件导致「设为桌面」静默失效。</p>
+     */
+    public static void applyLauncherComponent(Context ctx) {
+        if (ctx == null) {
+            return;
+        }
+        int state = launcherEnabled()
+                ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                : PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
+        String[] candidates = new String[]{
+                ctx.getPackageName() + LAUNCHER_ALIAS_SUFFIX,
+                LAUNCHER_ALIAS_FIXED
+        };
+        for (String alias : candidates) {
+            try {
+                PackageManager pm = ctx.getPackageManager();
+                ComponentName cn = new ComponentName(ctx.getPackageName(), alias);
+                // 组件必须已在清单中声明，否则设置会抛异常（getActivityInfo 可命中停用组件）
+                pm.getActivityInfo(cn, 0);
+                pm.setComponentEnabledSetting(cn, state, PackageManager.DONT_KILL_APP);
+                return;
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
+    /** 当前是否已是系统默认桌面 */
+    public static boolean isDefaultLauncher(Context ctx) {
+        try {
+            Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+            ResolveInfo ri = ctx.getPackageManager().resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY);
+            return ri != null && ri.activityInfo != null
+                    && ctx.getPackageName().equals(ri.activityInfo.packageName);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /** 每进程最多自动弹一次桌面选择器（开关已开但还不是默认桌面时） */
+    private static boolean sLauncherPrompted = false;
+
+    /** 主界面 onResume 调用：开关已开但未设为默认桌面时，root 自动接管，否则弹一次系统桌面选择器 */
+    public static void ensureDefaultLauncher(Activity act) {
+        if (act == null || sLauncherPrompted) {
+            return;
+        }
+        if (!launcherEnabled() || isDefaultLauncher(act)) {
+            return;
+        }
+        sLauncherPrompted = true;
+        if (LauncherHelper.hasRoot()) {
+            // 有 root：直接调用系统服务禁用原桌面并设为默认桌面，不再打扰用户
+            LauncherHelper.setAsDefaultLauncher(act);
+        } else {
+            promptChooseLauncher(act);
+        }
+    }
+
+    /**
+     * 唤起系统「选择/设置默认桌面」入口。
+     *
+     * <p>两个关键点：</p>
+     * <ul>
+     *   <li>不能用 {@code Intent.createChooser}：它只会让用户挑一个应用「打开一次」，
+     *       不写入默认桌面，按 HOME 仍回原桌面——这也是「设为桌面无效」的原因之一；</li>
+     *   <li>若设备已存在默认桌面，直接启动 CATEGORY_HOME 只会把原桌面拉起来（同样看着像没反应），
+     *       所以此时应跳系统「主屏幕/默认桌面」设置页让用户显式切换；
+     *       当前没有默认桌面时，直接启动 HOME intent 才会弹出带「始终/仅一次」的系统弹窗。</li>
+     * </ul>
+     */
+    public static void promptChooseLauncher(Activity act) {
+        if (act == null || act.isFinishing() || (Build.VERSION.SDK_INT >= 17 && act.isDestroyed())) {
+            return;
+        }
+        boolean hasDefault = hasOtherDefaultLauncher(act);
+        if (hasDefault && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP
+                && startSafe(act, new Intent(Settings.ACTION_HOME_SETTINGS))) {
+            return;
+        }
+        Intent home = new Intent(Intent.ACTION_MAIN);
+        home.addCategory(Intent.CATEGORY_HOME);
+        home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        if (startSafe(act, home)) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            startSafe(act, new Intent(Settings.ACTION_HOME_SETTINGS));
+        }
+    }
+
+    private static boolean startSafe(Activity act, Intent intent) {
+        try {
+            act.startActivity(intent);
+            return true;
+        } catch (Throwable th) {
+            Log.i("RemoteConfig", "start " + intent.getAction() + " failed: " + th.getMessage());
+            return false;
+        }
+    }
+
+    /** 设备上是否已存在「非本应用」的默认桌面 */
+    private static boolean hasOtherDefaultLauncher(Context ctx) {
+        try {
+            Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+            ResolveInfo ri = ctx.getPackageManager().resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY);
+            return ri != null && ri.activityInfo != null
+                    && !ctx.getPackageName().equals(ri.activityInfo.packageName);
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     /** 读取已缓存的自定义入口列表（旧版 "entries"，仅 app 类型，顶栏兜底） */
@@ -270,6 +434,8 @@ public class RemoteConfig {
                 JSONObject cfg = parseLoose(new String(data, "UTF-8"));
                 sConfig = cfg;
                 apply(ctx.getApplicationContext(), cfg, false);
+                // 每次启动同步「设为系统桌面」开关到 Launcher 别名状态
+                applyLauncherComponent(ctx.getApplicationContext());
 
                 // 远程接口：拉取成功后覆盖非设置/非n2n段；失败则保持内置
                 String remoteUrl = cfg.optString("remoteConfigUrl", "").trim();
@@ -410,7 +576,7 @@ public class RemoteConfig {
      * 宽容解析：除标准 JSON 外，还兼容 jsonc 写法 ——
      * 去掉 UTF-8 BOM、剥除 // 行注释与 /* 块注释（字符串内不剥，URL 不受影响）、容忍尾逗号。
      */
-    private static JSONObject parseLoose(String raw) throws Exception {
+    static JSONObject parseLoose(String raw) throws Exception {
         if (raw == null) {
             throw new Exception("empty config");
         }
@@ -463,11 +629,15 @@ public class RemoteConfig {
 
     /**
      * 解析配置并落盘。
-     * @param remoteOnly true=来自远程配置，只覆盖非设置(settings)/非n2n(hin2n)段，
-     *                   且不覆盖 TVBox 开机自启(bootStart，属于设置页项)；
-     *                   false=内置配置，全部段应用。
+     * @param remoteOnly true=来自远程配置：默认只覆盖非设置(settings)/非n2n(hin2n)段，
+     *                   且不覆盖 TVBox 开机自启(bootStart)/设为桌面(setAsLauncher)；
+     *                   但内置 JSON "useRemoteConfig"=true 且远程可访问时，远程强制覆盖
+     *                   settings/bootStart/setAsLauncher 与接口地址等用户配置。
+     *                   false=内置配置，全部段应用（设置项按 putIfAbsent 语义写入默认值）。
      */
     private static void apply(Context ctx, JSONObject j, boolean remoteOnly) {
+        // 远程覆盖模式：内置 JSON 开启 useRemoteConfig 且本次远程拉取成功（走到这里即可访问）
+        boolean forceRemote = remoteOnly && useRemoteConfig();
         if (j.has("notice")) {
             Object n = j.opt("notice");
             if (n instanceof JSONObject) {
@@ -518,24 +688,50 @@ public class RemoteConfig {
         if (themes != null && themes.length() > 0) {
             ThemeManager.updateThemes(themes);
         }
-        // 以下三项属于用户本地设置，远程配置不覆盖：
+        // 开机启动：默认开启（bootStartEnabled 缺省 true）。远程 json 只要显式写了 bootStart
+        // 就以远程为准并每次拉取同步——满足「本地/远程 json 未禁用则默认开机启动」；
+        // 远程未声明该字段时保留用户在设置页的选择。
+        if (remoteOnly && j.has("bootStart")) {
+            Hawk.put(K_BOOT, j.optBoolean("bootStart", true));
+            Hawk.put(K_BOOT_DEFAULT_SET, true);
+        }
+        // 以下四项属于用户本地设置，默认远程配置不覆盖：
         //   - bootStart（TVBox 开机自启，设置页项）
+        //   - setAsLauncher（设为系统桌面，设置页项）
         //   - settings（设置页所有项）
         //   - hin2n（n2n 组网模块配置）
+        // 例外：内置 JSON "useRemoteConfig"=true 且远程可访问（forceRemote）时，远程强制覆盖。
         if (!remoteOnly) {
             if (j.has("bootStart") && !Hawk.get(K_BOOT_DEFAULT_SET, false)) {
                 Hawk.put(K_BOOT, j.optBoolean("bootStart", false));
                 Hawk.put(K_BOOT_DEFAULT_SET, true);
             }
+            if (j.has("setAsLauncher") && !Hawk.get(K_LAUNCHER_DEFAULT_SET, false)) {
+                Hawk.put(K_LAUNCHER, j.optBoolean("setAsLauncher", false));
+                Hawk.put(K_LAUNCHER_DEFAULT_SET, true);
+            }
             JSONObject st = j.optJSONObject("settings");
             if (st != null) {
-                applySettingsDefaults(st);
+                applySettingsDefaults(st, false);
+            }
+        } else if (forceRemote) {
+            // 远程覆盖模式：强制覆盖用户已修改的设置
+            if (j.has("bootStart")) {
+                Hawk.put(K_BOOT, j.optBoolean("bootStart", false));
+            }
+            if (j.has("setAsLauncher")) {
+                Hawk.put(K_LAUNCHER, j.optBoolean("setAsLauncher", false));
+                applyLauncherComponent(ctx);
+            }
+            JSONObject st = j.optJSONObject("settings");
+            if (st != null) {
+                applySettingsDefaults(st, true);
             }
         }
-        applyEndpoint(ctx, j, "api", HawkConfig.API_URL, "点播接口");
-        applyEndpoint(ctx, j, "live", HawkConfig.LIVE_URL, "直播接口");
-        applyEndpoint(ctx, j, "epg", HawkConfig.EPG_URL, "EPG 接口");
-        applyEndpoint(ctx, j, "proxy", HawkConfig.PROXY_SERVER, "代理地址");
+        applyEndpoint(ctx, j, "api", HawkConfig.API_URL, "点播接口", forceRemote);
+        applyEndpoint(ctx, j, "live", HawkConfig.LIVE_URL, "直播接口", forceRemote);
+        applyEndpoint(ctx, j, "epg", HawkConfig.EPG_URL, "EPG 接口", forceRemote);
+        applyEndpoint(ctx, j, "proxy", HawkConfig.PROXY_SERVER, "代理地址", forceRemote);
         if (j.has("theme")) {
             int ti = ThemeManager.indexFromConfig(j.optString("theme", ""));
             if (ti >= 0) {
@@ -546,68 +742,72 @@ public class RemoteConfig {
 
     /**
      * 设置页默认值（JSON "settings" 段 → Hawk）。键名与含义见 assets/tvbox-config.json 注释。
-     * 全部为 putIfAbsent 语义：用户在设置页修改过（Hawk 已有该键）后，JSON 不再覆盖。
+     * force=false 为 putIfAbsent 语义：用户在设置页修改过（Hawk 已有该键）后，JSON 不再覆盖；
+     * force=true（useRemoteConfig 开启且远程可访问）时强制覆盖用户值。
      */
-    private static void applySettingsDefaults(JSONObject st) {
+    private static void applySettingsDefaults(JSONObject st, boolean force) {
         // ---- 首页选项 ----
-        putBool(st, "homeShowSource", HawkConfig.HOME_SHOW_SOURCE);   // 数据源名称显示
-        putBool(st, "homeSearchPosition", HawkConfig.HOME_SEARCH_POSITION); // 搜索按钮位置
-        putBool(st, "homeMenuPosition", HawkConfig.HOME_MENU_POSITION);     // 设置按钮位置
-        putInt(st, "homeRec", HawkConfig.HOME_REC);                   // 首页推荐: 0=豆瓣 1=站点 2=历史
-        putInt(st, "homeNum", HawkConfig.HOME_NUM);                   // 历史条数档位 0-4
-        putBool(st, "homeRecStyle", HawkConfig.HOME_REC_STYLE);       // 首页默认多行（网格）
-        putBool(st, "homeDefaultShow", HawkConfig.HOME_DEFAULT_SHOW); // 启动直接进直播
+        putBool(st, "homeShowSource", HawkConfig.HOME_SHOW_SOURCE, force);   // 数据源名称显示
+        putBool(st, "homeSearchPosition", HawkConfig.HOME_SEARCH_POSITION, force); // 搜索按钮位置
+        putBool(st, "homeMenuPosition", HawkConfig.HOME_MENU_POSITION, force);     // 设置按钮位置
+        putInt(st, "homeRec", HawkConfig.HOME_REC, force);                   // 首页推荐: 0=豆瓣 1=站点 2=历史
+        putInt(st, "homeNum", HawkConfig.HOME_NUM, force);                   // 历史条数档位 0-4
+        putBool(st, "homeRecStyle", HawkConfig.HOME_REC_STYLE, force);       // 首页默认多行（网格）
+        putBool(st, "homeDefaultShow", HawkConfig.HOME_DEFAULT_SHOW, force); // 启动直接进直播
         // ---- 播放器选项 ----
-        putBool(st, "showPreview", HawkConfig.SHOW_PREVIEW);          // 窗口预览
-        putInt(st, "playScale", HawkConfig.PLAY_SCALE);               // 画面缩放 0-5
-        putInt(st, "backgroundPlayType", HawkConfig.BACKGROUND_PLAY_TYPE); // 后台播放 0/1/2
-        putInt(st, "playType", HawkConfig.PLAY_TYPE);                 // 播放器类型
-        putStr(st, "ijkCodec", HawkConfig.IJK_CODEC);                 // IJK 解码方式
-        putBool(st, "ijkCachePlay", HawkConfig.IJK_CACHE_PLAY);       // IJK 边播边缓存
-        putInt(st, "exoRenderer", HawkConfig.EXO_RENDERER);           // Exo 扩展渲染器索引
-        putInt(st, "exoRendererMode", HawkConfig.EXO_RENDERER_MODE);  // Exo 渲染器模式索引
-        putInt(st, "vodPlayerPreferred", HawkConfig.VOD_PLAYER_PREFERRED); // 点播首选播放器索引
-        putInt(st, "playRender", HawkConfig.PLAY_RENDER);             // 渲染方式 0=TextureView 1=SurfaceView
-        putBool(st, "videoPurify", HawkConfig.VIDEO_PURIFY);          // 视频去广告（嗅探净化）
+        putBool(st, "showPreview", HawkConfig.SHOW_PREVIEW, force);          // 窗口预览
+        putInt(st, "playScale", HawkConfig.PLAY_SCALE, force);               // 画面缩放 0-5
+        putInt(st, "backgroundPlayType", HawkConfig.BACKGROUND_PLAY_TYPE, force); // 后台播放 0/1/2
+        putInt(st, "playType", HawkConfig.PLAY_TYPE, force);                 // 播放器类型
+        putStr(st, "ijkCodec", HawkConfig.IJK_CODEC, force);                 // IJK 解码方式
+        putBool(st, "ijkCachePlay", HawkConfig.IJK_CACHE_PLAY, force);       // IJK 边播边缓存
+        putInt(st, "exoRenderer", HawkConfig.EXO_RENDERER, force);           // Exo 扩展渲染器索引
+        putInt(st, "exoRendererMode", HawkConfig.EXO_RENDERER_MODE, force);  // Exo 渲染器模式索引
+        putInt(st, "vodPlayerPreferred", HawkConfig.VOD_PLAYER_PREFERRED, force); // 点播首选播放器索引
+        putInt(st, "playRender", HawkConfig.PLAY_RENDER, force);             // 渲染方式 0=TextureView 1=SurfaceView
+        putBool(st, "videoPurify", HawkConfig.VIDEO_PURIFY, force);          // 视频去广告（嗅探净化）
         // ---- 系统选项 ----
-        putInt(st, "homeLocale", HawkConfig.HOME_LOCALE);             // 语言 0=中文 1=英文
-        putInt(st, "themeSelect", HawkConfig.THEME_SELECT);           // 主题索引（缺省值）
-        putInt(st, "searchView", HawkConfig.SEARCH_VIEW);             // 搜索展示 0=文字 1=缩略图
-        putBool(st, "parseWebview", HawkConfig.PARSE_WEBVIEW);        // 嗅探内核
-        putInt(st, "dohUrl", HawkConfig.DOH_URL);                     // 安全 DNS
-        putBool(st, "fastSearchMode", HawkConfig.FAST_SEARCH_MODE);   // 聚合搜索（快搜）
-        putBool(st, "debugOpen", HawkConfig.DEBUG_OPEN);              // 调试模式开关
+        putInt(st, "homeLocale", HawkConfig.HOME_LOCALE, force);             // 语言 0=中文 1=英文
+        putInt(st, "themeSelect", HawkConfig.THEME_SELECT, force);           // 主题索引（缺省值）
+        putInt(st, "searchView", HawkConfig.SEARCH_VIEW, force);             // 搜索展示 0=文字 1=缩略图
+        putBool(st, "parseWebview", HawkConfig.PARSE_WEBVIEW, force);        // 嗅探内核
+        putInt(st, "dohUrl", HawkConfig.DOH_URL, force);                     // 安全 DNS
+        putBool(st, "fastSearchMode", HawkConfig.FAST_SEARCH_MODE, force);   // 聚合搜索（快搜）
+        putBool(st, "debugOpen", HawkConfig.DEBUG_OPEN, force);              // 调试模式开关
     }
 
-    private static void putBool(JSONObject st, String key, String hawkKey) {
+    private static void putBool(JSONObject st, String key, String hawkKey, boolean force) {
         try {
-            if (st.has(key) && !Hawk.contains(hawkKey)) {
+            if (st.has(key) && (force || !Hawk.contains(hawkKey))) {
                 Hawk.put(hawkKey, st.optBoolean(key));
             }
         } catch (Throwable ignored) {
         }
     }
 
-    private static void putInt(JSONObject st, String key, String hawkKey) {
+    private static void putInt(JSONObject st, String key, String hawkKey, boolean force) {
         try {
-            if (st.has(key) && !Hawk.contains(hawkKey)) {
+            if (st.has(key) && (force || !Hawk.contains(hawkKey))) {
                 Hawk.put(hawkKey, st.optInt(key));
             }
         } catch (Throwable ignored) {
         }
     }
 
-    private static void putStr(JSONObject st, String key, String hawkKey) {
+    private static void putStr(JSONObject st, String key, String hawkKey, boolean force) {
         try {
-            if (st.has(key) && !Hawk.contains(hawkKey)) {
+            if (st.has(key) && (force || !Hawk.contains(hawkKey))) {
                 Hawk.put(hawkKey, st.optString(key, ""));
             }
         } catch (Throwable ignored) {
         }
     }
 
-    /** 仅当用户尚未配置时把 JSON 中的地址作为默认值写入；用户配置过后不再覆盖。 */
-    private static void applyEndpoint(final Context app, JSONObject j, String key, String hawkKey, String label) {
+    /**
+     * 仅当用户尚未配置时把 JSON 中的地址作为默认值写入；用户配置过后不再覆盖。
+     * force=true（useRemoteConfig 开启且远程可访问）时强制覆盖用户值。
+     */
+    private static void applyEndpoint(final Context app, JSONObject j, String key, String hawkKey, String label, boolean force) {
         if (!j.has(key)) {
             return;
         }
@@ -615,12 +815,14 @@ public class RemoteConfig {
         if (v.isEmpty()) {
             return;
         }
-        String cur = Hawk.get(hawkKey, "");
-        if (cur != null && !cur.trim().isEmpty()) {
-            return;
+        if (!force) {
+            String cur = Hawk.get(hawkKey, "");
+            if (cur != null && !cur.trim().isEmpty()) {
+                return;
+            }
         }
         Hawk.put(hawkKey, v);
-        toast(app, label + "已从内置配置读取，重启后生效");
+        toast(app, label + (force ? "已按远程配置更新，重启后生效" : "已从内置配置读取，重启后生效"));
     }
 
     private static void toast(final Context app, final String msg) {
