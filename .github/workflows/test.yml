@@ -4,6 +4,9 @@ name: TVBox
 # hin2n 组网 App 的构建已拆分到独立工作流 hin2n.yml，与本文件互不干扰。
 
 on:
+  push:
+    branches:
+      - main
   schedule:
     - cron: 59 6 * * *
   workflow_dispatch:
@@ -91,12 +94,12 @@ jobs:
           # 只构建 :app（TVBox 各 flavor）；hin2n 组网 App 由 hin2n.yml 独立构建
           # 输出 tee 落盘，失败时把真正的编译错误行直接打在日志尾部，便于一眼看到
           set +e
-          ./gradlew :app:assembleRelease --build-cache --parallel --daemon --warning-mode all 2>&1 | tee gradle.log
+          ./gradlew :app:assembleRelease --build-cache --parallel --daemon --warning-mode all --stacktrace 2>&1 | tee gradle.log
           rc=${PIPESTATUS[0]}
           set -e
           if [ "$rc" -ne 0 ]; then
-            echo "===== 编译错误行（error: / e: ）====="
-            grep -nE "error:|^e: |Execution failed for task" gradle.log | tail -n 60 || true
+            echo "===== 编译错误行（error: / e: / Caused by:）====="
+            grep -nE "error:|^e: |Execution failed for task|Caused by:" gradle.log | tail -n 80 || true
             exit "$rc"
           fi
       - name: 诊断 R 资源（仅构建失败时）
