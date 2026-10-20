@@ -12,11 +12,12 @@
 //
 // 【覆盖/生效规则】
 //   · notice/home/tkp2p/theme/themes/entries/topEntries/homeEntries/upgrade/
-//     hin2nEntry/checkInterval/ua：每次启动按本文件应用（改完重装即生效）；
+//     hin2nEntry/checkInterval/ua/secretKey/donate：每次启动按本文件应用（改完重装即生效）；
 //   · api/live/epg/proxy：仅当用户从未在 TVBox 内手动配置过对应接口时作为默认值，
 //       用户一旦手动配置，该接口不再被文件覆盖（四项互不影响）；
-//   · bootStart（TVBox 开机自启）/ setAsLauncher（设为系统桌面）：只作默认值写入一次，
-//       之后以设置页开关为准；
+//   · bootStart（TVBox 开机自启）：只作默认值写入一次，之后以设置页开关为准（出厂默认开）；
+//   · setAsLauncher（设为系统桌面）：默认值写入走两轮守卫（首轮 + 对老设备补写一轮，
+//       出厂默认开启后存量设备升级也生效一次），之后以设置页开关为准（出厂默认开）；
 //   · settings（设置页默认值）：仅当用户从未在设置页修改过该项时写入一次，
 //       用户一旦在设置页更改，该项永远以用户设定为准；
 //   · useRemoteConfig=true 且远程接口（remoteConfigUrl）可正常访问时例外：
@@ -26,13 +27,40 @@
 //       播种一次，之后以组网界面内的用户增删改为准；
 //   · 所有字段均可选，不写即保持默认。
 //
+// 【接口加密下发（对接方必读）】
+//   本系统所有接收接口（本内置配置 / 远程配置 remoteConfigUrl / 点播 api / 直播 live /
+//   EPG / 自定义点播 type=vod 的 target / 升级检查 upgrade.checkUrl）均支持密文下发：
+//   内容是 json（或 jsonc / 直播 txt）直接解析，不是 json 自动解密后加载，用户无感知。
+//   支持两种密文形态（自动识别）：
+//     ① ke 前缀模式（推荐，App 端零配置）：
+//        密文 = ke(19 位小写 hex) + bin2hex(AES-128-ECB(数据, ke 前 16 位))
+//        ke = substr(md5(time() . 自定义串), 13) —— 密钥随密文自带，
+//        完整 PHP 加密端示例见 docs/tvbox-dev.md §3.11；
+//     ② 固定密钥模式：
+//        密文 = bin2hex(AES-128-ECB(数据, 秘钥前 16 字节))（纯 hex、偶数长度），
+//        秘钥取本文件 "secretKey" 字段（非空优先），空时回退 Java 源码
+//        ConfigCrypto.java 中的 SECRET_KEY 常量（编译期自定义位置）。
+//   判定规则：trim 后以 { [ / 开头或含 #EXTM3U/#genre# = 明文；2423 前缀 = TVBox 原生
+//   CBC 格式不处理；其余纯小写 hex 才尝试解密，解密结果需以 { [ 开头或含直播标记。
+//   注意：assets 内置文件本身只允许明文或 ① ke 前缀模式加密（固定密钥模式解密发生在
+//   secretKey 落盘之前，读不到秘钥）。
+//
+// 【接口请求携带本机参数（对接方必读）】
+//   所有远程接口请求发起前，自动在 URL 查询串拼接本机信息（URLEncoder 编码，
+//   已存在同名参数不重复添加，assets/file 等本地路径不拼接）：
+//     mac=本机MAC（eth0/wlan0优先，冒号大写，失败兜底ANDROID_ID） &ip=本机IPv4
+//     &model=机型 &brand=品牌 &device=设备名 &sdk=API级别 &release=系统版本 &app=应用版本
+//   服务端用 $_GET['mac'] 等即可按设备下发不同数据（例如酒店按盒子下发专属片单）。
+//
 // 【颜色格式】统一使用 #RRGGBB 或 #AARRGGBB（AA=透明度十六进制，如 B3≈70%）。
 // 【已删除字段】version / apkUrl / hin2nUrl（远程更新与外部 hin2n APK 已废弃）。
 // ============================================================================
 {
   // ==================== 远程配置接口 ====================
-  // 远程 json 地址：配置后启动时会拉取远程 json，覆盖「除设置页(settings) 和 n2n(hin2n) 之外」
-  // 的所有段（notice/home/tkp2p/themes/entries/topEntries/homeEntries/upgrade/api/live/epg/proxy 等）。
+  // 远程 json 地址：配置后启动时会拉取远程 json（URL 自动拼接 mac/ip 等本机参数），
+  // 覆盖「除设置页(settings) 和 n2n(hin2n) 之外」的所有段（notice/home/tkp2p/themes/
+  // entries/topEntries/homeEntries/upgrade/api/live/epg/proxy/secretKey/donate 等）。
+  // 响应支持密文下发（见文件头【接口加密下发】）；成功时把解密后明文缓存为本机断网兜底。
   // 设置页与 n2n 的配置永远只读写本地内置 json，不被远程覆盖。
   // 留空或远程无法访问时全部使用本文件内置配置。
   "remoteConfigUrl": "",
@@ -44,9 +72,30 @@
   "useRemoteConfig": false,
 
   // 设为系统桌面：true 时把 TVBox 注册为系统桌面候选（替换系统默认桌面，开机/按主页键
-  // 进入 TVBox）。默认值只在首次启动写入一次，之后以「设置 → 设为桌面」开关为准；
-  // 取消后自动停用桌面入口，系统回退到原来的桌面。useRemoteConfig=true 时远程可强制覆盖。
-  "setAsLauncher": false,
+  // 进入 TVBox）。出厂默认开启：默认值经两轮守卫写入（对老设备也补写一次），之后以
+  // 「设置 → 设为桌面」开关为准；取消后自动停用桌面入口，系统回退到原来的桌面。
+  // useRemoteConfig=true 时远程可强制覆盖。
+  "setAsLauncher": true,
+
+  // ==================== 接口加密秘钥（可选） ====================
+  // 固定密钥模式的秘钥（所有接收接口通用，详见文件头【接口加密下发】）：
+  //   密文 = bin2hex(AES-128-ECB(数据, 秘钥前16字节))；每次启动覆盖缓存。
+  //   非空时优先于 Java 源码 ConfigCrypto.java 的 SECRET_KEY 常量；留空 = 用 SECRET_KEY。
+  // ke 前缀模式无需本字段（密钥随密文自带）。本字段可被远程 json 覆盖，便于统一换秘钥。
+  // 注意：本 assets 文件本身只允许明文或 ke 前缀模式加密，不要用固定密钥模式加密本文件。
+  "secretKey": "",
+
+  // ==================== 捐助界面 ====================
+  // 首页「捐助」入口（homeEntries 中 type=page target=donate）打开的界面内容：
+  //   title  顶栏标题，空=「支持我们」
+  //   desc   项目详细介绍（\n 换行），空=用代码内置介绍文案
+  //   image  自定义图片/收款二维码：http(s) 图片地址 / assets/图片路径 / 内置 drawable 名；
+  //          空或加载失败=不显示图片（只显示介绍文字）
+  "donate": {
+    "title": "支持我们",
+    "desc": "",
+    "image": ""
+  },
 
   // ==================== 公告（首页/直播/点播均可显示） ====================
   // 最简写法："notice": "公告文本"；要自定义样式时写成下面的对象。
@@ -135,6 +184,7 @@
 
   // ==================== 接口地址（仅作未配置时的默认值） ====================
   // 只在用户从未在 TVBox 内手动配置过该接口时写入一次；手动配置后永不覆盖（四项互不影响）。
+  // 接口均支持密文下发（见文件头【接口加密下发】），远程请求自动携带 mac/ip 等本机参数。
   "api": "",                           // 点播源接口（JSON 格式见 docs/vod.config.example.json）
   "live": "",                          // 直播源接口（txt / m3u / json）
   "epg": "",                           // 节目单接口
@@ -143,7 +193,8 @@
   // ==================== 全局 ====================
   "checkInterval": 30,                 // 界面定时刷新间隔（分钟，最小 1）
   "ua": "",                            // 全局 UA（OkHttp 请求 + webview/tkp2p 直播页）；空=内置浏览器 UA
-  "bootStart": false,                  // TVBox 开机自启（设置-内置配置 中可切换；默认值只写一次）
+  "bootStart": true,                   // TVBox 开机自启（出厂默认开；设置-内置配置 中可切换；
+                                       //   默认值只写一次，显式写 false 可默认禁用）
   "hin2nEntry": true,                  // 首页是否显示「组网」固定入口（仅当 topEntries/homeEntries
                                        // 未配置或为空数组时生效；数组非空时以数组内容为准）
 
@@ -185,9 +236,10 @@
   // ==================== TVBox 自检升级（秒开酒店 IPTV 桌面风格） ====================
   // 启动进入首页后检查：远程 versionCode 大于当前版本 → 弹窗提示 → 确认后后台下载 APK
   // （顶部进度条）→ Android 8+ 引导「未知来源」权限 → 调起系统安装。每个版本每次启动只提示一次。
+  // checkUrl 请求自动拼接本机参数、响应支持密文下发。
   // 不配 url（或 versionCode<=0）则不提示；整段删除即关闭升级检查。
   "upgrade": {
-    "checkUrl": "",                    // 远程版本信息地址（优先），返回与本段同结构的 json；
+    "checkUrl": "",                    // 远程版本信息地址（优先），返回与本段同结构的 json（可密文）；
                                        //   如 "https://example.com/tvbox-version.json"
     "versionCode": 0,                  // 内联模式（无 checkUrl 时）：新版本号，> 当前版本才提示
     "versionName": "",                 // 新版本名（仅显示用，如 "1.0.2"）
@@ -225,13 +277,15 @@
   //   type   page=打开 TVBox 界面 | feature=内置功能 | app=打开其他 App | vod=自定义点播界面
   //   target type=page   : vod（点播）| live（直播）| search（搜索）| fastsearch（聚合搜索）|
   //                        history（历史）| collect（收藏）| push（推送）| setting（设置）|
-  //                        drive（文件）| apps（应用）| hin2n（组网）
+  //                        drive（文件）| apps（应用）| hin2n（组网）|
+  //                        system（安卓系统设置，固件裁掉时提示无入口）|
+  //                        donate（捐助界面，内容见上方 donate 段）
   //          type=feature: siteSwitch（切数据源）| themeSwitch（切主题）| styleSwitch（单双排）|
   //                        clearCache（清缓存）| reloadHome（重载首页）| wifi（系统 WiFi 设置）|
   //                        date（系统日期设置）
-  //          type=vod    : 数据接口地址（http(s):// 或 assets/xxx.json 或 file:///绝对路径），
-  //                        格式与点播 api json 完全一致（取其中 sites），但仅供该新界面使用，
-  //                        app 其它配置不调用，退出界面即恢复
+  //          type=vod    : 数据接口地址（http(s):// 或 assets/xxx.json 或 file:///绝对路径；
+  //                        支持密文下发、http 请求自动拼本机参数），格式与点播 api json 完全
+  //                        一致（取其中 sites），但仅供该新界面使用，app 其它配置不调用，退出界面即恢复
   //   pkg    type=app 时的包名；未安装且配 url 时后台下载安装（顶部进度条）
   //   icon   http(s) 图片地址或内置 drawable 名。全部可用内置图标：
   //          hm_search(搜索) hm_vod(点播) hm_live(直播) hm_history(历史) hm_fav(收藏)
@@ -260,10 +314,11 @@
   ],
 
   // ==================== 首页历史一行入口（homeEntries） ====================
-  // 首页「历史/点播/直播/搜索/收藏/推送/文件/设置/组网」一行的内容/顺序/图标全部由本数组决定；
-  // 默认列出全部内置入口（全部显示）。关闭某个入口 = 删除（或注释掉）该条；字段与 topEntries 相同。
-  // 把本字段整个删除或改成空数组 []（里面只有注释也算空）= 回退到代码内置默认一行。
-  // 该行入口过多超出屏幕时可左右滑动；长按「历史」入口可切换首页推荐模式并重载。
+  // 首页「历史/点播/直播/搜索/收藏/推送/文件/设置/组网/系统/捐助」一行的内容/顺序/图标
+  // 全部由本数组决定；默认列出全部内置入口（全部显示）。关闭某个入口 = 删除（或注释掉）该条；
+  // 字段与 topEntries 相同。把本字段整个删除或改成空数组 []（里面只有注释也算空）=
+  // 回退到代码内置默认一行。该行入口过多超出屏幕时可左右滑动；
+  // 长按「历史」入口可切换首页推荐模式并重载。
   "homeEntries": [
     { "name": "历史", "type": "page", "target": "history", "icon": "hm_history" },
     { "name": "点播", "type": "page", "target": "vod",     "icon": "hm_vod" },
@@ -273,7 +328,9 @@
     { "name": "推送", "type": "page", "target": "push",    "icon": "hm_push" },
     { "name": "文件", "type": "page", "target": "drive",   "icon": "hm_folder" },
     { "name": "设置", "type": "page", "target": "setting", "icon": "hm_settings" },
-    { "name": "组网", "type": "page", "target": "hin2n",   "icon": "ic_hin2n" }
+    { "name": "组网", "type": "page", "target": "hin2n",   "icon": "ic_hin2n" },
+    { "name": "系统", "type": "page", "target": "system",  "icon": "hm_settings" },
+    { "name": "捐助", "type": "page", "target": "donate",  "icon": "hm_fav" }
     // 追加示例：
     // ,{ "name": "应用", "type": "page", "target": "apps",   "icon": "hm_drawer" }
     // ,{ "name": "影院", "type": "vod",  "target": "https://example.com/vod.json", "icon": "hm_vod", "theme": "1" }

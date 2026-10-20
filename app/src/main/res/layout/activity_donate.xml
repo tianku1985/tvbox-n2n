@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 捐助界面：顶栏（返回/标题）+ 项目介绍 + 自定义图片/二维码（json "donate" 段配置） -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:id="@+id/topLayout"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/vs_50"
+        android:layout_marginTop="@dimen/vs_20"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingLeft="@dimen/vs_50"
+        android:paddingRight="@dimen/vs_50">
+
+        <View
+            android:layout_width="@dimen/vs_5"
+            android:layout_height="match_parent"
+            android:layout_gravity="center"
+            android:layout_marginTop="@dimen/vs_8"
+            android:layout_marginEnd="@dimen/vs_12"
+            android:layout_marginRight="@dimen/vs_12"
+            android:layout_marginBottom="@dimen/vs_8"
+            android:background="?attr/color_theme" />
+
+        <!-- 返回主界面 -->
+        <ImageView
+            android:id="@+id/tvBack"
+            android:layout_width="@dimen/vs_50"
+            android:layout_height="@dimen/vs_50"
+            android:layout_marginEnd="@dimen/vs_15"
+            android:layout_marginRight="@dimen/vs_15"
+            android:background="@drawable/button_dialog_vod"
+            android:clickable="true"
+            android:contentDescription="返回"
+            android:focusable="true"
+            android:nextFocusDown="@+id/ivDonateQr"
+            android:padding="@dimen/vs_10"
+            android:src="@drawable/hm_home" />
+
+        <TextView
+            android:id="@+id/tvName"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@drawable/shape_toplayout_tvname"
+            android:ellipsize="marquee"
+            android:gravity="left|center_vertical"
+            android:singleLine="true"
+            android:text="支持我们"
+            android:textColor="@color/font_home_selector"
+            android:textSize="@dimen/ts_30"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:paddingLeft="@dimen/vs_50"
+            android:paddingTop="@dimen/vs_20"
+            android:paddingRight="@dimen/vs_50"
+            android:paddingBottom="@dimen/vs_20">
+
+            <!-- 项目详细介绍（json donate.desc 配置，留空用内置介绍） -->
+            <TextView
+                android:id="@+id/tvDonateDesc"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:lineSpacingMultiplier="1.4"
+                android:textColor="@android:color/white"
+                android:textSize="@dimen/ts_24" />
+
+            <!-- 自定义图片/二维码（json donate.image：http(s) / assets/路径 / drawable 名） -->
+            <ImageView
+                android:id="@+id/ivDonateQr"
+                android:layout_width="@dimen/vs_260"
+                android:layout_height="@dimen/vs_260"
+                android:layout_marginTop="@dimen/vs_20"
+                android:adjustViewBounds="true"
+                android:clickable="true"
+                android:focusable="true"
+                android:nextFocusUp="@id/tvBack"
+                android:scaleType="fitCenter"
+                android:visibility="gone" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

@@ -872,12 +872,14 @@ public class LivePlayActivity extends BaseActivity {
         } else {
             epgUrl = epgStringAddress + "?ch=" + URLEncoder.encode(epgTagName) + "&date=" + timeFormat.format(date);
         }
-        OkGo.<String>get(epgUrl).execute(new StringCallback() {
+        // 请求附加本机参数（mac/ip/机型/系统版本等），服务端可按机下发 EPG
+        OkGo.<String>get(com.github.tvbox.osc.n2n.DeviceParams.append(epgUrl)).execute(new StringCallback() {
             public void onSuccess(Response<String> response) {
                 // Activity 已销毁或正在结束，跳过 UI 更新
                 if (isFinishing() || isDestroyed()) return;
                 try {
-                    String paramString = response.body();
+                    // 是 json 直接解析，不是 json 先解密后加载
+                    String paramString = com.github.tvbox.osc.n2n.ConfigCrypto.maybeDecrypt(response.body());
                     ArrayList arrayList = new ArrayList();
 
                     if (paramString != null && paramString.contains("epg_data")) {
@@ -1846,7 +1848,8 @@ public class LivePlayActivity extends BaseActivity {
             return;
         }
         showLoading();
-        OkGo.<String>get(url).execute(new AbsCallback<String>() {
+        // 请求附加本机参数（mac/ip/机型/系统版本等），服务端可按机下发直播列表
+        OkGo.<String>get(com.github.tvbox.osc.n2n.DeviceParams.append(url)).execute(new AbsCallback<String>() {
 
             @Override
             public String convertResponse(okhttp3.Response response) throws Throwable {
@@ -1857,7 +1860,8 @@ public class LivePlayActivity extends BaseActivity {
             public void onSuccess(Response<String> response) {
                 JsonArray livesArray;
                 LinkedHashMap<String, LinkedHashMap<String, ArrayList<String>>> linkedHashMap = new LinkedHashMap<>();
-                TxtSubscribe.parse(linkedHashMap, response.body());
+                // 是明文列表直接解析，是密文先解密后加载（ke 前缀/固定密钥两种模式自动识别）
+                TxtSubscribe.parse(linkedHashMap, com.github.tvbox.osc.n2n.ConfigCrypto.maybeDecrypt(response.body()));
                 livesArray = TxtSubscribe.live2JsonArray(linkedHashMap);
 
                 ApiConfig.get().loadLives(livesArray);

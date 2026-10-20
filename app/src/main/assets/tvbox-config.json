@@ -18,11 +18,32 @@
   // 覆盖用户在设置页的手动修改；false（默认）时远程不碰用户设置，上述项只在用户未配置时作为默认值。
   "useRemoteConfig": false,
 
-  // 设为系统桌面：启用时把 TVBox 作为系统桌面 —— 设备已 root 时直接调用系统服务
+  // 设为系统桌面：默认开启 —— 设备已 root 时直接调用系统服务
   // （pm disable-user 禁用原来的系统桌面 + pm set-home-activity 设为默认桌面），
   // 无 root 时退回系统桌面选择器/系统「默认桌面」设置页；设置页「设为桌面」开关可改。
   // 取消后重新启用原桌面并恢复为默认桌面。
-  "setAsLauncher": false,
+  "setAsLauncher": true,
+
+  // ============================ 接口加密秘钥（可选） ============================
+  // 所有接收接口（本内置配置/远程配置/点播/直播/EPG/自定义点播/升级检查）均支持密文下发：
+  // 内容是 json 直接解析，不是 json 自动解密后加载，两种模式自动识别：
+  //   ① ke 前缀模式（推荐，无需配置）：密文 = ke(19位) + hex(AES-128-ECB(数据, ke前16位))，
+  //      ke = substr(md5(time() + 自定义串), 13)，密钥随密文自带（见 docs 中的 PHP 加密示例）；
+  //   ② 固定密钥模式：密文 = hex(AES-128-ECB(数据, 秘钥前16字节))，秘钥取下面本字段；
+  //      本字段留空时回退用 Java 代码 ConfigCrypto.java 中的 SECRET_KEY 常量（源码自定义位置）。
+  // 注意：本 assets 文件本身只允许明文或 ke 前缀模式加密，不要用固定密钥模式加密本文件。
+  "secretKey": "",
+
+  // ============================ 捐助界面 ============================
+  // 首页「捐助」入口（homeEntries 中 type=page target=donate）打开的界面内容：
+  //   title  顶栏标题，空=「支持我们」
+  //   desc   项目详细介绍（\n 换行），空=用代码内置介绍
+  //   image  自定义图片/二维码：http(s) 图片地址 / assets/图片路径 / 内置 drawable 名；空=不显示图片
+  "donate": {
+    "title": "支持我们",
+    "desc": "",
+    "image": ""
+  },
 
   // ============================ 公告（所有界面可显示，含直播） ============================
   "notice": {
@@ -179,6 +200,7 @@
   //   name   显示名称（顶栏仅作 contentDescription，历史一行显示在图标右侧）
   //   type   page=打开 TVBox 界面 | feature=内置功能 | app=打开其他 App | vod=自定义点播界面
   //   target type=page   : vod live search fastsearch history collect push setting drive apps hin2n
+  //                        system(安卓系统设置) donate(捐助界面，内容见上方 donate 段)
   //          type=feature: siteSwitch themeSwitch styleSwitch clearCache reloadHome wifi date
   //          type=vod    : 数据接口地址（http(s):// 或 assets/xxx.json 或绝对路径），
   //                        格式与点播 api json 完全一致（取其中 sites），但仅供该新界面，app 其它配置不调用
@@ -222,7 +244,9 @@
     { "name": "推送", "type": "page", "target": "push",    "icon": "hm_push" },
     { "name": "文件", "type": "page", "target": "drive",   "icon": "hm_folder" },
     { "name": "设置", "type": "page", "target": "setting", "icon": "hm_settings" },
-    { "name": "组网", "type": "page", "target": "hin2n",   "icon": "ic_hin2n" }
+    { "name": "组网", "type": "page", "target": "hin2n",   "icon": "ic_hin2n" },
+    { "name": "系统", "type": "page", "target": "system",  "icon": "hm_settings" },
+    { "name": "捐助", "type": "page", "target": "donate",  "icon": "hm_fav" }
     // 追加示例：
     // ,{ "name": "应用", "type": "page", "target": "apps",   "icon": "hm_drawer" }
     // ,{ "name": "影院", "type": "vod",  "target": "https://example.com/vod.json", "icon": "hm_vod", "theme": "1" }

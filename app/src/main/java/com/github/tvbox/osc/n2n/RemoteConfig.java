@@ -67,6 +67,9 @@ import java.util.List;
  *     "force": false, "notes": "更新内容" },
  *   "hin2nEntry": true,                               // 首页是否显示 hin2n 固定入口
  *   "hin2n": { "apkUrl": "https://.../hin2n.apk" },   // 独立组网 App：未安装时的 APK 下载地址（可选）
+ *   "secretKey": "",                                  // 接口固定密钥模式的秘钥覆盖（空=用 ConfigCrypto.SECRET_KEY）
+ *   "donate": { "title": "支持我们", "desc": "...",    // 捐助界面：标题/介绍/二维码图片
+ *               "image": "https://.../qr.png" },      //   image 支持 http(s) / assets/路径 / drawable 名
  *   "entries": [ {"name":"文件管理","pkg":"...","icon":"...","url":"..."} ],
  *   "topEntries": [                               // 顶栏整体替换（缺省=内置默认顶栏）
  *     {"name":"搜索","type":"page","target":"search","icon":"hm_search"},
@@ -77,13 +80,21 @@ import java.util.List;
  * }
  *
  * 入口类型：page=打开 TVBox 界面（target: vod/live/search/history/collect/push/
- * setting/drive/hin2n/apps/fastsearch）；feature=内置功能（target: siteSwitch/
- * themeSwitch/styleSwitch/clearCache/reloadHome/wifi/date）；app=打开其他 App
- * （pkg，未安装且配 url 时后台下载安装）；vod=打开自定义点播列表界面（target=
- * 数据接口，格式同点播 api json 但仅供该界面，不影响 app 其它配置）。
+ * setting/drive/hin2n/apps/fastsearch/system=安卓系统设置/donate=捐助界面）；
+ * feature=内置功能（target: siteSwitch/themeSwitch/styleSwitch/clearCache/reloadHome/
+ * wifi/date）；app=打开其他 App（pkg，未安装且配 url 时后台下载安装）；vod=打开自定义
+ * 点播列表界面（target=数据接口，格式同点播 api json 但仅供该界面，不影响 app 其它配置）。
  *
- * 覆盖规则：notice/home/tkp2p/entries/themes/hin2nEntry/checkInterval/ua 每次启动应用；
- * bootStart 只作为默认值写入一次；api/live/epg/proxy 仅在用户未配置时作为默认值。
+ * 接口加密（ConfigCrypto）：本地内置 assets 与所有远程接收接口（远程配置/点播/直播/
+ * EPG/自定义点播/升级检查）支持密文下发——内容是 json 直接解析，不是 json 自动解密后
+ * 加载（ke 前缀模式兼容 PHP：ke=substr(md5(...),13) 前缀 + AES-128-ECB hex；固定密钥
+ * 模式用 "secretKey" 或 ConfigCrypto.SECRET_KEY）。
+ * 接口本机参数（DeviceParams）：所有远程接口请求自动在 URL 拼接 mac/ip/model/brand/
+ * device/sdk/release/app 参数，服务端可按机下发。
+ *
+ * 覆盖规则：notice/home/tkp2p/entries/themes/hin2nEntry/checkInterval/ua/secretKey/
+ * donate 每次启动应用；bootStart 只作为默认值写入一次；api/live/epg/proxy 仅在用户
+ * 未配置时作为默认值。setAsLauncher 出厂默认开启（含老设备一次性重放），用户可关。
  */
 public class RemoteConfig {
 
@@ -103,7 +114,13 @@ public class RemoteConfig {
     public static final String K_BOOT_DEFAULT_SET = "n2n_boot_default_set"; // 内置默认值是否已写入过
     public static final String K_LAUNCHER = "rc_set_launcher";            // 设为系统桌面开关（用户值优先）
     public static final String K_LAUNCHER_DEFAULT_SET = "rc_set_launcher_default_set"; // 内置默认值是否已写入过
-    /** 最近一次成功拉取的远程配置原文（断网/下次启动兜底） */
+    /** 设为桌面默认值第二轮重放守卫：setAsLauncher 出厂默认改 true 后，对老设备也补写一次 */
+    public static final String K_LAUNCHER_DEFAULT_SET_V2 = "rc_set_launcher_default_set_v2";
+    /** 接口固定密钥模式的秘钥覆盖值（json "secretKey"；空=用 ConfigCrypto.SECRET_KEY） */
+    public static final String K_SECRET = "rc_secret_key";
+    /** 捐助界面配置（json "donate" 段原文） */
+    public static final String K_DONATE = "rc_donate";
+    /** 最近一次成功拉取的远程配置原文（断网/下次启动兜底；存解密后的明文） */
     public static final String K_REMOTE_RAW = "rc_remote_raw";
 
     /**
@@ -192,6 +209,25 @@ public class RemoteConfig {
         return Hawk.get(K_HIN2N, true);
     }
 
+    /** 接口固定密钥模式的秘钥覆盖（json "secretKey"；空=用 ConfigCrypto.SECRET_KEY 常量） */
+    public static String secretKey() {
+        String k = Hawk.get(K_SECRET, "");
+        return k == null ? "" : k.trim();
+    }
+
+    /** 捐助界面配置（json "donate" 段：{"title":"","desc":"","image":""}），未配置返回 null */
+    public static JSONObject donate() {
+        String raw = Hawk.get(K_DONATE, "");
+        if (raw.isEmpty()) {
+            return null;
+        }
+        try {
+            return new JSONObject(raw);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
     /**
      * 独立 hin2n 组网 App 的 APK 下载地址（内置 JSON "hin2n" 段的 "apkUrl" 字段）。
      * 组网入口点击时：已安装直接拉起；未安装且此处非空时走后台下载安装管线。
@@ -221,9 +257,9 @@ public class RemoteConfig {
 
     // ==================== 设为系统桌面 ====================
 
-    /** 设为系统桌面开关（JSON "setAsLauncher" 默认值 + 设置页用户开关） */
+    /** 设为系统桌面开关（JSON "setAsLauncher" 默认值 + 设置页用户开关；出厂默认开启） */
     public static boolean launcherEnabled() {
-        return Hawk.get(K_LAUNCHER, false);
+        return Hawk.get(K_LAUNCHER, true);
     }
 
     /** 设置页切换「设为系统桌面」：写入开关并同步 Launcher 别名状态 */
@@ -431,7 +467,10 @@ public class RemoteConfig {
         try {
             byte[] data = readAsset(ctx.getApplicationContext(), LOCAL_ASSET);
             if (data != null) {
-                JSONObject cfg = parseLoose(new String(data, "UTF-8"));
+                // 内置配置允许明文或 ke 前缀模式密文（ConfigCrypto 自动识别）；
+                // 注意：assets 禁止用固定密钥模式加密——此时 secretKey 尚未写入 Hawk
+                String raw = ConfigCrypto.maybeDecrypt(new String(data, "UTF-8"));
+                JSONObject cfg = parseLoose(raw);
                 sConfig = cfg;
                 apply(ctx.getApplicationContext(), cfg, false);
                 // 每次启动同步「设为系统桌面」开关到 Launcher 别名状态
@@ -460,13 +499,17 @@ public class RemoteConfig {
     /** 同步拉取远程 json 并应用；cb 可为空 */
     private static boolean fetchAndApply(Context app, String url, Callback cb) {
         try {
-            String raw = httpGet(url, RemoteConfig.ua());
+            // 请求附加本机参数（mac/ip/机型/系统版本等），服务端可按机下发
+            String raw = httpGet(DeviceParams.append(url), RemoteConfig.ua());
             if (raw == null || raw.isEmpty()) {
                 if (cb != null) cb.onDone(false);
                 return false;
             }
+            // 是 json 直接解析，不是 json 先解密后加载（ke 前缀/固定密钥两种模式自动识别）
+            raw = ConfigCrypto.maybeDecrypt(raw);
             JSONObject remote = parseLoose(raw);
             apply(app, remote, true);
+            // 缓存存解密后的明文：断网兜底无需再解密，与旧版本明文缓存格式兼容
             Hawk.put(K_REMOTE_RAW, raw);
             if (cb != null) cb.onDone(true);
             return true;
@@ -638,6 +681,10 @@ public class RemoteConfig {
     private static void apply(Context ctx, JSONObject j, boolean remoteOnly) {
         // 远程覆盖模式：内置 JSON 开启 useRemoteConfig 且本次远程拉取成功（走到这里即可访问）
         boolean forceRemote = remoteOnly && useRemoteConfig();
+        // 接口秘钥（固定密钥模式）：本地/远程均可下发，每次启动应用；空=用 ConfigCrypto.SECRET_KEY
+        if (j.has("secretKey")) {
+            Hawk.put(K_SECRET, j.optString("secretKey", "").trim());
+        }
         if (j.has("notice")) {
             Object n = j.opt("notice");
             if (n instanceof JSONObject) {
@@ -681,6 +728,15 @@ public class RemoteConfig {
         if (j.has("upgrade") && j.optJSONObject("upgrade") != null) {
             Hawk.put(K_UPGRADE, j.optJSONObject("upgrade").toString());
         }
+        // 捐助界面配置：本地/远程均可下发；空对象或 null 时清除（界面用代码内置介绍）
+        if (j.has("donate")) {
+            JSONObject dn = j.optJSONObject("donate");
+            if (dn != null && dn.length() > 0) {
+                Hawk.put(K_DONATE, dn.toString());
+            } else {
+                Hawk.delete(K_DONATE);
+            }
+        }
         if (j.has("hin2nEntry")) {
             Hawk.put(K_HIN2N, j.optBoolean("hin2nEntry", true));
         }
@@ -707,8 +763,14 @@ public class RemoteConfig {
                 Hawk.put(K_BOOT_DEFAULT_SET, true);
             }
             if (j.has("setAsLauncher") && !Hawk.get(K_LAUNCHER_DEFAULT_SET, false)) {
-                Hawk.put(K_LAUNCHER, j.optBoolean("setAsLauncher", false));
+                Hawk.put(K_LAUNCHER, j.optBoolean("setAsLauncher", true));
                 Hawk.put(K_LAUNCHER_DEFAULT_SET, true);
+                Hawk.put(K_LAUNCHER_DEFAULT_SET_V2, true);
+            } else if (j.has("setAsLauncher") && !Hawk.get(K_LAUNCHER_DEFAULT_SET_V2, false)) {
+                // 出厂默认改为「开启」后的第二轮重放：老设备（旧守卫已置位）也补写一次默认值，
+                // 使「默认设为系统桌面」全量生效；用户在设置页关闭后此守卫已置位，不再回写
+                Hawk.put(K_LAUNCHER, j.optBoolean("setAsLauncher", true));
+                Hawk.put(K_LAUNCHER_DEFAULT_SET_V2, true);
             }
             JSONObject st = j.optJSONObject("settings");
             if (st != null) {

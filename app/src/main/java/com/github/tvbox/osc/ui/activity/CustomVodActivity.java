@@ -311,7 +311,8 @@ public class CustomVodActivity extends BaseActivity {
             return;
         }
         if (entryUrl.startsWith("http://") || entryUrl.startsWith("https://")) {
-            OkGo.<String>get(entryUrl).execute(new AbsCallback<String>() {
+            // 请求附加本机参数（mac/ip/机型/系统版本等），服务端可按机下发
+            OkGo.<String>get(com.github.tvbox.osc.n2n.DeviceParams.append(entryUrl)).execute(new AbsCallback<String>() {
                 @Override
                 public String convertResponse(okhttp3.Response response) throws Throwable {
                     if (response.body() != null) {
@@ -381,6 +382,8 @@ public class CustomVodActivity extends BaseActivity {
         if (isFinishing() || isDestroyed()) {
             return;
         }
+        // 是 json 直接解析，不是 json 先解密后加载（ke 前缀/固定密钥两种模式自动识别）
+        json = com.github.tvbox.osc.n2n.ConfigCrypto.maybeDecrypt(json);
         customSources.clear();
         customSources.addAll(ApiConfig.get().injectCustomSources(json));
         SourceBean first = null;

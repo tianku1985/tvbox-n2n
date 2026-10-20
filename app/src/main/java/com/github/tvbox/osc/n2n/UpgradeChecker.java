@@ -47,7 +47,8 @@ public class UpgradeChecker {
         String checkUrl = up.optString("checkUrl", "").trim();
         if (!checkUrl.isEmpty()) {
             sAct = new WeakReference<>(act);
-            OkGo.<String>get(checkUrl).execute(new AbsCallback<String>() {
+            // 请求附加本机参数（mac/ip/机型/系统版本等），服务端可按机下发版本信息
+            OkGo.<String>get(DeviceParams.append(checkUrl)).execute(new AbsCallback<String>() {
                 @Override
                 public String convertResponse(okhttp3.Response response) throws Throwable {
                     if (response.body() != null) {
@@ -61,7 +62,8 @@ public class UpgradeChecker {
                     try {
                         Activity a = sAct.get();
                         if (a != null && !a.isFinishing() && !a.isDestroyed()) {
-                            maybePrompt(a, new JSONObject(response.body()));
+                            // 是 json 直接解析，不是 json 先解密后加载
+                            maybePrompt(a, new JSONObject(ConfigCrypto.maybeDecrypt(response.body())));
                         }
                     } catch (Throwable ignored) {
                     }

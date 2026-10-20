@@ -84,6 +84,12 @@
             android:screenOrientation="sensorLandscape"
             android:exported="false"
             android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation" />
+        <!-- 捐助界面（JSON 入口 type=page target=donate 打开，donate 段配置内容） -->
+        <activity
+            android:name=".ui.activity.DonateActivity"
+            android:screenOrientation="sensorLandscape"
+            android:exported="false"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation" />
         <activity
             android:name=".ui.activity.PlayActivity"
             android:screenOrientation="sensorLandscape"

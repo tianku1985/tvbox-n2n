@@ -127,7 +127,9 @@ public class ApiConfig {
             } else if (configKey != null && !AES.isJson(content)) {
                 json = AES.ECB(content, configKey);
             } else {
-                json = content;
+                // 对接本系统的密文接口（ke 前缀 / 固定密钥两种模式）：是 json 已在上面返回，
+                // 不是 json 且非原生加密格式时尝试 ConfigCrypto 解密，失败原样返回
+                json = com.github.tvbox.osc.n2n.ConfigCrypto.maybeDecrypt(content);
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -201,7 +203,8 @@ public class ApiConfig {
         }
         System.out.println("API URL :" + configUrl);
         String configKey = TempKey;
-        OkGo.<String>get(configUrl)
+        // 请求附加本机参数（mac/ip/机型/系统版本等），服务端可按机下发点播源
+        OkGo.<String>get(com.github.tvbox.osc.n2n.DeviceParams.append(configUrl))
                 .headers("User-Agent", userAgent)
                 .headers("Accept", requestAccept)
                 .execute(new AbsCallback<String>() {

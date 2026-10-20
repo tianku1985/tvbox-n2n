@@ -28,7 +28,7 @@ import com.orhanobut.hawk.Hawk;
 /**
  * 自定义入口统一分发：顶栏（HomeEntry）与首页历史一行（UserFragment）共用。
  * 入口类型见 {@link RemoteConfig.Entry}：
- *   page    打开 TVBox 界面（target 指定界面名）
+ *   page    打开 TVBox 界面（target 指定界面名；system=安卓系统设置，donate=捐助界面）
  *   feature 内置功能（target 指定功能名）
  *   app     打开其他 App（pkg），未安装且配置 url 时走后台下载安装管线
  *   vod     打开自定义点播列表界面（target=数据接口地址，格式同点播 api json）
@@ -100,6 +100,17 @@ public class EntryDispatcher {
             e.url = RemoteConfig.hin2nApkUrl();
             openApp(act, e);
             return;
+        } else if ("system".equals(target)) {
+            // 安卓系统设置入口（部分 TV 固件可能无该 Activity，失败仅提示）
+            try {
+                act.startActivity(new Intent(Settings.ACTION_SETTINGS));
+            } catch (Throwable th) {
+                Toast.makeText(act, "本机无系统设置入口", Toast.LENGTH_SHORT).show();
+            }
+            return;
+        } else if ("donate".equals(target)) {
+            // 捐助界面（json "donate" 段配置标题/介绍/二维码图片）
+            cls = com.github.tvbox.osc.ui.activity.DonateActivity.class;
         }
         if (cls != null) {
             act.startActivity(new Intent(act, cls));
