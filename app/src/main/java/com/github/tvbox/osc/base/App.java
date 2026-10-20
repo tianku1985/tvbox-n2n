@@ -67,7 +67,7 @@ public class App extends MultiDexApplication {
         // 因此 TVBox 的全部配置都读写保存到这个本地 JSON 文件里
         Hawk.init(this)
                 .setStorage(new com.github.tvbox.osc.n2n.LocalJsonStorage(this))
-                .setEncryption(new com.github.tvbox.osc.n2n.PlainEncryption())
+                .setEncryption(new com.orhanobut.hawk.PlainEncryption())
                 .build();
         Hawk.put(HawkConfig.DEBUG_OPEN, false);
         // 加载 APK 内置配置 JSON（assets/tvbox-config.json，已移除远程地址配置）。
