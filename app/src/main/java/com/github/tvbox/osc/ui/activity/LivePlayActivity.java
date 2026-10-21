@@ -1817,6 +1817,18 @@ public class LivePlayActivity extends BaseActivity {
     private void initLiveChannelList() {
         List<LiveChannelGroup> list = ApiConfig.get().getChannelGroupList();
         if (list.isEmpty()) {
+            // 点播接口未配置/未加载出直播列表时：按设置中的直播地址独立加载（对齐 FongMi/TV 的独立直播配置）
+            String liveUrl = Hawk.get(HawkConfig.LIVE_URL, "");
+            if (liveUrl != null && !liveUrl.trim().isEmpty()) {
+                try {
+                    String b64 = Base64.encodeToString(liveUrl.trim().getBytes("UTF-8"),
+                            Base64.DEFAULT | Base64.URL_SAFE | Base64.NO_WRAP);
+                    loadProxyLives("http://127.0.0.1:9978/proxy?do=live&type=txt&ext=" + b64);
+                    return;
+                } catch (Throwable th) {
+                    th.printStackTrace();
+                }
+            }
             Toast.makeText(App.getInstance(), getString(R.string.act_live_play_empty_channel), Toast.LENGTH_SHORT).show();
             finish();
             return;

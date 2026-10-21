@@ -99,6 +99,12 @@ public class ApiDialog extends BaseDialog {
                 } else if (newApi.startsWith("./")) {
                     newApi = newApi.replace("./", "clan://localhost/");
                 }
+                // 用户手动保存过即置手动标记：此后内置/远程 JSON 不再覆盖该接口（含清空操作）
+                markManual(HawkConfig.API_URL);
+                markManual(HawkConfig.LIVE_URL);
+                markManual(HawkConfig.EPG_URL);
+                markManual(HawkConfig.PROXY_SERVER);
+                // 点播接口：允许清空保存（清空后 Hawk 中就是空串）
                 if (!newApi.isEmpty()) {
                     ArrayList<String> history = Hawk.get(HawkConfig.API_HISTORY, new ArrayList<String>());
                     if (!history.contains(newApi))
@@ -106,9 +112,11 @@ public class ApiDialog extends BaseDialog {
                     if (history.size() > 20)
                         history.remove(20);
                     Hawk.put(HawkConfig.API_HISTORY, history);
-                    listener.onchange(newApi);
-                    dismiss();
                 }
+                if (listener != null) {
+                    listener.onchange(newApi);
+                }
+                dismiss();
                 // Capture Live input into Settings & Live History (max 20)
                 Hawk.put(HawkConfig.LIVE_URL, newLive);
                 if (!newLive.isEmpty()) {
@@ -149,6 +157,7 @@ public class ApiDialog extends BaseDialog {
                     @Override
                     public void click(String value) {
                         inputApi.setText(value);
+                        markManual(HawkConfig.API_URL);
                         listener.onchange(value);
                         dialog.dismiss();
                     }
@@ -177,6 +186,7 @@ public class ApiDialog extends BaseDialog {
                     @Override
                     public void click(String liveURL) {
                         inputLive.setText(liveURL);
+                        markManual(HawkConfig.LIVE_URL);
                         Hawk.put(HawkConfig.LIVE_URL, liveURL);
                         dialog.dismiss();
                     }
@@ -205,6 +215,7 @@ public class ApiDialog extends BaseDialog {
                     @Override
                     public void click(String epgURL) {
                         inputEPG.setText(epgURL);
+                        markManual(HawkConfig.EPG_URL);
                         Hawk.put(HawkConfig.EPG_URL, epgURL);
                         dialog.dismiss();
                     }
@@ -257,6 +268,17 @@ public class ApiDialog extends BaseDialog {
 
     public void setOnListener(OnListener listener) {
         this.listener = listener;
+    }
+
+    /**
+     * 记录「用户手动配置过该接口」标记（RemoteConfig.applyEndpoint / ApiConfig.parseJson
+     * 见到该标记后不再用 JSON 值覆盖用户配置，含用户主动清空的情况）。
+     */
+    private static void markManual(String hawkKey) {
+        try {
+            Hawk.put(hawkKey + "_manual", true);
+        } catch (Throwable ignored) {
+        }
     }
 
     OnListener listener = null;

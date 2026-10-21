@@ -83,6 +83,8 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
 
         // takagen99 : Set Theme Color（主题索引与配色集中在 ThemeManager，支持 JSON 下发与一键切换）
         com.github.tvbox.osc.n2n.ThemeManager.apply(this);
+        // Android 4.4：把 drawable/ 里硬编码的主题蓝就地替换为当前主题色（API>=21 走 ?attr 无需处理）
+        com.github.tvbox.osc.n2n.ThemeDrawableFix.apply(this);
 
         super.onCreate(savedInstanceState);
         setContentView(getLayoutResID());

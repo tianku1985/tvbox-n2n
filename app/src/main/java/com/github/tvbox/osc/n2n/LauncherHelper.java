@@ -224,39 +224,165 @@ public class LauncherHelper {
     }
 
     /**
-     * UI 线程调用（设置页开关关闭）：后台重新启用之前被禁用的原桌面并设回默认，再停用本应用别名。
+     * UI 线程调用（设置页开关关闭）：弹出设备上所有可用桌面列表让用户选择，
+     * 选中的桌面被启用并设为默认桌面（有 root 时直接调用系统服务完成；
+     * 无 root 时拉起该桌面并跳系统「默认桌面」设置页引导选「始终」）。
+     * 选中的桌面即恢复为开机自动启动的系统桌面（系统开机自动拉起默认桌面）。
      */
     public static void restoreStockLauncher(final Activity act) {
         if (act == null) {
             return;
         }
         final Context ctx = act.getApplicationContext();
+        // 后台枚举全部 HOME 候选桌面（排除自身），主线程弹选择列表
         new Thread(new Runnable() {
             @Override
             public void run() {
-                String stock = Hawk.get(K_STOCK_LAUNCHER, "");
-                boolean restored = false;
-                if (stock != null && !stock.isEmpty() && hasRoot()) {
-                    exec("pm enable --user 0 " + stock);
-                    exec("pm set-home-activity " + stock);
-                    restored = true;
-                }
-                Hawk.delete(K_STOCK_LAUNCHER);
-                RemoteConfig.applyLauncherComponent(ctx);
-                final boolean done = restored;
+                final List<ResolveInfo> candidates = queryStockLaunchers(ctx);
+                final String saved = Hawk.get(K_STOCK_LAUNCHER, "");
                 post(act, new Runnable() {
                     @Override
                     public void run() {
-                        if (done) {
-                            Toast.makeText(ctx, "已恢复原来的系统桌面", Toast.LENGTH_LONG).show();
+                        if (candidates.isEmpty()) {
+                            // 没有其他桌面可选：仅停用本应用别名，交给系统处理
+                            RemoteConfig.applyLauncherComponent(ctx);
+                            Toast.makeText(ctx, "未检测到其他桌面应用，请先安装一个桌面",
+                                    Toast.LENGTH_LONG).show();
+                            return;
+                        }
+                        showLauncherPicker(act, ctx, candidates, saved);
+                    }
+                });
+            }
+        }, "restore-launcher-scan").start();
+    }
+
+    /** 枚举设备上所有 CATEGORY_HOME 候选桌面（排除本应用），按应用名排序 */
+    private static List<ResolveInfo> queryStockLaunchers(Context ctx) {
+        List<ResolveInfo> result = new java.util.ArrayList<>();
+        try {
+            PackageManager pm = ctx.getPackageManager();
+            String self = ctx.getPackageName();
+            Intent home = new Intent(Intent.ACTION_MAIN);
+            home.addCategory(Intent.CATEGORY_HOME);
+            List<ResolveInfo> list = pm.queryIntentActivities(home, 0);
+            for (ResolveInfo ri : list) {
+                if (ri == null || ri.activityInfo == null) {
+                    continue;
+                }
+                if (self.equals(ri.activityInfo.packageName)) {
+                    continue;
+                }
+                result.add(ri);
+            }
+        } catch (Throwable th) {
+            Log.i(TAG, "queryStockLaunchers failed: " + th.getMessage());
+        }
+        return result;
+    }
+
+    /** 弹出桌面选择列表：显示应用名，默认选中之前保存的原桌面 */
+    private static void showLauncherPicker(final Activity act, final Context ctx,
+                                           final List<ResolveInfo> candidates, String savedPkg) {
+        final PackageManager pm = ctx.getPackageManager();
+        final List<String> names = new java.util.ArrayList<>();
+        int select = 0;
+        for (int i = 0; i < candidates.size(); i++) {
+            ResolveInfo ri = candidates.get(i);
+            CharSequence label;
+            try {
+                label = ri.loadLabel(pm);
+            } catch (Throwable th) {
+                label = null;
+            }
+            names.add(label != null && label.length() > 0
+                    ? label.toString() : ri.activityInfo.packageName);
+            if (savedPkg != null && savedPkg.equals(ri.activityInfo.packageName)) {
+                select = i;
+            }
+        }
+        final com.github.tvbox.osc.ui.dialog.SelectDialog<String> dialog =
+                new com.github.tvbox.osc.ui.dialog.SelectDialog<>(act);
+        dialog.setTip("选择要恢复的系统桌面");
+        dialog.setAdapter(null,
+                new com.github.tvbox.osc.ui.adapter.SelectDialogAdapter.SelectDialogInterface<String>() {
+                    @Override
+                    public void click(String value, int pos) {
+                        dialog.dismiss();
+                        final String pkg = candidates.get(pos).activityInfo.packageName;
+                        applyChosenLauncher(act, ctx, pkg);
+                    }
+
+                    @Override
+                    public String getDisplay(String val) {
+                        return val;
+                    }
+                },
+                new androidx.recyclerview.widget.DiffUtil.ItemCallback<String>() {
+                    @Override
+                    public boolean areItemsTheSame(String a, String b) {
+                        return a == b;
+                    }
+
+                    @Override
+                    public boolean areContentsTheSame(String a, String b) {
+                        return a.equals(b);
+                    }
+                }, names, select);
+        dialog.show();
+    }
+
+    /**
+     * 将用户选择的桌面启用并设为默认桌面：
+     * 有 root → pm enable + pm set-home-activity 一步完成；
+     * 无 root → 直接拉起该桌面的 HOME 组件（出现系统「始终/仅一次」弹窗时选「始终」），
+     *           并尝试跳系统「默认桌面」设置页兜底。
+     */
+    private static void applyChosenLauncher(final Activity act, final Context ctx, final String pkg) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                // 记录用户选择的桌面（下次取消时默认选中它）
+                Hawk.put(K_STOCK_LAUNCHER, pkg);
+                boolean done = false;
+                if (hasRoot()) {
+                    // 启用该桌面（之前可能被本应用 disable-user 过）并设为默认桌面
+                    exec("pm enable --user 0 " + pkg);
+                    done = exec("pm set-home-activity " + pkg);
+                }
+                final boolean ok = done;
+                post(act, new Runnable() {
+                    @Override
+                    public void run() {
+                        if (ok) {
+                            Toast.makeText(ctx, "已恢复系统桌面：" + pkg + "，开机将自动启动",
+                                    Toast.LENGTH_LONG).show();
                         } else {
-                            RemoteConfig.promptChooseLauncher(act);
-                            Toast.makeText(ctx, "请在系统弹窗中选回原来的桌面", Toast.LENGTH_LONG).show();
+                            // 无 root：拉起所选桌面（系统弹「始终/仅一次」时选「始终」即设为默认桌面）
+                            launchHome(act, ctx, pkg);
+                            Toast.makeText(ctx, "已打开所选桌面；若弹出选择框请选「始终」，开机即自动启动",
+                                    Toast.LENGTH_LONG).show();
                         }
                     }
                 });
             }
-        }, "restore-launcher").start();
+        }, "restore-launcher-apply").start();
+    }
+
+    /** 拉起指定包名的 HOME 主界面 */
+    private static void launchHome(Activity act, Context ctx, String pkg) {
+        try {
+            PackageManager pm = ctx.getPackageManager();
+            Intent it = pm.getLaunchIntentForPackage(pkg);
+            if (it != null) {
+                it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                act.startActivity(it);
+                return;
+            }
+        } catch (Throwable ignored) {
+        }
+        // 兜底：打开系统「默认桌面」设置页
+        RemoteConfig.promptChooseLauncher(act);
     }
 
     /** 回主线程（Activity 已销毁则跳过） */

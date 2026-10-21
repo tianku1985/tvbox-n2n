@@ -160,16 +160,26 @@ public class LiveWebViewPlayer {
 
     /** 停止网页播放并回收（切回流媒体频道时调用） */
     public void destroy() {
+        // H5 全屏残留视图先退出，避免切台后 customView 还挂在根布局上
+        exitCustomView();
         if (webView != null) {
             try {
                 webView.stopLoading();
+            } catch (Throwable ignored) {
+            }
+            // 必须先从父容器移除再 destroy：
+            // WebView.destroy() called while still attached 会导致 native 层崩溃（切台闪退）
+            try {
+                if (webView.getParent() instanceof ViewGroup) {
+                    ((ViewGroup) webView.getParent()).removeView(webView);
+                }
+            } catch (Throwable ignored) {
+            }
+            try {
                 webView.loadUrl("about:blank");
                 webView.removeAllViews();
                 webView.destroy();
             } catch (Throwable ignored) {
-            }
-            if (webView.getParent() instanceof ViewGroup) {
-                ((ViewGroup) webView.getParent()).removeView(webView);
             }
             webView = null;
         }
@@ -261,6 +271,12 @@ public class LiveWebViewPlayer {
         } catch (Throwable ignored) {
         }
         st.setCacheMode(WebSettings.LOAD_DEFAULT);
+        // TV 适配：页面按屏宽布局并总览显示，禁止缩放手势控件
+        st.setUseWideViewPort(true);
+        st.setLoadWithOverviewMode(true);
+        st.setSupportZoom(false);
+        st.setBuiltInZoomControls(false);
+        st.setDisplayZoomControls(false);
         // UA：远程 JSON "ua" 字段非空时覆盖默认 UA（部分直播站点按 UA 放流）
         try {
             String ua = com.github.tvbox.osc.n2n.RemoteConfig.ua();
@@ -279,6 +295,17 @@ public class LiveWebViewPlayer {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 return false;   // 页面内跳转保持在直播 WebView 中
+            }
+
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                return false;   // API<24 走旧版重载，行为一致
+            }
+
+            @Override
+            public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+                super.onReceivedError(view, errorCode, description, failingUrl);
+                Log.w(TAG, "load error " + errorCode + ": " + description + " @" + failingUrl);
             }
 
             @Override

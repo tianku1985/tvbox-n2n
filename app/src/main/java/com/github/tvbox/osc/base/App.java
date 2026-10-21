@@ -31,6 +31,8 @@ import com.yanzhenjie.andserver.AndServer;
 import com.yanzhenjie.andserver.Server;
 
 import java.io.File;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.concurrent.TimeUnit;
 
 import io.github.inflationx.calligraphy3.CalligraphyConfig;
@@ -61,6 +63,8 @@ public class App extends MultiDexApplication {
     @Override
     public void onCreate() {
         super.onCreate();
+        // 全局异常捕获：任何线程未捕获异常写 crash.log 并安静重启进程，避免系统弹「tvbox结束运行」
+        initCrashHandler();
         SubtitleHelper.initSubtitleColor(this);
         // Hawk 必须先初始化：内置 JSON 的设置项默认值依赖 Hawk
         // 存储后端替换为本地 JSON 文件（filesDir/tvbox-config-local.json）+ 明文，
@@ -184,6 +188,53 @@ public class App extends MultiDexApplication {
 
     public static App getInstance() {
         return instance;
+    }
+
+    /**
+     * 全局未捕获异常处理：堆栈写 filesDir/crash.log（供排查），尽力 Toast 提示，
+     * 然后自行结束进程 —— 不交给系统默认 handler，避免弹出「tvbox结束运行」。
+     */
+    private void initCrashHandler() {
+        Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
+            @Override
+            public void uncaughtException(Thread thread, Throwable throwable) {
+                try {
+                    StringWriter sw = new StringWriter();
+                    throwable.printStackTrace(new PrintWriter(sw));
+                    String log = "\n===== " + new java.util.Date() + " [" + thread.getName() + "] =====\n" + sw;
+                    File f = new File(getFilesDir(), "crash.log");
+                    byte[] data = log.getBytes("UTF-8");
+                    // 追加写但限制文件不超过 512KB（超出则重写）
+                    if (f.exists() && f.length() > 512 * 1024) {
+                        FileUtils.writeSimple(data, f);
+                    } else {
+                        java.io.FileOutputStream fos = new java.io.FileOutputStream(f, true);
+                        fos.write(data);
+                        fos.flush();
+                        fos.close();
+                    }
+                } catch (Throwable ignored) {
+                }
+                try {
+                    boolean mainThread = Looper.getMainLooper().getThread() == thread;
+                    if (!mainThread) {
+                        handler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                try {
+                                    android.widget.Toast.makeText(App.this, "程序出现异常，即将自动重启", android.widget.Toast.LENGTH_SHORT).show();
+                                } catch (Throwable ignored) {
+                                }
+                            }
+                        });
+                        Thread.sleep(1500);
+                    }
+                } catch (Throwable ignored) {
+                }
+                android.os.Process.killProcess(android.os.Process.myPid());
+                System.exit(10);
+            }
+        });
     }
 
     private void putDefault(String key, Object value) {

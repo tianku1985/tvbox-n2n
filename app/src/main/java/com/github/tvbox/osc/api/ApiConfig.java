@@ -597,7 +597,12 @@ public class ApiConfig {
                         putLiveHistory(extUrlFix);
                         // Overwrite with Live URL from Settings
                         if (StringUtils.isBlank(liveURL)) {
-                            Hawk.put(HawkConfig.LIVE_URL, extUrlFix);
+                            if (!Hawk.get(HawkConfig.LIVE_URL + "_manual", false)) {
+                                Hawk.put(HawkConfig.LIVE_URL, extUrlFix);
+                            } else {
+                                // 用户手动清空过：不再使用 JSON 的直播地址
+                                extUrlFix = "";
+                            }
                         } else {
                             extUrlFix = liveURL;
                         }
@@ -617,7 +622,9 @@ public class ApiConfig {
                         putEPGHistory(epg);
                         // Overwrite with EPG URL from Settings
                         if (StringUtils.isBlank(epgURL)) {
-                            Hawk.put(HawkConfig.EPG_URL, epg);
+                            if (!Hawk.get(HawkConfig.EPG_URL + "_manual", false)) {
+                                Hawk.put(HawkConfig.EPG_URL, epg);
+                            }
                         } else {
                             Hawk.put(HawkConfig.EPG_URL, epgURL);
                         }
@@ -647,7 +654,9 @@ public class ApiConfig {
                                 putEPGHistory(epg);
                                 // Overwrite with EPG URL from Settings
                                 if (StringUtils.isBlank(epgURL)) {
-                                    Hawk.put(HawkConfig.EPG_URL, epg);
+                                    if (!Hawk.get(HawkConfig.EPG_URL + "_manual", false)) {
+                                        Hawk.put(HawkConfig.EPG_URL, epg);
+                                    }
                                 } else {
                                     Hawk.put(HawkConfig.EPG_URL, epgURL);
                                 }
@@ -659,7 +668,12 @@ public class ApiConfig {
                                 putLiveHistory(url);
                                 // Overwrite with Live URL from Settings
                                 if (StringUtils.isBlank(liveURL)) {
-                                    Hawk.put(HawkConfig.LIVE_URL, url);
+                                    if (!Hawk.get(HawkConfig.LIVE_URL + "_manual", false)) {
+                                        Hawk.put(HawkConfig.LIVE_URL, url);
+                                    } else {
+                                        // 用户手动清空过：不再使用 JSON 的直播地址
+                                        url = "";
+                                    }
                                 } else {
                                     url = liveURL;
                                 }

@@ -878,6 +878,10 @@ public class RemoteConfig {
             return;
         }
         if (!force) {
+            // 用户手动配置过（含清空保存）后，JSON 不再回填/覆盖
+            if (Hawk.get(hawkKey + "_manual", false)) {
+                return;
+            }
             String cur = Hawk.get(hawkKey, "");
             if (cur != null && !cur.trim().isEmpty()) {
                 return;

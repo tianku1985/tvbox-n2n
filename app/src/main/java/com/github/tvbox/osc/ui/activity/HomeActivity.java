@@ -324,15 +324,21 @@ public class HomeActivity extends BaseActivity {
                     skipNextUpdate = false;
                     return;
                 }
-                if (userFragment == null) {
-                    userFragment = UserFragment.newInstance(absXml == null ? null : absXml.videoList);
-                    getSupportFragmentManager().beginTransaction()
-                            .replace(R.id.homeFragmentContainer, userFragment)
-                            .commitNowAllowingStateLoss();
+                if (isFinishing() || isDestroyed()) {
+                    return;
                 }
-                showSuccess();
-                // takagen99 : Switch to show / hide source title
-                applySourceName();
+                try {
+                    if (userFragment == null) {
+                        userFragment = UserFragment.newInstance(absXml == null ? null : absXml.videoList);
+                        getSupportFragmentManager().beginTransaction()
+                                .replace(R.id.homeFragmentContainer, userFragment)
+                                .commitNowAllowingStateLoss();
+                    }
+                    showSuccess();
+                    // takagen99 : Switch to show / hide source title
+                    applySourceName();
+                } catch (Throwable ignored) {
+                }
             }
         });
     }
@@ -504,6 +510,8 @@ public class HomeActivity extends BaseActivity {
                 mHandler.post(new Runnable() {
                     @Override
                     public void run() {
+                        if (isFinishing() || isDestroyed())
+                            return;
                         if (dialog == null)
                             dialog = new TipDialog(HomeActivity.this, msg, getString(R.string.hm_retry), getString(R.string.hm_cancel), new TipDialog.OnListener() {
                                 @Override

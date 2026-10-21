@@ -141,6 +141,7 @@ TVBox 的所有定制配置统一来自 APK 内置文件：
 - **点播/首页 NPE 自动重启**：`ApiConfig.getHomeSourceBean()` 永不返回 null（未就绪时返回 `emptyHome`，key=""），`SourceViewModel.getSort()` 原代码 `getSource(sourceKey).getType()` 在 key 为空/源未加载时直接 NPE → 进程被杀 → 系统自动重启 app（用户表现「点击点播 app 自动重启」）。修复：`getSort()` 开头对 `getSource()` 判空，null 时 `sortResult.postValue(null)` 走正常空态展示。
 - **n2n 连接自动重启 + 无日志**：`N2NService.onStartCommand` 链路中 `intent.getBundleExtra` 取值无空判、`vpn_session_name[version]` 无越界保护、native `startEdge()` 只被 `catch(Exception)` 保护（`UnsatisfiedLinkError` 是 Error，会穿透）——任一触发即杀进程，且 edge.log 尚未创建导致「无日志输出」。修复：整链 `try/catch(Throwable)` + `appendEdgeLog()` 把失败原因（含 lib 加载失败提示）写进 edge 日志文件，界面日志页直接可见；`stopEdge()`/`getEdgeStatus()` 同样 Throwable 防护（EventBus 订阅线程崩溃同样会杀进程）。
 - **主屏左上源名显示规则**（`HomeActivity.applySourceName()`）：用户已配置点播接口（Hawk `api_url` 非空）且开启 `HOME_SHOW_SOURCE` 且当前源就绪 → 显示当前源名；否则显示内置 JSON `home.sourceName` 默认文字（未配置回退 app 名称）。`initViewModel` 观察者与 `onResume` 两处统一走该方法。
+- **全局未捕获异常防护**（2026-10-22）：[App.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/base/App.java) `initCrashHandler()` 在 onCreate 最前面安装 `Thread.setDefaultUncaughtExceptionHandler`——任何线程未捕获异常（含配置接口后主页刷新链路）把堆栈追加写 `filesDir/crash.log`（>512KB 自动重写），后台线程异常尽力 Toast「程序出现异常，即将自动重启」，随后 `killProcess` 自行结束进程，**不交给系统默认 handler，避免弹「tvbox结束运行」**。配套加固：`SourceViewModel.getSort()` type 0/1 的 `onSuccess` 解析（sortXml/sortJson）与 type 3 的 finally 解析块都包了 `try/catch(Throwable)`（解析失败回落 `postValue(null)`）；`HomeActivity` sortResult observer 与 loadConfig error 弹窗加 `isFinishing()/isDestroyed()` 守卫。
 
 ### 3.9 设为系统桌面（setAsLauncher / LauncherAlias）
 
@@ -148,7 +149,7 @@ TVBox 的所有定制配置统一来自 APK 内置文件：
 - 开关：`RemoteConfig.applyLauncherComponent(ctx)` 用 `PackageManager.setComponentEnabledSetting(..., DONT_KILL_APP)` 按 Hawk `rc_set_launcher` 启停别名；`bootstrap` 每次启动同步一次，远程 forceRemote 分支下发 `setAsLauncher` 时也立即同步。
 - **出厂默认开启**：`launcherEnabled()` 缺省值为 `true`；json `setAsLauncher` 字段默认值写入走两轮守卫——首轮 `rc_set_launcher_default_set`（兼容旧版本标记），第二轮 `rc_set_launcher_default_set_v2` 对**已安装过的老设备**也补写一次默认值（解决老设备首轮标记已置位导致改默认不生效的问题）；两轮都只写一次，之后用户手动开关永不被覆盖。
 - 启用后用户仍需在系统桌面选择器中确认（Android 不允许应用静默设为默认桌面）：`HomeActivity.onResume` 调 `RemoteConfig.ensureDefaultLauncher(this)`，开关已开但非默认桌面时每进程弹一次选择器；设置页切换开关时立即 `promptChooseLauncher`。
-- 取消：停用别名后 Android 自动清除本应用的默认桌面资格，系统回退原桌面；设置页关闭开关时同时弹出选择器引导用户选回原桌面。
+- 取消：停用别名后 Android 自动清除本应用的默认桌面资格。**取消时不再静默依赖系统回退**，而是走 [LauncherHelper.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/LauncherHelper.java) `restoreStockLauncher()`：后台枚举全部 `CATEGORY_HOME` 候选桌面（排除自身），主线程弹「选择桌面」列表（SelectDialog，默认选中 Hawk `rc_stock_launcher` 记忆的原桌面）；选定后有 root 时 `pm enable --user 0 <pkg>` + `pm set-home-activity <pkg>` 静默启用并设为默认桌面（开机自动启动），无 root 时用 `pm.getLaunchIntentForPackage` 拉起所选桌面并 Toast 引导选「始终」，兜底系统选择器 `RemoteConfig.promptChooseLauncher`。
 - 注意 applicationId 随 flavor 变化（generic=`com.github.tvbox.osc.tk` / hisense=`com.github.hisense.osc.tk`），`ComponentName` 必须用 `ctx.getPackageName()` + 清单展开类名 `com.github.tvbox.osc.LauncherAlias`（别名 `android:name=".LauncherAlias"` 以源码包名展开，与 applicationId 无关）。
 
 ### 3.10 点播切源自动返回首页刷新
@@ -256,6 +257,28 @@ $mac = isset($_GET['mac']) ? $_GET['mac'] : '';
 $miniData = getMiniData($mac);   // 按设备查询/生成数据，再走 §3.11 加密输出
 ```
 
+### 3.13 接口清空保存与直播入口独立加载（2026-10-22）
+
+**根因**：原 [ApiDialog.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/dialog/ApiDialog.java) `inputSubmit` 里有 `if (!newApi.isEmpty())` 拦截点播接口保存 → 清空无法写空串；且 [RemoteConfig.applyEndpoint()](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/RemoteConfig.java) 与 [ApiConfig.parseJson()](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/api/ApiConfig.java) 在用户把接口清为空后，下次启动又从内置 JSON 回填旧地址 →「清空保存无效」。
+
+**修复**（`_manual` 标记方案）：
+1. `ApiDialog` 三个历史弹窗与 inputSubmit 保存前均调 `markManual(hawkKey)`（Hawk 写 `key + "_manual" = true`），**空串也写入**；
+2. `RemoteConfig.applyEndpoint`：非 force 时若 `Hawk.get(hawkKey + "_manual", false)` 直接返回，JSON 永不回填；
+3. `ApiConfig.parseJson` 四处 `StringUtils.isBlank(liveURL/epgURL)` 分支追加 `&& !Hawk.get(key + "_manual", false)`，手动清空后 JSON 的直播/EPG 地址不再覆盖，同时把 URL 设为空串，后续不加载。
+
+**直播入口空列表修复**：
+- 旧逻辑：只配直播接口、点播接口为空时，`ApiConfig.loadConfig` 直接 error「源地址为空」返回，导致 `liveChannelGroupList` 永远为空，`initLiveChannelList()` 提示「频道列表为空」→ finish。
+- 修复：[LivePlayActivity.initLiveChannelList()](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/LivePlayActivity.java) 空列表分支改为：先读 `Hawk.get(HawkConfig.LIVE_URL, "")`，非空则 Base64 包装为 `http://127.0.0.1:9978/proxy?do=live&type=txt&ext=<b64>` 调 `loadProxyLives()` 独立加载直播列表（对齐 FongMi/TV「直播配置独立加载」思想）；仍为空才 toast「频道列表为空」+ finish。
+
+### 3.14 直播 WebView 修复（2026-10-22）
+
+参考 FongMi/TV 直播 WebView 的健壮性做法，重点修复切台闪退与全屏残留：
+
+1. **切台 WebView destroy 顺序**（[LiveWebViewPlayer.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/util/live/LiveWebViewPlayer.java)）：原 `destroy()` 先 `loadUrl("about:blank")` / `destroy()` 再 `removeView` → 触发 `WebView.destroy() called while still attached to window` native 崩溃。修复：先 `exitCustomView()` 移除 H5 全屏残留视图 → `stopLoading()` → **先从 parent removeView** → 再 `loadUrl/removeAllViews/destroy`。
+2. **H5 全屏残留**：`onShowCustomView` 把全屏视图挂在 `live_root` 上，切台前若未退出，残留到下一频道。修复：`destroy()` 开头即调 `exitCustomView()`。
+3. **TV 适配**：`WebSettings` 新增 `setUseWideViewPort(true)` / `setLoadWithOverviewMode(true)` / `setSupportZoom(false)` / `setBuiltInZoomControls(false)` / `setDisplayZoomControls(false)`，防止页面在电视上缩放异常。
+4. **错误回调与 API<24 兼容**：`WebViewClient` 补旧版 `shouldOverrideUrlLoading(WebView, String)`（API<24 不会走 WebResourceRequest 重载）；增加 `onReceivedError` 写日志，方便排查加载失败的网页直播源。
+
 ## 4. hin2n 入口与 TV 界面
 
 - 首页「历史」入口行新增第 9 张卡片 `tvHin2nHome`（「组网」，图标 `hm_hin2n`），点击进 `Hin2nActivity`；可见性取 `RemoteConfig.hin2nEntryEnabled()`。
@@ -302,6 +325,8 @@ $miniData = getMiniData($mac);   // 按设备查询/生成数据，再走 §3.11
 4. legacy 变体 appcompat 锁 1.6.1；`src/legacy/AndroidManifest.xml` 用 `tools:overrideLibrary` 放行 minSdk21 的三方库（nextlib 等）。
 
 新增任何 drawable 时的检查清单：默认 `drawable/` 里**禁止** `?attr/`、`<ripple>`、`<vector>` 的 `android:tint="?attr/…"`；需要主题效果就在 `drawable-v21/` 放同名增强版。
+
+**4.4 主题换色运行时方案**（2026-10-22，[ThemeDrawableFix.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/ThemeDrawableFix.java)）：drawable/ 硬编码蓝色导致 4.4 下不随主题换色，而 `?attr` 又不能写回 XML（预加载崩溃）。修复：API<21 时 `BaseActivity.onCreate`（setTheme 后）调 `ThemeDrawableFix.apply(ctx)`——把 23 个含主题蓝的非 vector drawable 资源（selector/layer-list/shape）的**共享 ConstantState** 里 `RGB=18A2E7` 的颜色**就地替换**为当前主题色（保留 alpha；GradientDrawable 反射 `mSolidColors` 判色后 `setColor`，StateListDrawable/LayerDrawable/ClipDrawable 递归子 drawable）。刻意不 `mutate()`：常量状态进程级共享，之后 inflate 的列表项/弹窗自动跟随；静态 `sAppliedRgb` 记录已写入色，支持主题多次切换连续替换。vector 不在此列（legacy 变体经 generatedDensities 出 PNG / AppCompat 走 VectorDrawableCompat，保持蓝色兜底）。另 `button_dialog_vod.xml` 常态由 80% 蓝改为透明（与 v21 版对齐，修复「图标背景不透明」）。
 
 ## 8. CI（test.yml / hin2n.yml）
 
