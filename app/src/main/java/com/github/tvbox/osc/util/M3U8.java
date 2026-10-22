@@ -210,7 +210,9 @@ public class M3U8 {
             }
         }
 //        ToastHelper.showToast(App.getInstance(), "已移除视频广告");
-        return String.join(linesplit, lines);
+        // 注意：不能用 String.join（Java 8 / API 26+ 才有），Android 4.4（API 19）会 NoSuchMethodError 闪退；
+        // TextUtils.join 全版本可用，行为等价。
+        return android.text.TextUtils.join(linesplit, lines);
     }
 
     private static String get(String tsUrlPre, String m3u8Content) {

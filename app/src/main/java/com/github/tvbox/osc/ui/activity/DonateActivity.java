@@ -22,8 +22,10 @@ import java.io.InputStream;
  *   "donate": {
  *     "title": "支持我们",                  // 顶栏标题，空=默认「支持我们」
  *     "desc":  "项目介绍……",                // 详细介绍（支持 \n 多行），空=用内置默认介绍
- *     "image": "https://.../qrcode.png"     // 自定义图片/二维码：
- *   }                                       //   http(s) URL / assets/xxx.png / drawable 名；空=不显示图片
+ *     "image": "https://.../qrcode.png",    // 自定义图片/二维码：
+ *                                           //   http(s) URL / assets/xxx.png / drawable 名；空=不显示图片
+ *     "tip":   "扫码后请备注……"             // 二维码下方说明文字（支持 \n 多行），空=不显示
+ *   }
  * 入口：json 入口配置 {"name":"捐助","type":"page","target":"donate","icon":"hm_fav"}。
  */
 public class DonateActivity extends BaseActivity {
@@ -37,6 +39,7 @@ public class DonateActivity extends BaseActivity {
 
     private TextView tvName;
     private TextView tvDonateDesc;
+    private TextView tvDonateTip;
     private ImageView ivDonateQr;
 
     @Override
@@ -48,6 +51,7 @@ public class DonateActivity extends BaseActivity {
     protected void init() {
         tvName = findViewById(R.id.tvName);
         tvDonateDesc = findViewById(R.id.tvDonateDesc);
+        tvDonateTip = findViewById(R.id.tvDonateTip);
         ivDonateQr = findViewById(R.id.ivDonateQr);
         findViewById(R.id.tvBack).setOnClickListener(new View.OnClickListener() {
             @Override
@@ -58,22 +62,31 @@ public class DonateActivity extends BaseActivity {
         bindConfig();
     }
 
-    /** 读取 json "donate" 段并填充界面（desc 空用内置介绍，image 空不显示图片） */
+    /** 读取 json "donate" 段并填充界面（desc 空用内置介绍，image/tip 空不显示对应控件） */
     private void bindConfig() {
         String title = "";
         String desc = "";
         String image = "";
+        String tip = "";
         try {
             JSONObject dn = RemoteConfig.donate();
             if (dn != null) {
                 title = dn.optString("title", "").trim();
                 desc = dn.optString("desc", "").trim();
                 image = dn.optString("image", "").trim();
+                tip = dn.optString("tip", "").trim();
             }
         } catch (Throwable ignored) {
         }
         tvName.setText(title.isEmpty() ? "支持我们" : title);
         tvDonateDesc.setText(desc.isEmpty() ? DEFAULT_DESC : desc.replace("\\n", "\n"));
+        // tip：空则隐藏；非空支持 \n 转义换行
+        if (tip.isEmpty()) {
+            tvDonateTip.setVisibility(View.GONE);
+        } else {
+            tvDonateTip.setText(tip.replace("\\n", "\n"));
+            tvDonateTip.setVisibility(View.VISIBLE);
+        }
         loadDonateImage(image);
     }
 

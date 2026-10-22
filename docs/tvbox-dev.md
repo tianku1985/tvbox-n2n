@@ -66,13 +66,15 @@ TVBox 的所有定制配置统一来自 APK 内置文件：
 | `bootStart`（TVBox 开机自启） | 只作默认值写入**一次**（Hawk `n2n_boot_default_set` 标记），之后以设置页开关为准；出厂默认开 |
 | `setAsLauncher`（设为系统桌面） | 默认值写入**两轮守卫**：首轮 Hawk `rc_set_launcher_default_set`（老版本已置位则跳过），第二轮 `rc_set_launcher_default_set_v2` 对老设备补写一次（出厂默认改为开启后对存量设备也生效一次）；之后以设置页开关为准 |
 | `secretKey`（固定密钥模式秘钥） | 每次启动覆盖 Hawk `rc_secret_key`；非空时**优先于** `ConfigCrypto.SECRET_KEY` Java 常量（见 §3.11） |
-| `donate`（捐助界面对象） | 每次启动覆盖 Hawk `rc_donate`；字段缺失或非对象时删除缓存（捐助界面回退内置文案） |
+| `donate`（捐助界面对象） | 每次启动覆盖 Hawk `rc_donate`；字段缺失或非对象时删除缓存（捐助界面回退内置文案）。子字段：`title`（顶栏标题）/`desc`（介绍，`\n` 换行）/`image`（二维码：http(s)/assets/路径/drawable 名）/`tip`（二维码下方说明文字，空=不显示） |
+| `epgDays`（直播 EPG 显示天数） | 每次启动覆盖 Hawk `rc_epg_days`；读取处 clamp 到 1~9（默认 3=昨天/今天/明天），日期列表以今天为中心（见 §3.15） |
+| `aliLicenseKey`（阿里云播放器 License） | 每次启动覆盖 Hawk `rc_ali_license`；`PlayerHelper.init()` 反射调 `AliPlayerGlobalSettings.setLicenseKey`，消除 AliyunPlayer 5.5+ 未配 License 时的「配置信息初始化失败，请重启app」提示（不配不影响播放） |
 | `settings`（设置页 25 项默认值） | 每项 `putIfAbsent`：**仅当用户从未在设置页改过该项**时写入一次，用户一旦手动更改该项永以用户为准（映射见 `RemoteConfig.applySettingsDefaults`；含 MediaSettingDialog 子项 `IJK_CACHE_PLAY`/`EXO_RENDERER`/`EXO_RENDERER_MODE`/`VOD_PLAYER_PREFERRED` 与 `HOME_DEFAULT_SHOW`/`PLAY_RENDER`/`VIDEO_PURIFY`/`FAST_SEARCH_MODE`/`DEBUG_OPEN`） |
 | `hin2n.bootStart` / `hin2n.staticRoutes` / `hin2n.configs` | **仅首启且组网数据库为空时播种一次**（`Hin2nSeeder`），之后完全以组网界面里的用户操作为准 |
 
 `version` / `apkUrl` / `hin2nUrl` 三个旧字段已废弃（远程更新与外部 hin2n APK 下载均不存在）。
 
-**远程配置覆盖（`remoteConfigUrl`）**：内置 json 顶层 `remoteConfigUrl` 非空时，`RemoteConfig.bootstrap` 在应用内置配置后另起后台线程 GET 该地址（URL 经 `DeviceParams.append` 拼接本机参数，见 §3.12），响应先过 `ConfigCrypto.maybeDecrypt`（支持密文下发，见 §3.11）、`parseLoose` 后以 `remoteOnly=true` 调用 `apply`——只覆盖 notice/home/tkp2p/entries/topEntries/homeEntries/upgrade/hin2nEntry/themes/theme/api/live/epg/proxy/checkInterval/ua/**secretKey**/**donate** 段；**跳过 `settings`（设置页）、`bootStart`（TVBox 开机自启）、`setAsLauncher` 以及 `hin2n`（n2n 组网，本来也不走 apply）**。成功时把**解密后的明文**写入 Hawk `rc_remote_raw` 作为断网兜底；远程失败或解析异常时，若 `rc_remote_raw` 有缓存则用缓存兜底，否则完全保持内置。UA 使用内置 `ua` 字段，缺省 `Mozilla/5.0 (Linux; Android) TVBox`，连接/读取超时 8 秒。
+**远程配置覆盖（`remoteConfigUrl`）**：内置 json 顶层 `remoteConfigUrl` 非空时，`RemoteConfig.bootstrap` 在应用内置配置后另起后台线程 GET 该地址（URL 经 `DeviceParams.append` 拼接本机参数，见 §3.12），响应先过 `ConfigCrypto.maybeDecrypt`（支持密文下发，见 §3.11）、`parseLoose` 后以 `remoteOnly=true` 调用 `apply`——只覆盖 notice/home/tkp2p/entries/topEntries/homeEntries/upgrade/hin2nEntry/themes/theme/api/live/epg/proxy/checkInterval/ua/**secretKey**/**donate**/**epgDays**/**aliLicenseKey** 段；**跳过 `settings`（设置页）、`bootStart`（TVBox 开机自启）、`setAsLauncher` 以及 `hin2n`（n2n 组网，本来也不走 apply）**。成功时把**解密后的明文**写入 Hawk `rc_remote_raw` 作为断网兜底；远程失败或解析异常时，若 `rc_remote_raw` 有缓存则用缓存兜底，否则完全保持内置。UA 使用内置 `ua` 字段，缺省 `Mozilla/5.0 (Linux; Android) TVBox`，连接/读取超时 8 秒。
 
 **useRemoteConfig 强制覆盖（统一管控模式）**：内置 json 顶层 `useRemoteConfig: true` 且本次远程拉取成功（含 `rc_remote_raw` 缓存兜底应用）时，`apply(remoteOnly=true)` 进入 `forceRemote` 分支：远程 json 强制覆盖 `settings` 全部 25 项（`putBool/putInt/putStr` 跳过 `Hawk.contains` 守卫）、`bootStart`、`setAsLauncher`（并立即 `applyLauncherComponent` 同步别名状态）、`api/live/epg/proxy`（`applyEndpoint` 不再检查用户是否已配置）。`useRemoteConfig=false` 或远程不可访问时行为与上文默认规则完全一致。
 
@@ -92,7 +94,7 @@ TVBox 的所有定制配置统一来自 APK 内置文件：
 | [UpgradeChecker.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/UpgradeChecker.java) | 进首页后自检升级（公开入口 `check(activity)`）：内联字段或 `checkUrl` 拉取版本信息（拼本机参数 + 支持密文响应）→ 版本号比较（每版本每进程只提示一次）→ TipDialog（`force` 时 `setCancelable(false)` 且不显示取消按钮）→ 确认后交 ApkDownloader |
 | [ApkDownloader.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/ApkDownloader.java) | 统一下载管线：OkHttp 流式下载到 `getExternalFilesDir`，首页顶部进度条；完成后 FileProvider+`ACTION_INSTALL_PACKAGE`/`ACTION_VIEW` 安装；Android 8+ 缺未知来源权限时先存 `sPendingInstall` 跳设置，`HomeActivity.onResume` 调 `resumePendingInstall(activity)` 自动重装；Activity 已销毁时用 application context 兜底 |
 | [CustomVodActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/CustomVodActivity.java) | 自定义点播界面（`ui.activity` 包），复用 `R.layout.activity_vod`；打开时把接口 JSON 的 `sites` 以 `cv_` 前缀**仅内存注入** `ApiConfig`（不覆盖用户首页源），退出时 `removeCustomSources` 并恢复原 home 源；支持 `http(s)://`（拼本机参数 + 密文自动解密）、`assets/`、`file:///绝对路径`（本地内容同样先过 `ConfigCrypto.maybeDecrypt`，**注意：之后用标准 Gson 解析，不剥 JSONC 注释**） |
-| [DonateActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/DonateActivity.java) | 捐助界面（`ui.activity` 包，`type=page target=donate` 入口打开）：读 `RemoteConfig.donate()` 渲染标题（`title`，空=「支持我们」）、项目详细介绍（`desc`，空=内置介绍文案，支持 `\n` 换行）、自定义图片/收款二维码（`image`：http(s) 走 Glide、`assets/` 路径读包内文件、其余按 drawable 资源名解析；缺失或加载失败时图片区隐藏）；布局 [activity_donate.xml](file:///f:/tvbox-n2n/app/src/main/res/layout/activity_donate.xml) 复用主题顶栏样式 |
+| [DonateActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/DonateActivity.java) | 捐助界面（`ui.activity` 包，`type=page target=donate` 入口打开）：读 `RemoteConfig.donate()` 渲染标题（`title`，空=「支持我们」）、项目详细介绍（`desc`，空=内置介绍文案，支持 `\n` 换行）、自定义图片/收款二维码（`image`：http(s) 走 Glide、`assets/` 路径读包内文件、其余按 drawable 资源名解析；缺失或加载失败时图片区隐藏）、二维码下方说明文字（`tip`，空=隐藏）；布局 [activity_donate.xml](file:///f:/tvbox-n2n/app/src/main/res/layout/activity_donate.xml) 复用主题顶栏样式 |
 
 设置页：[ModelSettingFragment.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/fragment/ModelSettingFragment.java) 的 `initRemoteConfig()` 绑定 `llRcBoot`（开机启动，Hawk `n2n_boot_start`）与 `llRcLauncher`（设为桌面，走 `RemoteConfig.setLauncherEnabled` + `promptChooseLauncher`）；「配置地址」行只保留入口不回显已输入地址（tvApi 已删）。布局 `res/layout/fragment_model.xml` 与 `res/layout-v21/fragment_model.xml` 中的卡片标题为「内置配置」。
 
@@ -140,7 +142,7 @@ TVBox 的所有定制配置统一来自 APK 内置文件：
 
 - **点播/首页 NPE 自动重启**：`ApiConfig.getHomeSourceBean()` 永不返回 null（未就绪时返回 `emptyHome`，key=""），`SourceViewModel.getSort()` 原代码 `getSource(sourceKey).getType()` 在 key 为空/源未加载时直接 NPE → 进程被杀 → 系统自动重启 app（用户表现「点击点播 app 自动重启」）。修复：`getSort()` 开头对 `getSource()` 判空，null 时 `sortResult.postValue(null)` 走正常空态展示。
 - **n2n 连接自动重启 + 无日志**：`N2NService.onStartCommand` 链路中 `intent.getBundleExtra` 取值无空判、`vpn_session_name[version]` 无越界保护、native `startEdge()` 只被 `catch(Exception)` 保护（`UnsatisfiedLinkError` 是 Error，会穿透）——任一触发即杀进程，且 edge.log 尚未创建导致「无日志输出」。修复：整链 `try/catch(Throwable)` + `appendEdgeLog()` 把失败原因（含 lib 加载失败提示）写进 edge 日志文件，界面日志页直接可见；`stopEdge()`/`getEdgeStatus()` 同样 Throwable 防护（EventBus 订阅线程崩溃同样会杀进程）。
-- **主屏左上源名显示规则**（`HomeActivity.applySourceName()`）：用户已配置点播接口（Hawk `api_url` 非空）且开启 `HOME_SHOW_SOURCE` 且当前源就绪 → 显示当前源名；否则显示内置 JSON `home.sourceName` 默认文字（未配置回退 app 名称）。`initViewModel` 观察者与 `onResume` 两处统一走该方法。
+- **主屏左上源名显示规则**（`HomeActivity.applySourceName()`，2026-10-22 调整）：**固定显示**内置 JSON `home.sourceName` 文字（未配置回退 app 名称），**不再随点播接口切换/换源变化**。`initViewModel` 观察者与 `onResume` 两处统一走该方法。
 - **全局未捕获异常防护**（2026-10-22）：[App.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/base/App.java) `initCrashHandler()` 在 onCreate 最前面安装 `Thread.setDefaultUncaughtExceptionHandler`——任何线程未捕获异常（含配置接口后主页刷新链路）把堆栈追加写 `filesDir/crash.log`（>512KB 自动重写），后台线程异常尽力 Toast「程序出现异常，即将自动重启」，随后 `killProcess` 自行结束进程，**不交给系统默认 handler，避免弹「tvbox结束运行」**。配套加固：`SourceViewModel.getSort()` type 0/1 的 `onSuccess` 解析（sortXml/sortJson）与 type 3 的 finally 解析块都包了 `try/catch(Throwable)`（解析失败回落 `postValue(null)`）；`HomeActivity` sortResult observer 与 loadConfig error 弹窗加 `isFinishing()/isDestroyed()` 守卫。
 
 ### 3.9 设为系统桌面（setAsLauncher / LauncherAlias）
@@ -278,6 +280,25 @@ $miniData = getMiniData($mac);   // 按设备查询/生成数据，再走 §3.11
 2. **H5 全屏残留**：`onShowCustomView` 把全屏视图挂在 `live_root` 上，切台前若未退出，残留到下一频道。修复：`destroy()` 开头即调 `exitCustomView()`。
 3. **TV 适配**：`WebSettings` 新增 `setUseWideViewPort(true)` / `setLoadWithOverviewMode(true)` / `setSupportZoom(false)` / `setBuiltInZoomControls(false)` / `setDisplayZoomControls(false)`，防止页面在电视上缩放异常。
 4. **错误回调与 API<24 兼容**：`WebViewClient` 补旧版 `shouldOverrideUrlLoading(WebView, String)`（API<24 不会走 WebResourceRequest 重载）；增加 `onReceivedError` 写日志，方便排查加载失败的网页直播源。
+
+### 3.15 纯直播模式、首页入口即时加载与 EPG 本地缓存（2026-10-22）
+
+**纯直播模式（无点播接口也可用）**：
+- 旧逻辑：`ApiConfig.loadConfig` 在点播地址为空时直接 error「源地址为空」弹窗；取消后点直播，`LivePlayerManager.init → PlayerHelper.updateCfg → ApiConfig.getIJKCodec()` 时因 `ijkCodes` 只在点播配置解析成功后才初始化（为 null）→ NPE 闪退。
+- 修复：[ApiConfig.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/api/ApiConfig.java) 构造函数即写入内置默认 IJK 配置（软解/硬解，`initDefaultIjkCodes()`），`getIJKCodec()` 加防御永不抛异常；`loadConfig` 点播地址为空但直播地址非空时回调 `error("-1")` 静默跳过（[HomeActivity](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/HomeActivity.java) 对 "-1" 直接标记初始化完成不弹窗）；点播/直播都未配置才弹「源地址为空」。点播配置加载成功后 `parseJson` 的 ijk 段整体替换内置默认。
+
+**首页中间一行入口即时加载**：`HomeActivity.initView()` 末尾（setLoadSir 之前）立即 `commitNowAllowingStateLoss` 创建 `UserFragment`，不再等点播配置加载完成；`sortResult` 观察者只调 `UserFragment.updateHomeRec(list)` 增量更新推荐数据，不重建入口行。左上角 `tvName` 固定显示 `home.sourceName`（见 §3.8）。
+
+**EPG 本地缓存与多天下发**（[LivePlayActivity](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/LivePlayActivity.java) + [EpgCache.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/util/EpgCache.java)）：
+- 显示天数：json `epgDays`（1~9，默认 3），日期列表以今天为中心生成（`initEpgDateView`），默认选中今天（修复旧版固定 9 天列表却选中索引 1 = 5 天前的问题）；
+- 查询顺序：内存 `hsEpg`（key 统一 `频道名_yyyy-MM-dd`，不再用「昨天/星期x」文案防漂移）→ 磁盘 `EpgCache` → 网络；
+- 网络请求附加 `days=N` 参数（两种 URL 形态 `?ch=&date=` 与 `{name}/{date}` 模板都附加）；服务端支持时一次返回窗口内多天（条目带 `"date":"yyyy-MM-dd"` 字段），`parseAndCacheEpg()` 按天拆分缓存；旧服务端忽略该参数按原单日格式返回，客户端兼容并触发 `prefetchEpgWindow()` 后台单线程串行预取（300ms 间隔）窗口内其余日期；
+- `EpgCache` 存储：`filesDir/epg_cache/MD5(频道名).json`，有效期 = 历史日期永久、今天/未来仅拉取当天内；写入时顺带清理 10 天前旧数据；空结果也缓存（当天不再对无节目频道重复请求）；
+- `sEpgFetching` 集合防止同一频道同一日期并发重复请求。
+
+**阿里云播放器 License**：AliyunPlayer SDK 5.5+ 强制校验 License，未配置时 SDK 内部弹「配置信息初始化失败，请重启app」Toast（不影响播放）。json 新增 `aliLicenseKey`，`PlayerHelper.init()` 反射调 `AliPlayerGlobalSettings.setLicenseKey`（反射兼容旧版 SDK 无该类的情况，失败静默忽略）。
+
+**Android 4.4（API 19）兼容**：`M3U8.removeMinorityUrl()` 的 `String.join`（Java 8/API 26+）改为 `TextUtils.join`（视频去广告默认开启，4.4 上原实现必 NoSuchMethodError 闪退）。
 
 ## 4. hin2n 入口与 TV 界面
 

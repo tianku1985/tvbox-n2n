@@ -76,6 +76,25 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         return this;
     }
 
+    /**
+     * 首页中间一行入口已改为默认即时加载（HomeActivity.initView 直接创建本 Fragment），
+     * 点播接口的「站点推荐」数据回来后通过本方法仅更新推荐列表，不重建入口行。
+     * 仅在首页内容模式为「站点推荐」(HOME_REC==1) 时生效，其余模式（豆瓣热播/观看历史）忽略。
+     */
+    public void updateHomeRec(List<Movie.Video> recVod) {
+        try {
+            if (recVod == null) {
+                return;
+            }
+            this.homeSourceRec = recVod;
+            if (Hawk.get(HawkConfig.HOME_REC, 0) == 1 && homeHotVodAdapter != null) {
+                homeHotVodAdapter.setNewData(recVod);
+            }
+        } catch (Throwable th) {
+            th.printStackTrace();
+        }
+    }
+
     @Override
     public void onFragmentResume() {
 

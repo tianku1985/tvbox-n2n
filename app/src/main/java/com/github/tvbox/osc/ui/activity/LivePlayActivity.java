@@ -49,6 +49,8 @@ import com.github.tvbox.osc.ui.adapter.LiveSettingGroupAdapter;
 import com.github.tvbox.osc.ui.adapter.LiveSettingItemAdapter;
 import com.github.tvbox.osc.ui.dialog.ApiHistoryDialog;
 import com.github.tvbox.osc.ui.dialog.LivePasswordDialog;
+import com.github.tvbox.osc.n2n.RemoteConfig;
+import com.github.tvbox.osc.util.EpgCache;
 import com.github.tvbox.osc.util.EpgUtil;
 import com.github.tvbox.osc.util.FastClickCheckUtil;
 import com.github.tvbox.osc.util.HawkConfig;
@@ -70,7 +72,6 @@ import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 import org.greenrobot.eventbus.ThreadMode;
 import org.json.JSONArray;
-import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.net.URLEncoder;
@@ -84,8 +85,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
 import java.util.TimeZone;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import kotlin.Pair;
 import xyz.doikki.videoplayer.player.VideoView;
@@ -159,7 +165,12 @@ public class LivePlayActivity extends BaseActivity {
     SimpleDateFormat timeFormat = new SimpleDateFormat("yyyy-MM-dd");
     private final Handler mHandler = new Handler();
     private static LiveChannelItem channel_Name = null;
+    /** EPG 内存缓存：key = 频道名_yyyy-MM-dd，value = 当日 Epginfo 列表 */
     private static final Hashtable hsEpg = new Hashtable();
+    /** EPG 网络请求去重集合（key 同 hsEpg），防止预取/点击并发重复请求同一频道同一日期 */
+    private static final Set<String> sEpgFetching = java.util.Collections.synchronizedSet(new HashSet<String>());
+    /** EPG 窗口日期后台预取线程（单线程串行 + 间隔，避免瞬时打满 EPG 服务端） */
+    private static ExecutorService sEpgPrefetchExec;
     private TextView tvTime;
     private TextView tvNetSpeed;
 
@@ -793,7 +804,12 @@ public class LivePlayActivity extends BaseActivity {
             return;
         if (channel_Name.getChannelName() != null) {
             showChannelInfo();
-            String savedEpgKey = channel_Name.getChannelName() + "_" + epgDateAdapter.getItem(epgDateAdapter.getSelectedIndex()).getDatePresented();
+            // 内存缓存 key 统一用「频道名_yyyy-MM-dd」（不再用界面展示的 昨天/今天/星期x 文案，
+            // 文案每天会变导致 key 漂移、缓存命中错乱）
+            int selIdx = epgDateAdapter.getSelectedIndex();
+            Date selDate = (selIdx >= 0 && selIdx < epgDateAdapter.getData().size())
+                    ? epgDateAdapter.getData().get(selIdx).getDateParamVal() : new Date();
+            String savedEpgKey = channel_Name.getChannelName() + "_" + epgDateStr(selDate);
             if (hsEpg.containsKey(savedEpgKey)) {
                 String[] epgInfo = EpgUtil.getEpgInfo(channel_Name.getChannelName());
                 getTvLogo(channel_Name.getChannelName(), epgInfo == null ? null : epgInfo[0]);
@@ -822,11 +838,7 @@ public class LivePlayActivity extends BaseActivity {
                 epgListAdapter.CanBack(currentLiveChannelItem.getinclude_back());
                 epgListAdapter.setNewData(arrayList);
             } else {
-                int selectedIndex = epgDateAdapter.getSelectedIndex();
-                if (selectedIndex < 0)
-                    getEpg(new Date());
-                else
-                    getEpg(epgDateAdapter.getData().get(selectedIndex).getDateParamVal());
+                getEpg(selDate);
             }
         }
     }
@@ -846,76 +858,337 @@ public class LivePlayActivity extends BaseActivity {
                 .into(tv_logo);
     }
 
-    public void getEpg(Date date) {
+    /** EPG 日期格式化（统一 GMT+8，与 EPG 服务端日期口径一致） */
+    private String epgDateStr(Date date) {
+        SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH);
+        f.setTimeZone(TimeZone.getTimeZone("GMT+8:00"));
+        return f.format(date);
+    }
+
+    /** 解析 yyyy-MM-dd 日期串为 Date（失败返回当前时间） */
+    private Date parseEpgDate(String dateStr) {
+        try {
+            SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH);
+            f.setTimeZone(TimeZone.getTimeZone("GMT+8:00"));
+            return f.parse(dateStr);
+        } catch (Throwable t) {
+            return new Date();
+        }
+    }
+
+    /**
+     * 获取并展示指定日期的 EPG 节目单。
+     * 查询顺序：内存缓存(hsEpg) → 本地磁盘缓存(EpgCache) → 网络请求。
+     * 网络请求附加 days 参数（json "epgDays"），支持的服务端会一次返回窗口内多天
+     * 节目单（条目带 date 字段），客户端按天拆分并缓存到本地，降低 EPG 服务端压力；
+     * 不支持的服务端忽略该参数按原单日格式返回，客户端两种格式均可解析。
+     */
+    public void getEpg(final Date date) {
         if (channel_Name == null || currentLiveChannelItem == null) {
             return;
         }
-        String channelName = channel_Name.getChannelName();
+        final String channelName = channel_Name.getChannelName();
         if (channelName == null || channelName.isEmpty()) {
             return;
         }
-        SimpleDateFormat timeFormat = new SimpleDateFormat("yyyy-MM-dd");
-        timeFormat.setTimeZone(TimeZone.getTimeZone("GMT+8:00"));
         String[] epgInfo = EpgUtil.getEpgInfo(channelName);
-        String epgTagName = channelName;
         getTvLogo(channelName, epgInfo == null ? null : epgInfo[0]);
-        if (epgInfo != null && !epgInfo[1].isEmpty()) {
-            epgTagName = epgInfo[1];
-        }
         try {
             epgListAdapter.CanBack(currentLiveChannelItem.getinclude_back());
         } catch (Throwable ignored) {}
 
+        final String dateStr = epgDateStr(date);
+        final String memKey = channelName + "_" + dateStr;
+        // 1) 内存缓存命中直接展示
+        Object mem = hsEpg.get(memKey);
+        if (mem != null) {
+            showEpg(date, (ArrayList<Epginfo>) mem);
+            showBottomEpg();
+            return;
+        }
+        // 2) 磁盘缓存命中（App 重启后仍有效），转 Epginfo 列表后展示并回填内存
+        JSONArray disk = EpgCache.get(channelName, dateStr);
+        if (disk != null) {
+            ArrayList<Epginfo> list = epgItemsToList(date, disk);
+            hsEpg.put(memKey, list);
+            showEpg(date, list);
+            showBottomEpg();
+            return;
+        }
+        // 3) 网络请求（异步）
+        requestEpgNetwork(channelName, date, true);
+    }
+
+    /**
+     * 发起 EPG 网络请求（异步，OkGo）。
+     * @param showResult true=请求完成后把结果展示到 EPG 面板/底部信息栏（用户主动查看）；
+     *                   false=仅写入缓存不刷新界面（后台预取）
+     */
+    private void requestEpgNetwork(final String channelName, final Date date, final boolean showResult) {
+        final String dateStr = epgDateStr(date);
+        final String memKey = channelName + "_" + dateStr;
+        // 同一频道同一日期已在请求中，跳过（防止并发重复打服务端）
+        if (!sEpgFetching.add(memKey)) {
+            return;
+        }
+        String[] epgInfo = EpgUtil.getEpgInfo(channelName);
+        String epgTagName = channelName;
+        if (epgInfo != null && !epgInfo[1].isEmpty()) {
+            epgTagName = epgInfo[1];
+        }
         String epgUrl;
         if (epgStringAddress.contains("{name}") && epgStringAddress.contains("{date}")) {
-            epgUrl = epgStringAddress.replace("{name}", URLEncoder.encode(epgTagName)).replace("{date}", timeFormat.format(date));
+            epgUrl = epgStringAddress.replace("{name}", URLEncoder.encode(epgTagName)).replace("{date}", dateStr);
         } else {
-            epgUrl = epgStringAddress + "?ch=" + URLEncoder.encode(epgTagName) + "&date=" + timeFormat.format(date);
+            epgUrl = epgStringAddress + "?ch=" + URLEncoder.encode(epgTagName) + "&date=" + dateStr;
         }
+        // 附加 days 窗口参数：告知服务端希望一次返回的天数（以 date 为基准向前后铺开，
+        // 与界面日期列表口径一致）；旧服务端不识别该参数会自动忽略
+        final int days = RemoteConfig.epgDays();
+        epgUrl += (epgUrl.contains("?") ? "&" : "?") + "days=" + days;
         // 请求附加本机参数（mac/ip/机型/系统版本等），服务端可按机下发 EPG
         OkGo.<String>get(com.github.tvbox.osc.n2n.DeviceParams.append(epgUrl)).execute(new StringCallback() {
             public void onSuccess(Response<String> response) {
+                sEpgFetching.remove(memKey);
                 // Activity 已销毁或正在结束，跳过 UI 更新
                 if (isFinishing() || isDestroyed()) return;
                 try {
                     // 是 json 直接解析，不是 json 先解密后加载
                     String paramString = com.github.tvbox.osc.n2n.ConfigCrypto.maybeDecrypt(response.body());
-                    ArrayList arrayList = new ArrayList();
-
-                    if (paramString != null && paramString.contains("epg_data")) {
-                        final JSONArray jSONArray = new JSONObject(paramString).optJSONArray("epg_data");
-                        if (jSONArray != null)
-                            for (int b = 0; b < jSONArray.length(); b++) {
-                                JSONObject jSONObject = jSONArray.getJSONObject(b);
-                                Epginfo epgbcinfo = new Epginfo(date, jSONObject.optString("title"), date, jSONObject.optString("start"), jSONObject.optString("end"), b);
-                                arrayList.add(epgbcinfo);
-                            }
+                    boolean[] multiDay = new boolean[1];
+                    ArrayList<Epginfo> arrayList = parseAndCacheEpg(channelName, paramString, date, multiDay);
+                    if (showResult) {
+                        showEpg(date, arrayList);
                     }
-
-                    showEpg(date, arrayList);
-
-                    try {
-                        int selIdx = epgDateAdapter.getSelectedIndex();
-                        if (selIdx >= 0 && selIdx < epgDateAdapter.getData().size()) {
-                            String savedEpgKey = channelName + "_" + epgDateAdapter.getData().get(selIdx).getDatePresented();
-                            if (!hsEpg.contains(savedEpgKey))
-                                hsEpg.put(savedEpgKey, arrayList);
-                        }
-                    } catch (Throwable ignored) {}
                     showBottomEpg();
-                } catch (JSONException jSONException) {
-                    jSONException.printStackTrace();
+                    // 服务端只返回了单日数据：后台串行预取窗口内其余日期，补齐缓存
+                    if (!multiDay[0]) {
+                        prefetchEpgWindow(channelName);
+                    }
                 } catch (Throwable ignored) {}
             }
 
             public void onFailure(int i, String str) {
+                sEpgFetching.remove(memKey);
                 if (isFinishing() || isDestroyed()) return;
                 try {
-                    showEpg(date, new ArrayList());
+                    if (showResult) {
+                        showEpg(date, new ArrayList<Epginfo>());
+                    }
+                    showBottomEpg();
+                } catch (Throwable ignored) {}
+            }
+
+            @Override
+            public void onError(Response<String> response) {
+                // OkGo 网络层失败（部分版本只回调 onError 不回调 onFailure）：释放请求锁
+                sEpgFetching.remove(memKey);
+                if (isFinishing() || isDestroyed()) return;
+                try {
+                    if (showResult) {
+                        showEpg(date, new ArrayList<Epginfo>());
+                    }
                     showBottomEpg();
                 } catch (Throwable ignored) {}
             }
         });
+    }
+
+    /**
+     * 解析 EPG 响应并写入缓存（宽容支持单日/多日两种格式）。
+     *
+     * 单日格式（原格式）：{"epg_data":[{"start":"08:00","end":"09:00","title":"..."}]}
+     *   → 全部条目归属请求的日期。
+     * 多日格式：{"epg_data":[{"date":"2026-10-22","start":"08:00","end":"09:00","title":"..."}]}
+     *   → 按条目 date 字段（取前10位 yyyy-MM-dd）拆分到各日期分别缓存，
+     *     服务端一次请求即可下发窗口内多天节目单（配合 days 参数）。
+     *
+     * @param multiDayOut 出参：multiDayOut[0]=true 表示本次为多日格式（调用方据此决定是否还需预取）；可为 null
+     * @return 请求日期对应的 Epginfo 列表（无数据返回空列表）
+     */
+    private ArrayList<Epginfo> parseAndCacheEpg(String channelName, String body, Date requestedDate, boolean[] multiDayOut) {
+        ArrayList<Epginfo> result = new ArrayList<>();
+        if (multiDayOut != null) {
+            multiDayOut[0] = false;
+        }
+        if (channelName == null || requestedDate == null) {
+            return result;
+        }
+        final String reqDateStr = epgDateStr(requestedDate);
+        try {
+            if (body == null || !body.contains("epg_data")) {
+                // 空响应也记录空缓存：当天内不再对「无节目」的频道重复请求
+                EpgCache.put(channelName, reqDateStr, new JSONArray());
+                hsEpg.put(channelName + "_" + reqDateStr, result);
+                return result;
+            }
+            JSONArray arr = new JSONObject(body).optJSONArray("epg_data");
+            if (arr == null) {
+                arr = new JSONArray();
+            }
+            // 判断是否多日格式：任一条目带有效 date 字段即视为多日
+            boolean multi = false;
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject o = arr.optJSONObject(i);
+                if (o != null && o.optString("date", "").length() >= 10) {
+                    multi = true;
+                    break;
+                }
+            }
+            if (multiDayOut != null) {
+                multiDayOut[0] = multi;
+            }
+            if (multi) {
+                // 多日格式：按天拆分（条目精简为 start/end/title 后落盘）
+                HashMap<String, JSONArray> byDay = new HashMap<>();
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject o = arr.optJSONObject(i);
+                    if (o == null) {
+                        continue;
+                    }
+                    String d = o.optString("date", "");
+                    d = d.length() >= 10 ? d.substring(0, 10) : reqDateStr;
+                    JSONArray dayArr = byDay.get(d);
+                    if (dayArr == null) {
+                        dayArr = new JSONArray();
+                        byDay.put(d, dayArr);
+                    }
+                    JSONObject item = new JSONObject();
+                    item.put("start", o.optString("start"));
+                    item.put("end", o.optString("end"));
+                    item.put("title", o.optString("title"));
+                    dayArr.put(item);
+                }
+                for (Map.Entry<String, JSONArray> e : byDay.entrySet()) {
+                    EpgCache.put(channelName, e.getKey(), e.getValue());
+                    hsEpg.put(channelName + "_" + e.getKey(), epgItemsToList(parseEpgDate(e.getKey()), e.getValue()));
+                }
+                JSONArray reqArr = byDay.get(reqDateStr);
+                if (reqArr != null) {
+                    result = epgItemsToList(requestedDate, reqArr);
+                } else {
+                    // 多天响应中缺请求日期：记空缓存，避免当天反复请求
+                    EpgCache.put(channelName, reqDateStr, new JSONArray());
+                    hsEpg.put(channelName + "_" + reqDateStr, result);
+                }
+            } else {
+                // 单日格式：全部归属请求日期
+                JSONArray simpleArr = new JSONArray();
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject o = arr.optJSONObject(i);
+                    if (o == null) {
+                        continue;
+                    }
+                    JSONObject item = new JSONObject();
+                    item.put("start", o.optString("start"));
+                    item.put("end", o.optString("end"));
+                    item.put("title", o.optString("title"));
+                    simpleArr.put(item);
+                }
+                EpgCache.put(channelName, reqDateStr, simpleArr);
+                result = epgItemsToList(requestedDate, simpleArr);
+                hsEpg.put(channelName + "_" + reqDateStr, result);
+            }
+        } catch (Throwable t) {
+            t.printStackTrace();
+        }
+        return result;
+    }
+
+    /** 缓存 JSON 数组 → Epginfo 列表（date 为该节目单所属日期） */
+    private ArrayList<Epginfo> epgItemsToList(Date date, JSONArray items) {
+        ArrayList<Epginfo> list = new ArrayList<>();
+        if (items == null) {
+            return list;
+        }
+        try {
+            for (int i = 0; i < items.length(); i++) {
+                JSONObject o = items.optJSONObject(i);
+                if (o == null) {
+                    continue;
+                }
+                list.add(new Epginfo(date, o.optString("title"), date, o.optString("start"), o.optString("end"), i));
+            }
+        } catch (Throwable ignored) {}
+        return list;
+    }
+
+    /**
+     * 后台串行预取当前日期窗口内其余日期的 EPG（服务端只回单日格式时触发）。
+     * 单线程 + 每次间隔 300ms，已在内存/磁盘缓存或请求中的日期自动跳过。
+     */
+    private void prefetchEpgWindow(final String channelName) {
+        try {
+            if (epgDateAdapter == null || channelName == null) {
+                return;
+            }
+            final List<Date> dates = new ArrayList<>();
+            for (LiveEpgDate d : epgDateAdapter.getData()) {
+                if (d.getDateParamVal() != null) {
+                    dates.add(d.getDateParamVal());
+                }
+            }
+            if (dates.isEmpty()) {
+                return;
+            }
+            if (sEpgPrefetchExec == null) {
+                sEpgPrefetchExec = Executors.newSingleThreadExecutor();
+            }
+            sEpgPrefetchExec.execute(new Runnable() {
+                @Override
+                public void run() {
+                    for (Date d : dates) {
+                        if (isFinishing() || isDestroyed()) {
+                            return;
+                        }
+                        String ds = epgDateStr(d);
+                        if (hsEpg.containsKey(channelName + "_" + ds)) {
+                            continue;
+                        }
+                        if (EpgCache.get(channelName, ds) != null) {
+                            continue;
+                        }
+                        fetchEpgDaySync(channelName, d);
+                        try {
+                            Thread.sleep(300);
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                }
+            });
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 同步拉取某一天 EPG 并写入缓存（仅后台预取线程调用，不刷新界面） */
+    private void fetchEpgDaySync(String channelName, Date date) {
+        String dateStr = epgDateStr(date);
+        String memKey = channelName + "_" + dateStr;
+        if (!sEpgFetching.add(memKey)) {
+            return;
+        }
+        try {
+            String[] epgInfo = EpgUtil.getEpgInfo(channelName);
+            String epgTagName = channelName;
+            if (epgInfo != null && !epgInfo[1].isEmpty()) {
+                epgTagName = epgInfo[1];
+            }
+            String epgUrl;
+            if (epgStringAddress.contains("{name}") && epgStringAddress.contains("{date}")) {
+                epgUrl = epgStringAddress.replace("{name}", URLEncoder.encode(epgTagName)).replace("{date}", dateStr);
+            } else {
+                epgUrl = epgStringAddress + "?ch=" + URLEncoder.encode(epgTagName) + "&date=" + dateStr;
+            }
+            epgUrl += (epgUrl.contains("?") ? "&" : "?") + "days=" + RemoteConfig.epgDays();
+            Response<String> response = OkGo.<String>get(com.github.tvbox.osc.n2n.DeviceParams.append(epgUrl)).execute();
+            if (response != null && response.body() != null) {
+                String body = com.github.tvbox.osc.n2n.ConfigCrypto.maybeDecrypt(response.body());
+                parseAndCacheEpg(channelName, body, date, null);
+            }
+        } catch (Throwable ignored) {
+        } finally {
+            sEpgFetching.remove(memKey);
+        }
     }
 
     private boolean replayChannel() {
@@ -1365,24 +1638,28 @@ public class LivePlayActivity extends BaseActivity {
         mEpgDateGridView.setLayoutManager(new V7LinearLayoutManager(this.mContext, 1, false));
 
         epgDateAdapter = new LiveEpgDateAdapter();
+        // 节目表显示天数由 json "epgDays" 定义（含今天，范围 1~9，默认 3 天=昨天/今天/明天）。
+        // 列表以今天为中心：今天之前 (days-1)/2 天，今天及未来补齐剩余天数；
+        // 默认选中「今天」（修复旧版固定 9 天列表却选中索引 1 导致默认显示 5 天前节目单的问题）。
+        int days = RemoteConfig.epgDays();
+        int todayIndex = (days - 1) / 2;
         Calendar calendar = Calendar.getInstance();
         calendar.setTime(new Date());
-//        SimpleDateFormat datePresentFormat = new SimpleDateFormat("dd-MMM", Locale.ENGLISH);
         SimpleDateFormat datePresentFormat = new SimpleDateFormat("EEEE", Locale.SIMPLIFIED_CHINESE);
-        calendar.add(Calendar.DAY_OF_MONTH, -6);
-        for (int i = 0; i < 9; i++) {
+        calendar.add(Calendar.DAY_OF_MONTH, -todayIndex);
+        for (int i = 0; i < days; i++) {
             Date dateIns = calendar.getTime();
             LiveEpgDate epgDate = new LiveEpgDate();
             epgDate.setIndex(i);
 
-            // takagen99: Yesterday / Today / Tomorrow
-            if (i == 5) {
+            // 昨天/今天/明天/后天 用友好文案，其余显示星期几
+            if (i == todayIndex - 1) {
                 epgDate.setDatePresented("昨天");
-            } else if (i == 6) {
+            } else if (i == todayIndex) {
                 epgDate.setDatePresented("今天");
-            } else if (i == 7) {
+            } else if (i == todayIndex + 1) {
                 epgDate.setDatePresented("明天");
-            } else if (i == 8) {
+            } else if (i == todayIndex + 2) {
                 epgDate.setDatePresented("后天");
             } else {
                 epgDate.setDatePresented(datePresentFormat.format(dateIns));
@@ -1436,7 +1713,8 @@ public class LivePlayActivity extends BaseActivity {
                 getEpg(epgDateAdapter.getData().get(position).getDateParamVal());
             }
         });
-        epgDateAdapter.setSelectedIndex(1);
+        // 默认选中「今天」，底部信息栏/节目单默认展示今日节目
+        epgDateAdapter.setSelectedIndex(todayIndex);
     }
 
     private void initChannelGroupView() {

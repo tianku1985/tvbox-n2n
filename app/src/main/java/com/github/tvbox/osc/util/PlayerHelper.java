@@ -123,6 +123,29 @@ public class PlayerHelper {
 
     public static void init() {
         IjkMediaPlayer.loadLibrariesOnce(null);
+        // 设置阿里云播放器 SDK License（json "aliLicenseKey" 配置）。
+        // AliyunPlayer 5.5+ 强制校验 license，未配置时 SDK 内部会弹「配置信息初始化失败，请重启app」
+        // 的 Toast（不影响播放，但每进播放页都弹，体验差）。这里用反射调用是考虑到 SDK 版本差异
+        // （旧版可能没有 AliPlayerGlobalSettings 类），反射失败静默忽略即可。
+        applyAliyunLicense();
+    }
+
+    /**
+     * 反射调用 AliPlayerGlobalSettings.setLicenseKey(key) 设置阿里云播放器 License。
+     * key 为空（json 未配置 aliLicenseKey）时不做任何处理。
+     */
+    private static void applyAliyunLicense() {
+        try {
+            String key = com.github.tvbox.osc.n2n.RemoteConfig.aliLicenseKey();
+            if (key == null || key.isEmpty()) {
+                return;
+            }
+            Class<?> cls = Class.forName("com.aliyun.player.AliPlayerGlobalSettings");
+            java.lang.reflect.Method m = cls.getMethod("setLicenseKey", String.class);
+            m.invoke(null, key);
+        } catch (Throwable ignored) {
+            // SDK 版本无此方法 / 类不存在 / 调用失败：静默忽略，不影响播放
+        }
     }
 
     public static String getPlayerName(int playType) {

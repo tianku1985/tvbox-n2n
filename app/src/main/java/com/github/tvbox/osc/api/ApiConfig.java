@@ -77,7 +77,10 @@ public class ApiConfig {
     private final List<LiveChannelGroup> liveChannelGroupList;
     private final List<ParseBean> parseBeanList;
     private List<String> vipParseFlags;
-    private List<IJKCode> ijkCodes;
+    // IJK 解码配置：构造时即写入内置默认（软解/硬解），点播配置加载成功后会被配置中的 ijk 段替换。
+    // 关键：该列表任何时刻都不得为 null/空 —— 未配置点播接口（仅直播）时，
+    // PlayerHelper.updateCfg → getIJKCodec 也会被调用，空列表取 get(0) 会直接崩溃闪退。
+    private List<IJKCode> ijkCodes = new ArrayList<>();
     private String spider = null;
     public String wallpaper = "";
     public JsonArray livePlayHeaders;
@@ -95,6 +98,8 @@ public class ApiConfig {
         sourceBeanList = new LinkedHashMap<>();
         liveChannelGroupList = new ArrayList<>();
         parseBeanList = new ArrayList<>();
+        // 初始化内置默认 IJK 解码配置，保证未加载任何点播配置时播放器仍可用
+        initDefaultIjkCodes();
     }
 
     public static ApiConfig get() {
@@ -151,6 +156,14 @@ public class ApiConfig {
         // Embedded Source : Update in Strings.xml if required
         String apiUrl = Hawk.get(HawkConfig.API_URL, HomeActivity.getRes().getString(R.string.app_source));
         if (apiUrl.isEmpty()) {
+            // 未配置点播接口：若已配置直播接口，走静默跳过（错误码 "-1"，HomeActivity 收到后直接
+            // 标记初始化完成、不再弹「源地址为空」对话框），让用户可以只把本应用当直播客户端用；
+            // 直播接口也没有时才提示「源地址为空」。
+            String liveUrl = Hawk.get(HawkConfig.LIVE_URL, "");
+            if (liveUrl != null && !liveUrl.trim().isEmpty()) {
+                callback.error("-1");
+                return;
+            }
             callback.error("源地址为空");
             return;
         }
@@ -786,11 +799,13 @@ public class ApiConfig {
             }
         }
         // IJK解码配置
-        if (ijkCodes == null) {
-            ijkCodes = new ArrayList<>();
+        // IJK 解码配置：点播配置中带了 "ijk" 段时，用配置整体替换内置默认；
+        // 未带时保留构造函数中写入的内置默认（保证仅直播场景下播放器可用，不崩溃）
+        if (infoJson.has("ijk")) {
+            List<IJKCode> fromConfig = new ArrayList<>();
             boolean foundOldSelect = false;
             String ijkCodec = Hawk.get(HawkConfig.IJK_CODEC, "");
-            JsonArray ijkJsonArray = infoJson.has("ijk") ? infoJson.get("ijk").getAsJsonArray() : defaultJson.get("ijk").getAsJsonArray();
+            JsonArray ijkJsonArray = infoJson.get("ijk").getAsJsonArray();
             for (JsonElement opt : ijkJsonArray) {
                 JsonObject obj = (JsonObject) opt;
                 String name = obj.get("group").getAsString();
@@ -811,12 +826,69 @@ public class ApiConfig {
                 } else {
                     codec.selected(false);
                 }
-                ijkCodes.add(codec);
+                fromConfig.add(codec);
             }
-            if (!foundOldSelect && ijkCodes.size() > 0) {
-                ijkCodes.get(0).selected(true);
+            if (!foundOldSelect && fromConfig.size() > 0) {
+                fromConfig.get(0).selected(true);
+            }
+            if (!fromConfig.isEmpty()) {
+                ijkCodes = fromConfig;
             }
         }
+    }
+
+    /**
+     * 写入内置默认 IJK 解码配置（软解码/硬解码两组，参数与历史上 defaultIJKADS 内置值一致）。
+     * 构造函数调用，保证 ijkCodes 任何时刻非空：未配置点播接口、仅配置直播的场景下，
+     * 直播播放器初始化同样依赖该列表（此前为空导致 get(0) 空指针、点直播即闪退）。
+     */
+    private void initDefaultIjkCodes() {
+        ijkCodes.clear();
+        ijkCodes.add(buildDefaultIjkCode("软解码", false));
+        ijkCodes.add(buildDefaultIjkCode("硬解码", true));
+        // 按用户上次选择（Hawk IJK_CODEC）标记选中项；无记录时默认选中第一项
+        String sel = Hawk.get(HawkConfig.IJK_CODEC, "");
+        boolean found = false;
+        for (IJKCode code : ijkCodes) {
+            if (code.getName().equals(sel)) {
+                code.selected(true);
+                found = true;
+            } else {
+                code.selected(false);
+            }
+        }
+        if (!found) {
+            ijkCodes.get(0).selected(true);
+        }
+    }
+
+    /**
+     * 构造一组默认 IJK 解码参数。两组参数仅 mediacodec 系列不同（硬解开启、软解关闭），
+     * 其余与上游 takagen99/Box 内置默认值保持一致。
+     * @param name 组名（软解码/硬解码）
+     * @param hardware true=硬解码（开启 mediacodec），false=软解码
+     */
+    private IJKCode buildDefaultIjkCode(String name, boolean hardware) {
+        LinkedHashMap<String, String> opt = new LinkedHashMap<>();
+        opt.put("4|opensles", "0");
+        opt.put("4|overlay-format", "842225234");
+        opt.put("4|framedrop", "0");
+        opt.put("4|soundtouch", "1");
+        opt.put("4|start-on-prepared", "1");
+        opt.put("1|http-detect-rangeupport", "0");
+        opt.put("1|fflags", "fastseek");
+        opt.put("2|skip_loop_filter", "48");
+        opt.put("4|reconnect", "1");
+        opt.put("4|enable-accurate-seek", "0");
+        opt.put("4|mediacodec", hardware ? "1" : "0");
+        opt.put("4|mediacodec-auto-rotate", hardware ? "1" : "0");
+        opt.put("4|mediacodec-handle-resolution-change", hardware ? "1" : "0");
+        opt.put("4|mediacodec-hevc", hardware ? "1" : "0");
+        opt.put("1|dns_cache_timeout", "600000000");
+        IJKCode code = new IJKCode();
+        code.setName(name);
+        code.setOption(opt);
+        return code;
     }
 
     private void putLiveHistory(String url) {
@@ -1051,16 +1123,29 @@ public class ApiConfig {
         return getIJKCodec(codeName);
     }
 
+    /**
+     * 按名称取 IJK 解码配置；列表为空（理论不会发生，构造时已内置默认）或找不到时回退第一项，
+     * 任何情况下都不抛异常 —— 该方法的调用方在播放器初始化关键路径上，崩溃即闪退。
+     */
     public IJKCode getIJKCodec(String name) {
-        for (IJKCode code : ijkCodes) {
-            if (code.getName().equals(name))
-                return code;
+        if (ijkCodes == null || ijkCodes.isEmpty()) {
+            initDefaultIjkCodes();
+        }
+        if (name != null) {
+            for (IJKCode code : ijkCodes) {
+                if (code.getName() != null && code.getName().equals(name))
+                    return code;
+            }
         }
         return ijkCodes.get(0);
     }
 
+    /**
+     * 直播播放自定义请求头；未加载点播配置时为 null，调用方已按 null 容错（见 setPlayHeaders 的 try/catch），
+     * 这里返回空数组更稳妥，避免调用方 toString() 空指针。
+     */
     public JsonArray getLivePlayHeaders() {
-        return livePlayHeaders;
+        return livePlayHeaders == null ? new JsonArray() : livePlayHeaders;
     }
 
     String clanToAddress(String lanLink) {

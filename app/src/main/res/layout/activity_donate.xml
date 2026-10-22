@@ -92,6 +92,18 @@
                 android:nextFocusUp="@id/tvBack"
                 android:scaleType="fitCenter"
                 android:visibility="gone" />
+
+            <!-- 二维码下方说明文字（json donate.tip 配置，留空不显示） -->
+            <TextView
+                android:id="@+id/tvDonateTip"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/vs_12"
+                android:gravity="center"
+                android:lineSpacingMultiplier="1.3"
+                android:textColor="@android:color/white"
+                android:textSize="@dimen/ts_20"
+                android:visibility="gone" />
         </LinearLayout>
     </ScrollView>
 </LinearLayout>

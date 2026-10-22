@@ -55,6 +55,9 @@ import java.util.List;
  *              "zone": "cn", "iceServers": [...] },   // iceServers 也可简写 ice
  *   "checkInterval": 30,                              // 配置检查间隔（分钟，本地模式下列出兼容）
  *   "ua": "Mozilla/5.0 ...",                          // 全局 UA
+ *   "epgDays": 3,                                     // 直播 EPG 节目表显示天数（含今天，1~9）
+ *   "aliLicenseKey": "",                              // 阿里云播放器 SDK License Key
+ *                                                     //   （5.5+ 不配时 SDK 弹「配置信息初始化失败」提示）
  *   "bootStart": true,                                // TVBox 开机自启（用户手动改过后不覆盖）
  *   "api": "...", "live": "...", "epg": "...", "proxy": "...",
  *   "theme": "violet",                                // 主题：索引 / 中文名 / 英文别名
@@ -68,8 +71,9 @@ import java.util.List;
  *   "hin2nEntry": true,                               // 首页是否显示 hin2n 固定入口
  *   "hin2n": { "apkUrl": "https://.../hin2n.apk" },   // 独立组网 App：未安装时的 APK 下载地址（可选）
  *   "secretKey": "",                                  // 接口固定密钥模式的秘钥覆盖（空=用 ConfigCrypto.SECRET_KEY）
- *   "donate": { "title": "支持我们", "desc": "...",    // 捐助界面：标题/介绍/二维码图片
- *               "image": "https://.../qr.png" },      //   image 支持 http(s) / assets/路径 / drawable 名
+ *   "donate": { "title": "支持我们", "desc": "...",    // 捐助界面：标题/介绍/二维码图片/底部说明
+ *               "image": "https://.../qr.png",        //   image 支持 http(s) / assets/路径 / drawable 名
+ *               "tip": "扫码后请备注..." },            //   tip=二维码下方说明文字（可选）
  *   "entries": [ {"name":"文件管理","pkg":"...","icon":"...","url":"..."} ],
  *   "topEntries": [                               // 顶栏整体替换（缺省=内置默认顶栏）
  *     {"name":"搜索","type":"page","target":"search","icon":"hm_search"},
@@ -120,6 +124,10 @@ public class RemoteConfig {
     public static final String K_SECRET = "rc_secret_key";
     /** 捐助界面配置（json "donate" 段原文） */
     public static final String K_DONATE = "rc_donate";
+    /** 直播 EPG 节目表显示天数（json "epgDays"，含今天；默认 3 = 昨天/今天/明天） */
+    public static final String K_EPG_DAYS = "rc_epg_days";
+    /** 阿里云播放器 SDK License Key（json "aliLicenseKey"；5.5+ 版本不配时 SDK 会弹「配置信息初始化失败」） */
+    public static final String K_ALI_LICENSE = "rc_ali_license";
     /** 最近一次成功拉取的远程配置原文（断网/下次启动兜底；存解密后的明文） */
     public static final String K_REMOTE_RAW = "rc_remote_raw";
 
@@ -215,7 +223,7 @@ public class RemoteConfig {
         return k == null ? "" : k.trim();
     }
 
-    /** 捐助界面配置（json "donate" 段：{"title":"","desc":"","image":""}），未配置返回 null */
+    /** 捐助界面配置（json "donate" 段：{"title":"","desc":"","image":"","tip":""}），未配置返回 null */
     public static JSONObject donate() {
         String raw = Hawk.get(K_DONATE, "");
         if (raw.isEmpty()) {
@@ -226,6 +234,24 @@ public class RemoteConfig {
         } catch (Throwable t) {
             return null;
         }
+    }
+
+    /**
+     * 直播 EPG 节目表显示的总天数（json "epgDays"，含今天）。
+     * 默认 3 天 = 昨天/今天/明天；范围限制在 1~9 天，防止配置过大导致请求过多。
+     * 日期列表以今天为中心：前天数 = (days-1)/2，其余为今天及未来天数。
+     */
+    public static int epgDays() {
+        int d = Hawk.get(K_EPG_DAYS, 3);
+        if (d < 1) d = 1;
+        if (d > 9) d = 9;
+        return d;
+    }
+
+    /** 阿里云播放器 SDK License Key（json "aliLicenseKey"；空=不设置，SDK 会提示配置信息初始化失败但不影响播放） */
+    public static String aliLicenseKey() {
+        String k = Hawk.get(K_ALI_LICENSE, "");
+        return k == null ? "" : k.trim();
     }
 
     /**
@@ -736,6 +762,14 @@ public class RemoteConfig {
             } else {
                 Hawk.delete(K_DONATE);
             }
+        }
+        // EPG 节目表显示天数：本地/远程均可下发，每次启动应用（读取处做 1~9 范围保护）
+        if (j.has("epgDays")) {
+            Hawk.put(K_EPG_DAYS, j.optInt("epgDays", 3));
+        }
+        // 阿里云播放器 SDK License：本地/远程均可下发；空字符串=清除（SDK 弹提示但不影响播放）
+        if (j.has("aliLicenseKey")) {
+            Hawk.put(K_ALI_LICENSE, j.optString("aliLicenseKey", "").trim());
         }
         if (j.has("hin2nEntry")) {
             Hawk.put(K_HIN2N, j.optBoolean("hin2nEntry", true));

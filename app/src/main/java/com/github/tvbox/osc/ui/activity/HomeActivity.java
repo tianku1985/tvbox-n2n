@@ -242,6 +242,18 @@ public class HomeActivity extends BaseActivity {
                 startActivity(new Intent(Settings.ACTION_DATE_SETTINGS));
             }
         });
+        // 中间一行入口（历史/点播/直播/…）与下方内容区立即默认加载：
+        // 不再等待点播接口的 sortResult 回来才创建 UserFragment，
+        // 这样未配置点播接口（仅直播）或点播接口加载失败时，入口行也和顶部一行一样立即可用；
+        // 点播数据回来后由 sortResult 观察者调用 UserFragment.updateHomeRec 仅更新推荐数据。
+        try {
+            userFragment = UserFragment.newInstance();
+            getSupportFragmentManager().beginTransaction()
+                    .replace(R.id.homeFragmentContainer, userFragment)
+                    .commitNowAllowingStateLoss();
+        } catch (Throwable th) {
+            th.printStackTrace();
+        }
         setLoadSir(this.contentLayout);
     }
 
@@ -329,10 +341,15 @@ public class HomeActivity extends BaseActivity {
                 }
                 try {
                     if (userFragment == null) {
+                        // 兼容路径：initView 中的即时创建失败时，仍在此处兜底创建
                         userFragment = UserFragment.newInstance(absXml == null ? null : absXml.videoList);
                         getSupportFragmentManager().beginTransaction()
                                 .replace(R.id.homeFragmentContainer, userFragment)
                                 .commitNowAllowingStateLoss();
+                    } else {
+                        // 中间一行入口已在 initView 默认加载，这里只把点播推荐数据喂给已存在的
+                        // UserFragment（更新「站点推荐」列表），不重建入口行，避免换源时入口闪烁重排
+                        userFragment.updateHomeRec(absXml == null ? null : absXml.videoList);
                     }
                     showSuccess();
                     // takagen99 : Switch to show / hide source title
@@ -344,25 +361,16 @@ public class HomeActivity extends BaseActivity {
     }
 
     /**
-     * 左上角源名按钮显示规则：
-     * 1) 用户已配置点播接口（api_url 非空）且当前源就绪、设置开启显示源名 → 显示当前源名称；
-     * 2) 否则显示内置 json「home.sourceName」配置的默认文字（未配置回退 app 名称）。
+     * 左上角名称显示规则（2026-10-22 起固定）：
+     * 始终显示内置 json「home.sourceName」配置的文字，不再随点播接口/当前源切换而变化；
+     * sourceName 为空时回退显示 app 名称。点击仍打开「切换数据源」，长按仍清缓存重载。
      */
     private void applySourceName() {
-        boolean apiReady = !Hawk.get(HawkConfig.API_URL, "").isEmpty();
-        SourceBean home = ApiConfig.get().getHomeSourceBean();
-        boolean showSrc = Hawk.get(HawkConfig.HOME_SHOW_SOURCE, false) && apiReady
-                && home != null && home.getKey() != null && !home.getKey().isEmpty()
-                && home.getName() != null && !home.getName().isEmpty();
-        if (showSrc) {
-            tvName.setText(home.getName());
+        String sn = com.github.tvbox.osc.n2n.RemoteConfig.homeSourceName();
+        if (sn.isEmpty()) {
+            tvName.setText(R.string.app_name);
         } else {
-            String sn = com.github.tvbox.osc.n2n.RemoteConfig.homeSourceName();
-            if (sn.isEmpty()) {
-                tvName.setText(R.string.app_name);
-            } else {
-                tvName.setText(sn);
-            }
+            tvName.setText(sn);
         }
         tvName.clearAnimation();
     }
@@ -383,15 +391,23 @@ public class HomeActivity extends BaseActivity {
 
     private void initData() {
         // takagen99: If network available, check connected Wifi or Lan
-        if (isNetworkAvailable()) {
-            ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
-            if (cm.getActiveNetworkInfo().getType() == ConnectivityManager.TYPE_WIFI) {
-                tvWifi.setImageDrawable(res.getDrawable(R.drawable.hm_wifi));
-            } else if (cm.getActiveNetworkInfo().getType() == ConnectivityManager.TYPE_MOBILE) {
-                tvWifi.setImageDrawable(res.getDrawable(R.drawable.hm_mobile));
-            } else if (cm.getActiveNetworkInfo().getType() == ConnectivityManager.TYPE_ETHERNET) {
-                tvWifi.setImageDrawable(res.getDrawable(R.drawable.hm_lan));
+        // 网络状态瞬时变化时 getActiveNetworkInfo() 可能为 null（弱网/切换瞬间），需空值保护
+        try {
+            if (isNetworkAvailable()) {
+                ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+                NetworkInfo ni = cm == null ? null : cm.getActiveNetworkInfo();
+                if (ni != null) {
+                    if (ni.getType() == ConnectivityManager.TYPE_WIFI) {
+                        tvWifi.setImageDrawable(res.getDrawable(R.drawable.hm_wifi));
+                    } else if (ni.getType() == ConnectivityManager.TYPE_MOBILE) {
+                        tvWifi.setImageDrawable(res.getDrawable(R.drawable.hm_mobile));
+                    } else if (ni.getType() == ConnectivityManager.TYPE_ETHERNET) {
+                        tvWifi.setImageDrawable(res.getDrawable(R.drawable.hm_lan));
+                    }
+                }
             }
+        } catch (Throwable th) {
+            th.printStackTrace();
         }
 
         // takagen99: Set Style either Grid or Line
@@ -403,7 +419,15 @@ public class HomeActivity extends BaseActivity {
 
         if (dataInitOk && jarInitOk) {
             boolean forceSortRefresh = getIntent() != null && getIntent().getBooleanExtra("forceSortRefresh", false);
-            sourceViewModel.getSort(ApiConfig.get().getHomeSourceBean().getKey(), forceSortRefresh);
+            // 未配置点播接口（仅直播）时 homeSourceBean 为空壳、key 为 null：
+            // 直接通知观察者空数据即可（UserFragment 已默认加载，入口行立即可用），
+            // 不再触发任何点播网络请求
+            String homeKey = ApiConfig.get().getHomeSourceBean().getKey();
+            if (homeKey == null || homeKey.isEmpty()) {
+                sourceViewModel.sortResult.postValue(null);
+            } else {
+                sourceViewModel.getSort(homeKey, forceSortRefresh);
+            }
             if (hasPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
                 LOG.e("有");
             } else {
