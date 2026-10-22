@@ -1180,9 +1180,10 @@ public class LivePlayActivity extends BaseActivity {
                 epgUrl = epgStringAddress + "?ch=" + URLEncoder.encode(epgTagName) + "&date=" + dateStr;
             }
             epgUrl += (epgUrl.contains("?") ? "&" : "?") + "days=" + RemoteConfig.epgDays();
-            Response<String> response = OkGo.<String>get(com.github.tvbox.osc.n2n.DeviceParams.append(epgUrl)).execute();
+            // OkGo 同步 execute() 返回的是原生 okhttp3.Response（非泛型包装），body 需手动取 string
+            okhttp3.Response response = OkGo.<String>get(com.github.tvbox.osc.n2n.DeviceParams.append(epgUrl)).execute();
             if (response != null && response.body() != null) {
-                String body = com.github.tvbox.osc.n2n.ConfigCrypto.maybeDecrypt(response.body());
+                String body = com.github.tvbox.osc.n2n.ConfigCrypto.maybeDecrypt(response.body().string());
                 parseAndCacheEpg(channelName, body, date, null);
             }
         } catch (Throwable ignored) {
