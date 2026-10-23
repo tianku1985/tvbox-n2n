@@ -129,8 +129,6 @@ public class HomeEntry {
             iv.setBackgroundResource(R.drawable.button_dialog_vod);
             iv.setClickable(true);
             iv.setFocusable(true);
-            // 触屏/鼠标设备：允许触摸获得焦点，显示高亮态
-            iv.setFocusableInTouchMode(true);
             iv.setContentDescription(e.name);
             EntryDispatcher.loadIcon(act, iv, e);
             iv.setOnClickListener(new View.OnClickListener() {

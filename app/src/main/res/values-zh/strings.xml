@@ -7,6 +7,8 @@
     // Home Page //
     <string name="hm_ok">加载成功</string>
     <string name="hm_notok">加载失败</string>
+    <!-- 点播接口加载成功通知（%1$d=剩余秒数，到点自动关闭；秒数由 json loadSuccessDuration 配置） -->
+    <string name="load_success_notice">点播接口加载成功 · %1$d秒后关闭</string>
     <string name="hm_retry">重试</string>
     <string name="hm_cancel">取消</string>
     <string name="hm_exit">再按一次返回键退出应用</string>

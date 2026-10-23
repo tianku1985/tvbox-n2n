@@ -13,7 +13,6 @@ import android.os.Bundle;
 import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.view.View;
-import android.view.ViewGroup;
 import android.view.WindowManager;
 
 import androidx.annotation.Nullable;
@@ -91,10 +90,6 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
         setContentView(getLayoutResID());
         mContext = this;
         CutoutUtil.adaptCutoutAboveAndroidP(mContext, true);//设置刘海
-        // 触屏/鼠标设备适配：允许触摸改变焦点（touchscreenBlocksFocus=false），
-        // 这样平板/手机上点击按钮时焦点能正确移动，配合 focusableInTouchMode 即可显示焦点高亮。
-        // TV 盒子（无触屏）不受影响——此属性仅在有触摸事件时才生效。
-        enableTouchFocusIfNeeded();
         AppManager.getInstance().addActivity(this);
         init();
         // 远程 JSON 的 home.bgImage 对所有页面统一生效（未配置时本方法内部直接跳过）
@@ -297,68 +292,6 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
 
     public boolean supportsTouch() {
         return getPackageManager().hasSystemFeature("android.hardware.touchscreen");
-    }
-
-    /**
-     * 触屏/鼠标设备适配（平板/手机/外接鼠标）。
-     * 在支持触屏的设备上：
-     *  1. 关闭 touchscreenBlocksFocus：让触摸/鼠标点击能移动焦点（TV 盒子默认开启，触屏设备需关闭）；
-     *  2. 遍历内容视图，把所有已设置 clickable/focusable 的视图补上 focusableInTouchMode，
-     *     使其在触屏设备上点击时获得焦点并显示高亮态；
-     *  3. 不改变纯 TV 设备的行为（无触屏硬件时 supportsTouch=false，直接跳过）。
-     * 鼠标在 Android 上等价于触摸事件，因此本方法同时覆盖鼠标支持。
-     */
-    private void enableTouchFocusIfNeeded() {
-        if (!supportsTouch()) {
-            return;
-        }
-        // 关闭 TOUCHSCREEN_BLOCKS_FOCUS 窗口标志：让触摸/鼠标点击能移动焦点
-        // （Android 默认开启此标志，TV 盒子无触屏没问题，平板/手机上会导致点击不移动焦点）。
-        // 注：
-        //  1) Window 类没有公开的 setTouchscreenBlocksFocus 方法，它是 ViewRootImpl 的隐藏 API；
-        //  2) WindowManager.LayoutParams.FLAG_TOUCHSCREEN_BLOCKS_FOCUS 也是 @hide 常量，compileSdk 中无符号；
-        //     但它的实际数值在所有 API 级别固定为 0x00200000（API 21 起），此处直接写死数值，
-        //     编译时内联成整数，避免 @hide 符号找不到。
-        //  3) setFlags(flags, mask) = 把 mask 中 1 对应的位置设置为 flags；flags=0 即清零此位。
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            try {
-                if (getWindow() != null) {
-                    getWindow().setFlags(0, 0x00200000 /* LayoutParams.FLAG_TOUCHSCREEN_BLOCKS_FOCUS */);
-                }
-            } catch (Throwable ignored) {
-            }
-        }
-        // 递归给已可点击的视图补上 focusableInTouchMode，使触屏点击有焦点反馈。
-        // 注意：init() 中还会动态创建入口卡片等视图，因此除立即执行一次外，
-        // 再在布局完成后（content.post）补执行一次，覆盖动态添加的视图。
-        try {
-            View root = findViewById(android.R.id.content);
-            if (root instanceof ViewGroup) {
-                final ViewGroup group = (ViewGroup) root;
-                applyFocusableInTouchMode(group);
-                root.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        applyFocusableInTouchMode(group);
-                    }
-                });
-            }
-        } catch (Throwable ignored) {
-        }
-    }
-
-    /** 递归遍历视图树，为已 clickable+focusable 的视图添加 focusableInTouchMode */
-    private void applyFocusableInTouchMode(ViewGroup group) {
-        for (int i = 0; i < group.getChildCount(); i++) {
-            View child = group.getChildAt(i);
-            if (child == null) continue;
-            if (child.isClickable() && child.isFocusable()) {
-                child.setFocusableInTouchMode(true);
-            }
-            if (child instanceof ViewGroup) {
-                applyFocusableInTouchMode((ViewGroup) child);
-            }
-        }
     }
 
     public void setScreenBrightness(float amt) {

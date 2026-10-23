@@ -224,12 +224,12 @@ public class CustomVodActivity extends BaseActivity {
                 onBackPressed();
             }
         });
-        // 界面名：单击不再切源（取消左上角切源入口，避免误触），长按重新加载当前源分类；
-        // 如需在本界面的 cv_ 源之间切换，可通过遥控器 MENU 键呼出（dispatchKeyEvent 保留 showSiteSwitch）。
+        // 界面名：点击在本界面的 cv_ 源之间切换 / 长按重新加载
         tvName.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                // 取消单击切源入口：单击不做任何响应
+                FastClickCheckUtil.check(view);
+                showSiteSwitch();
             }
         });
         tvName.setOnLongClickListener(new View.OnLongClickListener() {

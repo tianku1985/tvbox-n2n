@@ -58,7 +58,9 @@ TVBox 的所有定制配置统一来自 APK 内置文件：
 
 | 字段 | 落盘规则 |
 |------|----------|
-| `notice`（字符串或样式对象）/`home`/`tkp2p`/`entries`/`hin2nEntry`/`checkInterval`/`ua` | 每次启动用内置 JSON 覆盖缓存值 |
+| `notice`（字符串或样式对象）/`home`/`tkp2p`/`entries`/`hin2nEntry`/`checkInterval`/`loadSuccessDuration`/`warningAutoClose`/`ua` | 每次启动用内置 JSON 覆盖缓存值 |
+| `home.recMovies`（首页自定义推荐） | `home` 段内的数组，每次启动随 `home` 一起覆盖：**数组非空时**首页推荐列表直接显示配置的影片（`name`/`pic`/`note`/`id`/`sourceKey`），**不再请求豆瓣**，标题显示「推荐」；配 `id`+`sourceKey` 点击进详情，只配 `name` 点击按片名搜索；空数组/全注释 = 保持原有豆瓣逻辑 |
+| `loadSuccessDuration` / `warningAutoClose` | 前者=点播接口加载成功顶部提示的自动关闭秒数（0=不显示，默认 3，0~60）；后者=免责声明 `warningText` 弹窗的自动关闭秒数（0=不自动关闭，默认 0，0~120，按钮带倒计时） |
 | `theme` / `themes` | 每次启动应用（`ThemeManager.updateThemes`）；`theme` 支持序号/中文名/英文 alias；`themes` 每项可带 `bgImage`（单张）或 `bgImages`（多张，随机选一张并在该主题下按索引缓存保持稳定），配图则所有页面用图，否则用 `bgStart→bgEnd` 渐变 |
 | `upgrade` | 每次启动覆盖缓存；`HomeActivity` 进入后由 `UpgradeChecker` 按 `versionCode`/`checkUrl` 决定是否弹窗，每版本每次启动最多提示一次；`force=true` 时弹窗不可取消 |
 | `topEntries` / `homeEntries` | 每次启动覆盖缓存；**数组含 ≥1 项才整体替换**顶栏/首页历史行，缺省或空数组 `[]`（含「数组里只有注释」剥注释后为空）= 删除 Hawk 键、保持内置默认 UI |
@@ -74,7 +76,7 @@ TVBox 的所有定制配置统一来自 APK 内置文件：
 
 `version` / `apkUrl` / `hin2nUrl` 三个旧字段已废弃（远程更新与外部 hin2n APK 下载均不存在）。
 
-**远程配置覆盖（`remoteConfigUrl`）**：内置 json 顶层 `remoteConfigUrl` 非空时，`RemoteConfig.bootstrap` 在应用内置配置后另起后台线程 GET 该地址（URL 经 `DeviceParams.append` 拼接本机参数，见 §3.12），响应先过 `ConfigCrypto.maybeDecrypt`（支持密文下发，见 §3.11）、`parseLoose` 后以 `remoteOnly=true` 调用 `apply`——只覆盖 notice/home/tkp2p/entries/topEntries/homeEntries/upgrade/hin2nEntry/themes/theme/api/live/epg/proxy/checkInterval/ua/**secretKey**/**donate**/**epgDays**/**aliLicenseKey** 段；**跳过 `settings`（设置页）、`bootStart`（TVBox 开机自启）、`setAsLauncher` 以及 `hin2n`（n2n 组网，本来也不走 apply）**。成功时把**解密后的明文**写入 Hawk `rc_remote_raw` 作为断网兜底；远程失败或解析异常时，若 `rc_remote_raw` 有缓存则用缓存兜底，否则完全保持内置。UA 使用内置 `ua` 字段，缺省 `Mozilla/5.0 (Linux; Android) TVBox`，连接/读取超时 8 秒。
+**远程配置覆盖（`remoteConfigUrl`）**：内置 json 顶层 `remoteConfigUrl` 非空时，`RemoteConfig.bootstrap` 在应用内置配置后另起后台线程 GET 该地址（URL 经 `DeviceParams.append` 拼接本机参数，见 §3.12），响应先过 `ConfigCrypto.maybeDecrypt`（支持密文下发，见 §3.11）、`parseLoose` 后以 `remoteOnly=true` 调用 `apply`——只覆盖 notice/home/tkp2p/entries/topEntries/homeEntries/upgrade/hin2nEntry/themes/theme/api/live/epg/proxy/checkInterval/loadSuccessDuration/warningAutoClose/ua/**secretKey**/**donate**/**epgDays**/**aliLicenseKey** 段；**跳过 `settings`（设置页）、`bootStart`（TVBox 开机自启）、`setAsLauncher` 以及 `hin2n`（n2n 组网，本来也不走 apply）**。成功时把**解密后的明文**写入 Hawk `rc_remote_raw` 作为断网兜底；远程失败或解析异常时，若 `rc_remote_raw` 有缓存则用缓存兜底，否则完全保持内置。UA 使用内置 `ua` 字段，缺省 `Mozilla/5.0 (Linux; Android) TVBox`，连接/读取超时 8 秒。
 
 **useRemoteConfig 强制覆盖（统一管控模式）**：内置 json 顶层 `useRemoteConfig: true` 且本次远程拉取成功（含 `rc_remote_raw` 缓存兜底应用）时，`apply(remoteOnly=true)` 进入 `forceRemote` 分支：远程 json 强制覆盖 `settings` 全部 25 项（`putBool/putInt/putStr` 跳过 `Hawk.contains` 守卫）、`bootStart`、`setAsLauncher`（并立即 `applyLauncherComponent` 同步别名状态）、`api/live/epg/proxy`（`applyEndpoint` 不再检查用户是否已配置）。`useRemoteConfig=false` 或远程不可访问时行为与上文默认规则完全一致。
 
@@ -89,7 +91,7 @@ TVBox 的所有定制配置统一来自 APK 内置文件：
 | [Hin2nEntryState.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/Hin2nEntryState.java) | 常驻 EventBus 订阅 hin2n 5 个运行事件，折叠为 IDLE/CONNECTING/CONNECTED/ERROR 四态，供入口图标染色（拨号中=黄/已连接=绿/失败=红/未拨号=原色）；变化时 post `ChangedEvent` |
 | [HomeEntry.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/HomeEntry.java) | 首页：hin2n 固定入口（内置模块直进，`applyStateTint` 染色）、`entries` 第三方 App 入口栏、`topEntries` 顶栏整体替换（隐藏 tvWifi/tvFind/tvStyle/tvTheme/tvDrawer/tvN2n/tvHin2n 七个固定图标后动态建项）、公告条、外观/主题应用、输入框/按钮统一样式（`styleInput/styleButton`）；定时 tick 只做界面刷新 |
 | [EntryDispatcher.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/EntryDispatcher.java) | 自定义入口统一分发：`page`（vod/live/search/fastsearch/history/collect/push/setting/drive/apps/hin2n/**system**（系统设置）/**donate**（捐助界面））、`feature`（siteSwitch/themeSwitch/styleSwitch/clearCache/reloadHome/wifi/date）、`vod`（开 CustomVodActivity）、`app`（已安装直开，未装且配 url 走 ApkDownloader）；图标解析（http 图片或内置 drawable 名）也在此 |
-| [NoticeBar.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/NoticeBar.java) | 公告渲染（样式、时段、过期、滚动速度、home/live/vod 显隐）；`ScreenState.expired` 标记：duration 到期隐藏后同内容的周期性重渲染不再重新武装 deadline（修复主界面 ticker 触发 render 导致公告永不消失） |
+| [NoticeBar.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/NoticeBar.java) | 公告渲染（样式、时段、过期、滚动速度、home/live/vod 显隐）；**三处字号统一**（未配 `fontSize` 时统一用 `@dimen/ts_24` 的 px，配了则统一按 sp，修复首页与点播/直播文字大小不一致）；`ScreenState.expired` 标记：duration 到期隐藏后同内容的周期性重渲染不再重新武装 deadline（修复主界面 ticker 触发 render 导致公告永不消失）；`scrollToken` + `speedRun` 身份比对避免快速换内容时多条滚动循环叠加 |
 | [BootReceiver.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/BootReceiver.java) | BOOT_COMPLETED：hin2n 自连 + 按开关拉起首页 |
 | [UpgradeChecker.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/UpgradeChecker.java) | 进首页后自检升级（公开入口 `check(activity)`）：内联字段或 `checkUrl` 拉取版本信息（拼本机参数 + 支持密文响应）→ 版本号比较（每版本每进程只提示一次）→ TipDialog（`force` 时 `setCancelable(false)` 且不显示取消按钮）→ 确认后交 ApkDownloader |
 | [ApkDownloader.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/ApkDownloader.java) | 统一下载管线：OkHttp 流式下载到 `getExternalFilesDir`，首页顶部进度条；完成后 FileProvider+`ACTION_INSTALL_PACKAGE`/`ACTION_VIEW` 安装；Android 8+ 缺未知来源权限时先存 `sPendingInstall` 跳设置，`HomeActivity.onResume` 调 `resumePendingInstall(activity)` 自动重装；Activity 已销毁时用 application context 兜底 |
@@ -142,8 +144,9 @@ TVBox 的所有定制配置统一来自 APK 内置文件：
 
 - **点播/首页 NPE 自动重启**：`ApiConfig.getHomeSourceBean()` 永不返回 null（未就绪时返回 `emptyHome`，key=""），`SourceViewModel.getSort()` 原代码 `getSource(sourceKey).getType()` 在 key 为空/源未加载时直接 NPE → 进程被杀 → 系统自动重启 app（用户表现「点击点播 app 自动重启」）。修复：`getSort()` 开头对 `getSource()` 判空，null 时 `sortResult.postValue(null)` 走正常空态展示。
 - **n2n 连接自动重启 + 无日志**：`N2NService.onStartCommand` 链路中 `intent.getBundleExtra` 取值无空判、`vpn_session_name[version]` 无越界保护、native `startEdge()` 只被 `catch(Exception)` 保护（`UnsatisfiedLinkError` 是 Error，会穿透）——任一触发即杀进程，且 edge.log 尚未创建导致「无日志输出」。修复：整链 `try/catch(Throwable)` + `appendEdgeLog()` 把失败原因（含 lib 加载失败提示）写进 edge 日志文件，界面日志页直接可见；`stopEdge()`/`getEdgeStatus()` 同样 Throwable 防护（EventBus 订阅线程崩溃同样会杀进程）。
-- **主屏左上源名显示规则**（`HomeActivity.applySourceName()`，2026-10-22 调整）：**固定显示**内置 JSON `home.sourceName` 文字（未配置回退 app 名称），**不再随点播接口切换/换源变化**。`initViewModel` 观察者与 `onResume` 两处统一走该方法。
+- **主屏左上源名显示规则**（`HomeActivity.applySourceName()`，2026-10-22 调整）：**固定显示**内置 JSON `home.sourceName` 文字（未配置回退 app 名称），**不再随点播接口切换/换源变化**。`initViewModel` 观察者与 `onResume` 两处统一走该方法。**2026-10-23：左上角名称取消切源入口与焦点**——`tvName` 在布局与代码中均置 `clickable=false / focusable=false`，移除点击/长按监听（切源仍可用 MENU 键或设置页）；首页容器不再用 LoadSir 遮罩初始加载，顶栏、入口行、公告在首帧一起渲染，历史一行不再等点播接口加载完成才出现。
 - **全局未捕获异常防护**（2026-10-22）：[App.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/base/App.java) `initCrashHandler()` 在 onCreate 最前面安装 `Thread.setDefaultUncaughtExceptionHandler`——任何线程未捕获异常（含配置接口后主页刷新链路）把堆栈追加写 `filesDir/crash.log`（>512KB 自动重写），后台线程异常尽力 Toast「程序出现异常，即将自动重启」，随后 `killProcess` 自行结束进程，**不交给系统默认 handler，避免弹「tvbox结束运行」**。配套加固：`SourceViewModel.getSort()` type 0/1 的 `onSuccess` 解析（sortXml/sortJson）与 type 3 的 finally 解析块都包了 `try/catch(Throwable)`（解析失败回落 `postValue(null)`）；`HomeActivity` sortResult observer 与 loadConfig error 弹窗加 `isFinishing()/isDestroyed()` 守卫。
+- **点播接口通知 / 公告条（2026-10-23）**：① 首页、点播、直播三处公告字号统一（见 §3.3 NoticeBar 行），`duration` 到期后同内容不再重新显示；② 新增顶层 `loadSuccessDuration`：点播接口首次加载成功时在首页顶部显示非模态提示（不抢焦点、带剩余秒数倒计时），到点自动移除，0=不显示（默认 3）；③ 新增顶层 `warningAutoClose`：点播接口 `warningText` 免责声明弹窗支持 N 秒后自动关闭（按钮显示「确定 (Ns)」倒计时），0=保持原行为必须手动确认（默认 0）；④ 新增 `home.recMovies`：首页自定义推荐影片，配置后不再请求豆瓣（见 §3.2）。
 
 ### 3.9 设为系统桌面（setAsLauncher / LauncherAlias）
 

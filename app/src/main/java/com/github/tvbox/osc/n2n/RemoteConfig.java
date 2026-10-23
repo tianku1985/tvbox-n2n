@@ -11,6 +11,7 @@ import android.provider.Settings;
 import android.util.Log;
 import android.widget.Toast;
 
+import com.github.tvbox.osc.bean.Movie;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.orhanobut.hawk.Hawk;
 
@@ -49,8 +50,17 @@ import java.util.List;
  *     "speed": 60
  *   },
  *   "home": { "bgImage": "...", "sourceName": "...", "entryBgColor": "...", "iconColor": "...",
- *             "textColor": "...", "alpha": 90, "inputBgColor": "...", "buttonBgColor": "..." },
+ *             "textColor": "...", "alpha": 90, "inputBgColor": "...", "buttonBgColor": "...",
+ *             "recMovies": [                       // 首页「豆瓣热播」替换为自定义影片（可选）
+ *               {"name":"片名","pic":"封面图","note":"备注","id":"影片ID","sourceKey":"站点key"}
+ *             ] },
  *             // sourceName=首页左上角默认文字（用户未配置点播接口时显示）
+ *             // recMovies 存在且非空时：首页推荐列表不再请求豆瓣，直接显示这里配置的影片；
+ *             //   配了 id+sourceKey 点击直接进详情，只配 name 则点击按片名去搜索
+ *   "loadSuccessDuration": 3,                         // 点播接口加载成功通知：多少秒后自动关闭
+ *                                                     //   （0=不显示该通知；默认 3；范围 0~60）
+ *   "warningAutoClose": 0,                            // 点播接口免责声明（warningText）弹窗：
+ *                                                     //   多少秒后自动关闭（默认 0=必须手动点确定）
  *   "tkp2p": { "engine": "auto|hls|media", "announce": [...], "token": "",
  *              "zone": "cn", "iceServers": [...] },   // iceServers 也可简写 ice
  *   "checkInterval": 30,                              // 配置检查间隔（分钟，本地模式下列出兼容）
@@ -112,6 +122,10 @@ public class RemoteConfig {
     public static final String K_ENTRIES = "rc_entries";
     public static final String K_TOP_ENTRIES = "rc_top_entries";
     public static final String K_HOME_ENTRIES = "rc_home_entries";
+    /** 点播接口加载成功通知的自动关闭秒数（json "loadSuccessDuration"，0=不显示） */
+    public static final String K_LOAD_SUCCESS_DURATION = "rc_load_success_duration";
+    /** 点播接口免责声明（warningText）弹窗的自动关闭秒数（json "warningAutoClose"，0=不自动关闭） */
+    public static final String K_WARNING_AUTO_CLOSE = "rc_warning_auto_close";
     public static final String K_UPGRADE = "rc_upgrade";
     public static final String K_HIN2N = "rc_hin2n_entry";
     public static final String K_BOOT = "n2n_boot_start";      // TVBox 开机自启开关（用户值优先）
@@ -130,8 +144,6 @@ public class RemoteConfig {
     public static final String K_ALI_LICENSE = "rc_ali_license";
     /** 最近一次成功拉取的远程配置原文（断网/下次启动兜底；存解密后的明文） */
     public static final String K_REMOTE_RAW = "rc_remote_raw";
-    /** 点播接口加载成功后自动关闭通知的倒计时秒数（json "loadSuccessDuration"，默认 3 秒；0=不弹通知） */
-    public static final String K_LOAD_SUCCESS_DURATION = "rc_load_success_duration";
 
     /**
      * Launcher 别名类名后缀（清单中为 {@code android:name=".LauncherAlias"}）。
@@ -199,23 +211,84 @@ public class RemoteConfig {
     }
 
     /**
-     * 首页「自定义推荐影片」列表（home 段 "recMovies" 数组）。
-     * 当首页推荐模式为「豆瓣热播」(HOME_REC==0) 且本字段非空时，优先展示此处配置的影片，
-     * 不再请求豆瓣接口；为空时回退到原豆瓣热播逻辑。
-     * 数组元素支持字段：name（片名，必填）、pic（封面图 URL，可选）、note（副标题/评分/备注，可选）、
-     * id（点播详情 id，配 sourceKey 可直接打开详情）、sourceKey（点播源 key，可选）。
-     * 未配 id/sourceKey 时点击走搜索（与豆瓣条目无 id 时行为一致）。
+     * 首页自定义推荐影片（home 段的 "recMovies" 数组）。
      *
-     * @return 非空数组表示已配置自定义推荐；空数组表示未配置（走豆瓣）。
+     * <p>作用：把首页默认的「豆瓣热播」替换为运营方自己配置的影片，避免依赖豆瓣接口
+     * （弱网/豆瓣风控时列表为空）。配置后首页不再发起豆瓣请求。</p>
+     *
+     * <p>数组元素字段（均可选，name 必填才有效）：</p>
+     * <ul>
+     *   <li>name（兼容 title）：影片名；点击时未配 id 则按片名跳搜索</li>
+     *   <li>pic（兼容 cover）：封面图地址，空=占位图</li>
+     *   <li>note（兼容 rate）：右下角角标文字（评分/更新说明等）</li>
+     *   <li>id：站点内影片 ID，配合 sourceKey 点击直接进详情</li>
+     *   <li>sourceKey：点播接口中的站点 key，缺省时使用当前首页站点</li>
+     * </ul>
+     *
+     * @return 非 null 列表；未配置或格式错误时返回空列表（调用方回退豆瓣）
      */
-    public static org.json.JSONArray homeRecMovies() {
+    public static List<Movie.Video> homeRecMovies() {
+        List<Movie.Video> list = new ArrayList<>();
         try {
-            JSONObject home = homeStyle();
-            org.json.JSONArray arr = home.optJSONArray("recMovies");
-            return arr != null ? arr : new org.json.JSONArray();
-        } catch (Throwable t) {
-            return new org.json.JSONArray();
+            JSONArray arr = homeStyle().optJSONArray("recMovies");
+            if (arr == null || arr.length() == 0) {
+                return list;
+            }
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject o = arr.optJSONObject(i);
+                if (o == null) {
+                    continue;
+                }
+                String name = o.optString("name", o.optString("title", "")).trim();
+                if (name.isEmpty()) {
+                    continue;
+                }
+                Movie.Video vod = new Movie.Video();
+                vod.name = name;
+                vod.pic = o.optString("pic", o.optString("cover", "")).trim();
+                vod.note = o.optString("note", o.optString("rate", "")).trim();
+                vod.id = o.optString("id", "").trim();
+                vod.sourceKey = o.optString("sourceKey", "").trim();
+                list.add(vod);
+            }
+        } catch (Throwable ignored) {
+            // 配置格式异常时按「未配置」处理，首页仍走豆瓣，不影响启动
         }
+        return list;
+    }
+
+    /**
+     * 点播接口加载成功通知的自动关闭秒数（顶层 "loadSuccessDuration"）。
+     * 0=不显示该通知；默认 3 秒；上限 60 秒，防止配置过大导致提示长期遮挡界面。
+     */
+    public static int loadSuccessDuration() {
+        int s = Hawk.get(K_LOAD_SUCCESS_DURATION, 3);
+        if (s < 0) {
+            s = 0;
+        }
+        if (s > 60) {
+            s = 60;
+        }
+        return s;
+    }
+
+    /**
+     * 点播接口免责声明（warningText）弹窗的自动关闭秒数（顶层 "warningAutoClose"）。
+     *
+     * <p>0=保持原行为（不自动关闭，必须点「确定」）；大于 0 时弹窗按钮显示倒计时，
+     * 到点自动关闭，避免无人值守的电视/机顶盒被免责声明弹窗长期挡住。</p>
+     *
+     * @return 0~120 秒，默认 0
+     */
+    public static int warningAutoClose() {
+        int s = Hawk.get(K_WARNING_AUTO_CLOSE, 0);
+        if (s < 0) {
+            s = 0;
+        }
+        if (s > 120) {
+            s = 120;
+        }
+        return s;
     }
 
     public static JSONObject tkP2pStyle() {
@@ -274,18 +347,6 @@ public class RemoteConfig {
     public static String aliLicenseKey() {
         String k = Hawk.get(K_ALI_LICENSE, "");
         return k == null ? "" : k.trim();
-    }
-
-    /**
-     * 点播接口加载成功通知自动关闭的倒计时秒数（json "loadSuccessDuration"）。
-     * 默认 3 秒；0 = 不弹通知（静默加载成功）；范围 0~60 秒。
-     * 通知为带倒计时的 TipDialog，到期自动 dismiss。
-     */
-    public static int loadSuccessDuration() {
-        int d = Hawk.get(K_LOAD_SUCCESS_DURATION, 3);
-        if (d < 0) d = 0;
-        if (d > 60) d = 60;
-        return d;
     }
 
     /**
@@ -759,6 +820,29 @@ public class RemoteConfig {
         if (j.has("home") && j.optJSONObject("home") != null) {
             Hawk.put(K_HOME_STYLE, j.optJSONObject("home").toString());
         }
+        // 点播接口加载成功通知：多少秒后自动关闭（0=不显示）。本地/远程均可下发，每次启动应用，
+        // 写入前做 0~60 范围保护，避免异常配置导致通知长期遮挡首页。
+        if (j.has("loadSuccessDuration")) {
+            int dur = j.optInt("loadSuccessDuration", 3);
+            if (dur < 0) {
+                dur = 0;
+            }
+            if (dur > 60) {
+                dur = 60;
+            }
+            Hawk.put(K_LOAD_SUCCESS_DURATION, dur);
+        }
+        // 点播接口免责声明弹窗：多少秒后自动关闭（0=保持原行为，必须手动点确定）
+        if (j.has("warningAutoClose")) {
+            int dur = j.optInt("warningAutoClose", 0);
+            if (dur < 0) {
+                dur = 0;
+            }
+            if (dur > 120) {
+                dur = 120;
+            }
+            Hawk.put(K_WARNING_AUTO_CLOSE, dur);
+        }
         if (j.has("tkp2p") && j.optJSONObject("tkp2p") != null) {
             Hawk.put(K_TKP2P, j.optJSONObject("tkp2p").toString());
         }
@@ -804,10 +888,6 @@ public class RemoteConfig {
         // 阿里云播放器 SDK License：本地/远程均可下发；空字符串=清除（SDK 弹提示但不影响播放）
         if (j.has("aliLicenseKey")) {
             Hawk.put(K_ALI_LICENSE, j.optString("aliLicenseKey", "").trim());
-        }
-        // 点播接口加载成功通知倒计时秒数：本地/远程均可下发，每次启动应用（0=不弹，默认 3 秒）
-        if (j.has("loadSuccessDuration")) {
-            Hawk.put(K_LOAD_SUCCESS_DURATION, Math.max(0, Math.min(60, j.optInt("loadSuccessDuration", 3))));
         }
         if (j.has("hin2nEntry")) {
             Hawk.put(K_HIN2N, j.optBoolean("hin2nEntry", true));

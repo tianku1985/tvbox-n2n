@@ -36,11 +36,10 @@
     "inputBgColor": "",
     "buttonBgColor": "",
     "recMovies": [
-      { "name": "流浪地球2", "pic": "https://img.example.com/ball2.jpg", "note": "8.3分", "id": "12345", "sourceKey": "douban" },
-      { "name": "满江红", "pic": "https://img.example.com/mjh.jpg", "note": "7.0分" }
+      { "name": "示例影片A", "pic": "https://example.com/a.jpg", "note": "9.1" },
+      { "name": "示例影片B", "pic": "https://example.com/b.jpg", "note": "2026新片", "id": "123456", "sourceKey": "csp_xxx" }
     ]
   },
-  "loadSuccessDuration": 3,
   "tkp2p": {
     "engine": "auto",
     "announce": [],
@@ -182,6 +181,8 @@
   "epg": "",
   "proxy": "",
   "checkInterval": 30,
+  "loadSuccessDuration": 3,
+  "warningAutoClose": 0,
   "ua": "",
   "bootStart": true,
   "hin2nEntry": true,

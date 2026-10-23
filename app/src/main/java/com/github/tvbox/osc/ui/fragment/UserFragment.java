@@ -88,6 +88,9 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
             }
             this.homeSourceRec = recVod;
             if (Hawk.get(HawkConfig.HOME_REC, 0) == 1 && homeHotVodAdapter != null) {
+                // 站点推荐数据到达：标题同步改为「站点推荐」（首次创建时数据还没回来，
+                // 标题会先显示为豆瓣/推荐，这里纠正，避免标题与内容不一致）
+                homeHotVodAdapter.setLabel("站点推荐");
                 homeHotVodAdapter.setNewData(recVod);
             }
         } catch (Throwable th) {
@@ -111,7 +114,7 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         }
 
         super.onFragmentResume();
-        if (Hawk.get(HawkConfig.HOME_REC, 0) == 2) {
+        if (Hawk.get(HawkConfig.HOME_REC, 0) == 2 && homeHotVodAdapter != null) {
             List<VodInfo> allVodRecord = RoomDataManger.getAllVodRecord(20);
             List<Movie.Video> vodList = new ArrayList<>();
             for (VodInfo vodInfo : allVodRecord) {
@@ -188,32 +191,41 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         // 多行模式：关闭网格列表内部滚动，内容完全展开、由外层 ScrollView 统一滚动，
         // 入口行（历史一行）即可随下方内容一起上/下滚动（与单行模式行为一致）
         tvHotListForGrid.setNestedScrollingEnabled(false);
-        // 推荐列表标题：模式 0 且 JSON 配了自定义推荐时显示「推荐」，否则「豆瓣热播」
-        String tvRate="";
-        int recMode = Hawk.get(HawkConfig.HOME_REC, 0);
-        if(recMode == 0){
-            try {
-                org.json.JSONArray recMovies = com.github.tvbox.osc.n2n.RemoteConfig.homeRecMovies();
-                tvRate = (recMovies != null && recMovies.length() > 0) ? "推荐" : "豆瓣热播";
-            } catch (Throwable th) {
-                tvRate = "豆瓣热播";
+        // 推荐列表左上角标题：
+        //  - 模式 0（豆瓣热播）：json 配置了 home.recMovies 时改叫「推荐」，不再请求豆瓣；
+        //  - 模式 1（站点推荐）：有站点推荐数据叫「站点推荐」，没有时回退豆瓣/自定义推荐；
+        //  - 模式 2（观看历史）不显示该标题。
+        List<Movie.Video> customRec = RemoteConfig.homeRecMovies();
+        String tvRate = "";
+        if (Hawk.get(HawkConfig.HOME_REC, 0) == 0) {
+            tvRate = customRec.isEmpty() ? "豆瓣热播" : "推荐";
+        } else if (Hawk.get(HawkConfig.HOME_REC, 0) == 1) {
+            if (homeSourceRec != null) {
+                tvRate = "站点推荐";
+            } else {
+                tvRate = customRec.isEmpty() ? "豆瓣热播" : "推荐";
             }
-        }else if(recMode == 1){
-          tvRate= homeSourceRec != null ? "站点推荐" : "豆瓣热播";
         }
-        homeHotVodAdapter = new HomeHotVodAdapter(style,tvRate);
+        homeHotVodAdapter = new HomeHotVodAdapter(style, tvRate);
         homeHotVodAdapter.setOnItemClickListener(new BaseQuickAdapter.OnItemClickListener() {
             @Override
             public void onItemClick(BaseQuickAdapter adapter, View view, int position) {
                 if (ApiConfig.get().getSourceBeanList().isEmpty())
                     return;
                 Movie.Video vod = ((Movie.Video) adapter.getItem(position));
+                // 防御：数据刷新瞬间 position 可能已越界/对应项被移除，取不到条目直接忽略点击
+                if (vod == null) {
+                    return;
+                }
 
                 // takagen99: CHeck if in Delete Mode
                 if ((vod.id != null && !vod.id.isEmpty()) && (Hawk.get(HawkConfig.HOME_REC, 0) == 2) && HawkConfig.hotVodDelete) {
                     homeHotVodAdapter.remove(position);
                     VodInfo vodInfo = RoomDataManger.getVodInfo(vod.sourceKey, vod.id);
-                    RoomDataManger.deleteVodRecord(vod.sourceKey, vodInfo);
+                    // 防御：历史记录可能已被其它页面删除，查不到时只从列表移除，避免空指针
+                    if (vodInfo != null) {
+                        RoomDataManger.deleteVodRecord(vod.sourceKey, vodInfo);
+                    }
                     Toast.makeText(mContext, getString(R.string.hm_hist_del), Toast.LENGTH_SHORT).show();
                 } else if (vod.id != null && !vod.id.isEmpty()) {
                     Bundle bundle = new Bundle();
@@ -245,6 +257,10 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
                 if (ApiConfig.get().getSourceBeanList().isEmpty())
                     return false;
                 Movie.Video vod = ((Movie.Video) adapter.getItem(position));
+                // 防御：长按瞬间列表可能已刷新，取不到条目直接忽略
+                if (vod == null) {
+                    return false;
+                }
                 // Additional Check if : Home Rec 0=豆瓣, 1=推荐, 2=历史
                 if ((vod.id != null && !vod.id.isEmpty()) && (Hawk.get(HawkConfig.HOME_REC, 0) == 2)) {
                     HawkConfig.hotVodDelete = !HawkConfig.hotVodDelete;
@@ -353,8 +369,6 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
             card.setBackgroundResource(R.drawable.shape_user_home);
             card.setClickable(true);
             card.setFocusable(true);
-            // 触屏/鼠标设备：允许触摸获得焦点，显示高亮态
-            card.setFocusableInTouchMode(true);
             card.setContentDescription(e.name);
 
             android.widget.ImageView iv = new android.widget.ImageView(mContext);
@@ -405,34 +419,32 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
     }
 
     /**
-     * 初始化首页推荐列表。
-     * 推荐模式（HawkConfig.HOME_REC）：
-     *   0 = 豆瓣热播（默认）：若 JSON 配了 home.recMovies 自定义影片则优先展示，否则请求豆瓣接口；
-     *   1 = 站点推荐：用点播接口返回的 homeContent 列表；
-     *   2 = 观看历史：从本地播放记录取最近 20 条。
+     * 初始化首页推荐列表（首页内容模式由 HawkConfig.HOME_REC 决定）。
+     *
+     * <p>加载优先级（2026-10-23 需求 5）：</p>
+     * <ol>
+     *   <li>模式 1 且首页站点已返回推荐数据：直接显示站点推荐；</li>
+     *   <li>模式 2：前台 {@link #onFragmentResume()} 已填充观看历史，这里不再处理；</li>
+     *   <li>其余情况（豆瓣模式 / 站点推荐回退）：json 配置了 home.recMovies 时直接显示
+     *       自定义影片列表，<b>完全不发豆瓣请求</b>；未配置才走原有豆瓣热播（含当日缓存）。</li>
+     * </ol>
      */
     private void initHomeHotVod(HomeHotVodAdapter adapter) {
-        int mode = Hawk.get(HawkConfig.HOME_REC, 0);
-        if (mode == 1) {
+        if (Hawk.get(HawkConfig.HOME_REC, 0) == 1) {
             if (homeSourceRec != null) {
                 adapter.setNewData(homeSourceRec);
-            }
-            return;
-        } else if (mode == 2) {
-            return;
-        }
-        // —— 模式 0：豆瓣热播 ——
-        // 优先使用 JSON 自定义推荐（home.recMovies），配置后不再请求豆瓣，适合离线/定制片单场景
-        try {
-            org.json.JSONArray recMovies = com.github.tvbox.osc.n2n.RemoteConfig.homeRecMovies();
-            if (recMovies != null && recMovies.length() > 0) {
-                adapter.setNewData(loadCustomRecMovies(recMovies));
                 return;
             }
-        } catch (Throwable th) {
-            th.printStackTrace();
+            // 站点推荐尚未返回：若有自定义推荐，先顶上，避免空白等待
+        } else if (Hawk.get(HawkConfig.HOME_REC, 0) == 2) {
+            return;
         }
-        // 未配置自定义推荐：走豆瓣热播（带本地缓存，同一天只请求一次）
+        // 自定义推荐影片优先：配置后不再请求豆瓣（豆瓣接口在部分网络/风控下会返回空列表）
+        List<Movie.Video> customRec = RemoteConfig.homeRecMovies();
+        if (!customRec.isEmpty()) {
+            adapter.setNewData(customRec);
+            return;
+        }
         try {
             Calendar cal = Calendar.getInstance();
             int year = cal.get(Calendar.YEAR);
@@ -471,33 +483,6 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         } catch (Throwable th) {
             th.printStackTrace();
         }
-    }
-
-    /**
-     * 解析 JSON 自定义推荐影片列表（home.recMovies）。
-     * 字段：name 片名（必填）、pic 封面（可选）、note 备注/评分（可选）、
-     *       id 点播详情 id（可选）、sourceKey 点播源 key（可选）。
-     * 无 id/sourceKey 的条目点击走搜索（与豆瓣无 id 条目行为一致）。
-     */
-    private ArrayList<Movie.Video> loadCustomRecMovies(org.json.JSONArray arr) {
-        ArrayList<Movie.Video> result = new ArrayList<>();
-        try {
-            for (int i = 0; i < arr.length(); i++) {
-                org.json.JSONObject obj = arr.optJSONObject(i);
-                if (obj == null) continue;
-                Movie.Video vod = new Movie.Video();
-                vod.name = obj.optString("name", "").trim();
-                if (vod.name.isEmpty()) continue;
-                vod.pic = obj.optString("pic", "").trim();
-                vod.note = obj.optString("note", "").trim();
-                vod.id = obj.optString("id", "").trim();
-                vod.sourceKey = obj.optString("sourceKey", "").trim();
-                result.add(vod);
-            }
-        } catch (Throwable th) {
-            th.printStackTrace();
-        }
-        return result;
     }
 
     private ArrayList<Movie.Video> loadHots(String json) {

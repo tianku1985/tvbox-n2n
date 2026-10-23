@@ -14,8 +14,7 @@ import android.provider.Settings;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.animation.AlphaAnimation;
-import android.view.animation.Animation;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -158,8 +157,14 @@ public class HomeActivity extends BaseActivity {
         com.github.tvbox.osc.n2n.HomeEntry.refresh(this);
         this.tvDate = findViewById(R.id.tvDate);
         this.contentLayout = findViewById(R.id.contentLayout);
-        // 左上角名称：单击不再切源（取消入口），长按清缓存重载；MENU 键仍可呼出切源
-        bindTopLeftName();
+        // 首页左上角名称：仅作为标题展示，不再作为「切换点播源」入口。
+        // 2026-10-23 按需求取消该入口及其焦点：TV 遥控器上下左右不会再落到这里，
+        // 切源统一走 MENU 键 / 设置页；长按清缓存也一并移除（避免误触导致重载）。
+        tvName.setClickable(false);
+        tvName.setFocusable(false);
+        tvName.setFocusableInTouchMode(false);
+        tvName.setOnClickListener(null);
+        tvName.setOnLongClickListener(null);
         // Button : Wifi >> Go into Android Wifi Settings -------------
         tvWifi.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -242,28 +247,9 @@ public class HomeActivity extends BaseActivity {
             th.printStackTrace();
         }
         setLoadSir(this.contentLayout);
-    }
-
-    /**
-     * 左上角名称（tvName）交互规则（2026-10-22 调整）：
-     *  · 单击：不再打开「切换点播源」对话框（取消左上角切源入口，避免误触）；
-     *  · 长按：清理缓存并重载首页（保留）。
-     * 如需切换点播源，可通过遥控器 MENU 键呼出（dispatchKeyEvent 仍保留 showSiteSwitch）。
-     */
-    private void bindTopLeftName() {
-        tvName.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                // 取消单击切源入口：单击不做任何响应
-            }
-        });
-        tvName.setOnLongClickListener(new View.OnLongClickListener() {
-            @Override
-            public boolean onLongClick(View v) {
-                clearHomeCache();
-                return true;
-            }
-        });
+        // 立即切成成功态：保证 LoadSir 注册后内容区（含「历史」入口行）从首帧就可见，
+        // 与顶部标题行同一时机加载；后续数据通过 UserFragment 的观察者增量刷新。
+        showSuccess();
     }
 
     //站点切换
@@ -370,9 +356,10 @@ public class HomeActivity extends BaseActivity {
     }
 
     /**
-     * 左上角名称显示规则（2026-10-22 起固定）：
+     * 左上角名称显示规则（2026-10-22 起固定为纯标题）：
      * 始终显示内置 json「home.sourceName」配置的文字，不再随点播接口/当前源切换而变化；
-     * sourceName 为空时回退显示 app 名称。点击仍打开「切换数据源」，长按仍清缓存重载。
+     * sourceName 为空时回退显示 app 名称。
+     * 自 2026-10-23 起该标题已取消点击与焦点，仅作展示（切源入口从首页移除）。
      */
     private void applySourceName() {
         String sn = com.github.tvbox.osc.n2n.RemoteConfig.homeSourceName();
@@ -447,8 +434,11 @@ public class HomeActivity extends BaseActivity {
             }
             return;
         }
-        tvNameAnimation();
-        showLoading();
+        // 首帧不再用 LoadSir 遮住内容区（原 tvNameAnimation + showLoading）：
+        // 顶部标题行、扩展入口栏、中间「历史/点播/直播/...」入口行、公告条都在启动时一起渲染，
+        // 与顶部行加载方式一致；点播接口数据到达后由 UserFragment 观察者增量刷新推荐列表，
+        // 不再出现「顶部已显示、历史一行要等接口加载完才出现」的先后差。
+        tvName.clearAnimation();
         if (dataInitOk && !jarInitOk) {
             if (!ApiConfig.get().getSpider().isEmpty()) {
                 ApiConfig.get().loadJar(useCacheConfig, ApiConfig.get().getSpider(), new ApiConfig.LoadConfigCallback() {
@@ -458,10 +448,7 @@ public class HomeActivity extends BaseActivity {
                         mHandler.postDelayed(new Runnable() {
                             @Override
                             public void run() {
-                                if (!useCacheConfig) {
-                                    // 点播接口加载成功：弹出带倒计时的通知，N 秒后自动关闭（N 由 JSON loadSuccessDuration 配置）
-                                    showLoadSuccessWithCountdown();
-                                }
+                                // 原「加载成功」Toast 统一替换为可配置秒数的顶部通知（见 showLoadSuccessNotice）
                                 initData();
                             }
                         }, 50);
@@ -514,6 +501,12 @@ public class HomeActivity extends BaseActivity {
                     @Override
                     public void run() {
                         initData();
+                        // 点播接口（配置）加载成功通知：秒数由 json "loadSuccessDuration" 配置，
+                        // 到点自动关闭；0 表示不显示。仅在本次真正走了接口加载（非缓存）时提示，
+                        // 与原先「加载成功」Toast 的触发时机保持一致，避免每次启动都打扰用户。
+                        if (!useCacheConfig) {
+                            showLoadSuccessNotice();
+                        }
                         showWarningTextOnce();
                         // 远程升级检查：延迟片刻，避免与免责声明弹窗叠加
                         mHandler.postDelayed(new Runnable() {
@@ -596,7 +589,20 @@ public class HomeActivity extends BaseActivity {
     /** 免责声明是否已在本进程内弹过（每次启动只弹一次） */
     private static boolean sWarningShown = false;
 
-    /** 点播接口配置的 warningText 生效：配置加载成功后弹一次免责声明 */
+    /** 免责声明弹窗自动关闭倒计时任务（null=当前没有进行中的倒计时） */
+    private Runnable mWarningTick;
+
+    /**
+     * 点播接口配置的 warningText 生效：配置加载成功后弹一次免责声明。
+     *
+     * <p>2026-10-23 需求 6：弹窗支持「自定义秒数后自动关闭」——秒数取自 json 顶层
+     * {@code warningAutoClose}（RemoteConfig.warningAutoClose）：</p>
+     * <ul>
+     *   <li>0（默认）：保持原行为，必须点「确定」才关闭；</li>
+     *   <li>N&gt;0：确定按钮显示「确定 (Ns)」并每秒递减，到点自动关闭，不需要任何按键；
+     *       适合无人值守的电视/机顶盒，避免免责声明长期挡住首页。</li>
+     * </ul>
+     */
     private void showWarningTextOnce() {
         if (sWarningShown || isFinishing() || isDestroyed()) return;
         String warningText = Hawk.get(HawkConfig.WARNING_TEXT, "");
@@ -618,9 +624,54 @@ public class HomeActivity extends BaseActivity {
                 public void cancel() {
                 }
             });
+            // 弹窗被手动确认/取消/系统关闭时，立即停止倒计时，避免残留任务继续跑
+            holder[0].setOnDismissListener(new android.content.DialogInterface.OnDismissListener() {
+                @Override
+                public void onDismiss(android.content.DialogInterface dialog) {
+                    stopWarningCountdown();
+                }
+            });
             holder[0].show();
+            // 自定义秒数自动关闭：倒计时显示在「确定」按钮上，到点自动 dismiss
+            final int autoClose = com.github.tvbox.osc.n2n.RemoteConfig.warningAutoClose();
+            if (autoClose > 0) {
+                final android.widget.TextView leftBtn = holder[0].findViewById(R.id.leftBtn);
+                final int[] leftSec = {autoClose};
+                updateWarningButton(leftBtn, autoClose);
+                mWarningTick = new Runnable() {
+                    @Override
+                    public void run() {
+                        if (isFinishing() || isDestroyed() || !holder[0].isShowing()) {
+                            return;
+                        }
+                        leftSec[0]--;
+                        if (leftSec[0] <= 0) {
+                            holder[0].dismiss();
+                            return;
+                        }
+                        updateWarningButton(leftBtn, leftSec[0]);
+                        mHandler.postDelayed(this, 1000);
+                    }
+                };
+                mHandler.postDelayed(mWarningTick, 1000);
+            }
         } catch (Throwable th) {
             th.printStackTrace();
+        }
+    }
+
+    /** 刷新免责声明「确定」按钮上的剩余秒数：确定 (Ns) */
+    private void updateWarningButton(android.widget.TextView btn, int seconds) {
+        if (btn != null) {
+            btn.setText(getString(R.string.hm_ok) + " (" + seconds + "s)");
+        }
+    }
+
+    /** 停止免责声明倒计时（幂等） */
+    private void stopWarningCountdown() {
+        if (mWarningTick != null) {
+            mHandler.removeCallbacks(mWarningTick);
+            mWarningTick = null;
         }
     }
 
@@ -696,6 +747,10 @@ public class HomeActivity extends BaseActivity {
     @Override
     protected void onPause() {
         super.onPause();
+        // 页面不可见时先移除浮层通知与倒计时：onPause 会清空 Handler 队列，
+        // 若只清队列不移除视图，返回首页后顶部提示会残留不再消失。
+        hideLoadSuccessNotice();
+        stopWarningCountdown();
         mHandler.removeCallbacksAndMessages(null);
     }
 
@@ -724,6 +779,10 @@ public class HomeActivity extends BaseActivity {
 
     @Override
     protected void onDestroy() {
+        // 先移除未执行完的加载成功通知倒计时，避免 Activity 销毁后 Runnable 仍持有引用
+        hideLoadSuccessNotice();
+        // 免责声明自动关闭倒计时同样需要停止
+        stopWarningCountdown();
         super.onDestroy();
         EventBus.getDefault().unregister(this);
         if (sSkipAppExit) {
@@ -734,70 +793,6 @@ public class HomeActivity extends BaseActivity {
             ControlManager.get().stopServer();
         }
         com.github.tvbox.osc.n2n.HomeEntry.stopTicker();
-    }
-
-    /**
-     * 点播接口加载成功通知：带倒计时的 TipDialog，N 秒后自动关闭。
-     * N 由 JSON "loadSuccessDuration" 配置（默认 3 秒；0=不弹通知，静默成功）。
-     * 倒计时显示在「确定」按钮上，如「确定 (3)」；每秒递减，到 0 自动 dismiss；
-     * 用户手动点「确定」也可提前关闭。
-     */
-    private void showLoadSuccessWithCountdown() {
-        final int duration = com.github.tvbox.osc.n2n.RemoteConfig.loadSuccessDuration();
-        if (duration <= 0) {
-            // 配置为 0：不弹通知，静默加载成功
-            return;
-        }
-        if (isFinishing() || isDestroyed()) {
-            return;
-        }
-        final int[] remain = {duration};
-        final TipDialog[] holder = new TipDialog[1];
-        final Runnable tick = new Runnable() {
-            @Override
-            public void run() {
-                remain[0]--;
-                if (remain[0] <= 0) {
-                    if (holder[0] != null && holder[0].isShowing()) {
-                        holder[0].dismiss();
-                    }
-                    return;
-                }
-                try {
-                    android.widget.TextView leftBtn = holder[0].findViewById(R.id.leftBtn);
-                    if (leftBtn != null) {
-                        leftBtn.setText(getString(R.string.hm_ok) + " (" + remain[0] + ")");
-                    }
-                } catch (Throwable ignored) {
-                }
-                mHandler.postDelayed(this, 1000);
-            }
-        };
-        holder[0] = new TipDialog(HomeActivity.this,
-                getString(R.string.hm_ok),
-                getString(R.string.hm_ok) + " (" + remain[0] + ")",
-                "",
-                new TipDialog.OnListener() {
-                    @Override
-                    public void left() {
-                        mHandler.removeCallbacks(tick);
-                        if (holder[0] != null) holder[0].dismiss();
-                    }
-                    @Override
-                    public void right() {}
-                    @Override
-                    public void cancel() {
-                        mHandler.removeCallbacks(tick);
-                    }
-                });
-        holder[0].setOnDismissListener(new android.content.DialogInterface.OnDismissListener() {
-            @Override
-            public void onDismiss(android.content.DialogInterface dialog) {
-                mHandler.removeCallbacks(tick);
-            }
-        });
-        holder[0].show();
-        mHandler.postDelayed(tick, 1000);
     }
 
     // Site Switch on Home Button（JSON feature=siteSwitch 入口也调用，需 public）
@@ -869,14 +864,95 @@ public class HomeActivity extends BaseActivity {
         tvName.clearAnimation();
     }
 
-    private void tvNameAnimation()
-    {
-        AlphaAnimation blinkAnimation = new AlphaAnimation(0.0f, 1.0f);
-        blinkAnimation.setDuration(500);
-        blinkAnimation.setStartOffset(20);
-        blinkAnimation.setRepeatMode(Animation.REVERSE);
-        blinkAnimation.setRepeatCount(Animation.INFINITE);
-        tvName.startAnimation(blinkAnimation);
+    // ==================== 点播接口加载成功通知（可配置自动关闭秒数） ====================
+
+    /** 当前显示中的「点播接口加载成功」通知，null 表示未显示 */
+    private TextView mLoadSuccessTip;
+    /** 通知剩余显示秒数：每秒递减，减到 0 自动从界面上移除 */
+    private int mLoadSuccessLeft = 0;
+
+    /**
+     * 显示点播接口加载成功通知（2026-10-23 需求 6）。
+     *
+     * <p>行为：</p>
+     * <ul>
+     *   <li>秒数取自 json 顶层 {@code loadSuccessDuration}（RemoteConfig.loadSuccessDuration）：
+     *       0=不显示，默认 3 秒，最大 60 秒；</li>
+     *   <li>通知为非模态浮层，{@code focusable=false / clickable=false}，不抢遥控器焦点，
+     *       到点自动移除，不需要用户按键确认（替代原来的系统 Toast 与转圈提示）；</li>
+     *   <li>文本每秒刷新为「点播接口加载成功 · Ns」，让用户明确知道何时自动关闭；</li>
+     *   <li>重复调用会先移除旧通知再重新计时，避免多层叠加。</li>
+     * </ul>
+     */
+    private void showLoadSuccessNotice() {
+        final int seconds = com.github.tvbox.osc.n2n.RemoteConfig.loadSuccessDuration();
+        if (seconds <= 0 || isFinishing() || isDestroyed()) {
+            return;
+        }
+        hideLoadSuccessNotice();
+        ViewGroup root = findViewById(android.R.id.content);
+        if (root == null) {
+            return;
+        }
+        TextView tip = new TextView(this);
+        tip.setTextColor(0xFFFFFFFF);
+        tip.setBackgroundColor(0xCC1A1A1A);
+        tip.setGravity(android.view.Gravity.CENTER);
+        tip.setFocusable(false);
+        tip.setClickable(false);
+        tip.setPadding(res.getDimensionPixelSize(R.dimen.vs_25), res.getDimensionPixelSize(R.dimen.vs_12),
+                res.getDimensionPixelSize(R.dimen.vs_25), res.getDimensionPixelSize(R.dimen.vs_12));
+        tip.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
+                res.getDimensionPixelSize(R.dimen.ts_20));
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        // 顶部居中、位于标题栏下方，避免遮挡左上角标题与右上角图标
+        lp.gravity = android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL;
+        lp.topMargin = res.getDimensionPixelSize(R.dimen.vs_90);
+        tip.setLayoutParams(lp);
+        root.addView(tip);
+        mLoadSuccessTip = tip;
+        mLoadSuccessLeft = seconds;
+        updateLoadSuccessNoticeText(seconds);
+        // 先显示完整秒数，1 秒后再开始递减
+        mHandler.postDelayed(mLoadSuccessTick, 1000);
+    }
+
+    /** 通知倒计时任务：每秒刷新文本，归零时移除通知 */
+    private final Runnable mLoadSuccessTick = new Runnable() {
+        @Override
+        public void run() {
+            if (mLoadSuccessTip == null) {
+                return;
+            }
+            mLoadSuccessLeft--;
+            if (mLoadSuccessLeft <= 0) {
+                hideLoadSuccessNotice();
+                return;
+            }
+            updateLoadSuccessNoticeText(mLoadSuccessLeft);
+            mHandler.postDelayed(this, 1000);
+        }
+    };
+
+    /** 刷新通知文本：「点播接口加载成功 · Ns」 */
+    private void updateLoadSuccessNoticeText(int seconds) {
+        if (mLoadSuccessTip != null) {
+            mLoadSuccessTip.setText(getString(R.string.load_success_notice, seconds));
+        }
+    }
+
+    /** 立即移除通知并取消倒计时（幂等） */
+    private void hideLoadSuccessNotice() {
+        mHandler.removeCallbacks(mLoadSuccessTick);
+        mLoadSuccessLeft = 0;
+        if (mLoadSuccessTip != null) {
+            ViewGroup parent = (ViewGroup) mLoadSuccessTip.getParent();
+            if (parent != null) {
+                parent.removeView(mLoadSuccessTip);
+            }
+            mLoadSuccessTip = null;
+        }
     }
 
 }

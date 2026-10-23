@@ -29,17 +29,18 @@
             android:layout_marginBottom="@dimen/vs_8"
             android:background="?attr/color_theme" />
 
+        <!-- 左上角标题：仅作展示，不再作为「切换点播源」入口（2026-10-23 需求 1）
+             取消 clickable/focusable 与 nextFocusRight，遥控器焦点不会落到这里 -->
         <TextView
             android:id="@+id/tvName"
             android:layout_width="@dimen/vs_0"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:clickable="true"
+            android:clickable="false"
             android:ellipsize="marquee"
-            android:focusable="true"
+            android:focusable="false"
             android:focusableInTouchMode="false"
             android:gravity="left|center_vertical"
-            android:nextFocusRight="@id/tvWifi"
             android:singleLine="true"
             android:text="@string/app_name"
             android:textAlignment="gravity"
@@ -50,6 +51,7 @@
 
         <!-- 首页图标入口已移除：主界面不再提供独立的「首页」入口与图标 -->
 
+        <!-- aim: tvName 已不可聚焦，去掉 nextFocusLeft，避免遥控器左移焦点丢失 -->
         <ImageView
             android:id="@+id/tvWifi"
             android:layout_width="@dimen/vs_50"
@@ -61,7 +63,6 @@
             android:background="@drawable/button_dialog_vod"
             android:clickable="true"
             android:focusable="true"
-            android:nextFocusLeft="@id/tvName"
             android:padding="@dimen/vs_5"
             android:src="@drawable/hm_wifi_no" />
         <ImageView

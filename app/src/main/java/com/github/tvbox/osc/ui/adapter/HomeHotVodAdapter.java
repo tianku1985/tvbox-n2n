@@ -37,6 +37,23 @@ public class HomeHotVodAdapter extends BaseQuickAdapter<Movie.Video, BaseViewHol
         this.tvYearValue=tvYear;
     }
 
+    /**
+     * 更新卡片左上角标题（「豆瓣热播」/「站点推荐」/「推荐」）。
+     *
+     * <p>标题是 adapter 级共享值（画在每张卡片的 tvYear 上）：首页创建 Fragment 时，
+     * 站点推荐数据往往还没返回，标题只能先按配置推断；等 updateHomeRec 收到真实数据后
+     * 调用本方法纠正为「站点推荐」，保证标题与列表内容一致。</p>
+     *
+     * @param label 新标题；传入 null/空串时保持原标题不变
+     */
+    public void setLabel(String label) {
+        if (label == null || label.isEmpty()) {
+            return;
+        }
+        this.tvYearValue = label;
+        notifyDataSetChanged();
+    }
+
     @Override
     protected void convert(BaseViewHolder helper, Movie.Video item) {
 
