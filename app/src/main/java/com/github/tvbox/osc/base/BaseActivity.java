@@ -15,6 +15,7 @@ import android.util.DisplayMetrics;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.view.WindowManager.LayoutParams;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
@@ -312,15 +313,19 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
         if (!supportsTouch()) {
             return;
         }
-        // setTouchscreenBlocksFocus 是 Window 的方法（API 21+），不是 View 的，
-        // 必须从 getWindow() 拿；legacy 变体 minSdk=19，必须做版本保护。
+        // 关闭 TOUCHSCREEN_BLOCKS_FOCUS 窗口标志：让触摸/鼠标点击能移动焦点
+        // （Android 默认开启此标志，TV 盒子无触屏没问题，平板/手机上会导致点击不移动焦点）。
+        // 注：Window 类没有公开的 setTouchscreenBlocksFocus 方法，它是 ViewRootImpl 的隐藏 API，
+        // 必须通过 WindowManager.LayoutParams.FLAG_TOUCHSCREEN_BLOCKS_FOCUS 配合 setFlags 清除。
+        // FLAG_TOUCHSCREEN_BLOCKS_FOCUS = 0x00200000（API 21 引入，legacy 变体 minSdk=19 需版本保护）。
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             try {
                 if (getWindow() != null) {
-                    getWindow().setTouchscreenBlocksFocus(false);
+                    // setFlags(flags, mask) 会把 flags 中 mask 为 1 的位置写入窗口参数；
+                    // flags=0 会把 mask 对应的位清零，即关闭此标志。
+                    getWindow().setFlags(0, LayoutParams.FLAG_TOUCHSCREEN_BLOCKS_FOCUS);
                 }
             } catch (Throwable ignored) {
-                // 部分 ROM 可能隐藏该方法，兜底忽略
             }
         }
         // 递归给已可点击的视图补上 focusableInTouchMode，使触屏点击有焦点反馈。
