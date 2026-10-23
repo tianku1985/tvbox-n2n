@@ -35,25 +35,32 @@ public class LiveWebViewPlayer {
     private static final String TAG = "LiveWebViewPlayer";
 
     /**
-     * 页面内播放接管脚本（参考 ku9 webview JS 实现）：
-     *  - 每 100ms 轮询 <video>，出现即 v.play() 自动起播（15 秒后降为 1 秒轮询，
-     *    页面重载/视频元素重建也能自动接管）；
-     *  - 强制 v.muted=false、v.volume=1，修复部分源静音打开导致「没声音」；
-     *  - hideControls 隐藏 vjs/xgplayer/dplayer 等自带控制条（display:none 而非删除 DOM，
-     *    保证 togglePageUi 切回页面 UI 时控件能恢复显示）；
-     *  - 把 video 移入全屏黑底容器铺满整屏，修复各源全屏表现不一；
-     *  - 内置 window.ku9 桥接桩（getscale/setscale/setvideo/setaudio/setposition/setduration），
-     *    ku9 风格脚本可直接复用；
-     *  - window.__tvboxToggleUI() 切换全屏容器显隐：隐藏时露出页面原 UI，
-     *    可用页面自带的节目单/频道列表，再按一次回到全屏视频。
+     * 页面内播放接管脚本（参考 ku9 / FongMi / takagen99 等知名 TVBox 二开版的 webview 直播全屏方案）：
+     *  1. 先注入全屏 CSS：html/body 强制铺满视口、清除默认边距、隐藏滚动条，
+     *     解决「视频在网页小窗里播放、未铺满全屏」的根因；
+     *  2. 每 100ms 轮询 <video>（含同源 iframe 内的 video），出现即 v.play() 自动起播
+     *     （15 秒后降为 1 秒轮询，页面重载/视频元素重建也能自动接管）；
+     *  3. 强制 v.muted=false、v.volume=1，修复部分源静音打开导致「没声音」；
+     *  4. hideControls 隐藏 vjs/xgplayer/dplayer 等自带控制条（display:none 而非删除 DOM，
+     *     保证 togglePageUi 切回页面 UI 时控件能恢复显示）；
+     *  5. 把 video 移入 z-index 最高的全屏黑底容器，用 object-fit:contain 保持比例铺满；
+     *  6. 内置 window.ku9 桥接桩，ku9 风格脚本可直接复用；
+     *  7. window.__tvboxToggleUI() 切换全屏容器显隐：隐藏时露出页面原 UI，
+     *     可用页面自带的节目单/频道列表，再按一次回到全屏视频。
      */
     private static final String JS_KU9_ENGINE =
             "(function(){"
                     + "if(window.__tvboxKu9)return;window.__tvboxKu9=true;"
+                    // ---- ① 注入全屏 CSS：让页面本身铺满整个 WebView 视口 ----
+                    + "var css=document.createElement('style');"
+                    + "css.textContent='html,body{margin:0!important;padding:0!important;width:100%!important;"
+                    + "height:100%!important;overflow:hidden!important;background:#000!important;}';"
+                    + "css.textContent+='*{box-sizing:border-box!important;}';"
+                    + "document.head.appendChild(css);"
                     + "var startTime=Date.now(),videoElement=null,fastPhase=true;"
                     + "window.ku9={getscale:function(){return 0;},setscale:function(){},"
                     + "setposition:function(){},setduration:function(){},setvideo:function(){},setaudio:function(){}};"
-                    + "// 要隐藏的控制条选择器（仅隐藏 display，保留 DOM，切回页面 UI 时恢复）"
+                    // 要隐藏的控制条选择器（仅隐藏 display，保留 DOM，切回页面 UI 时恢复）
                     + "var ctrlSelectors=['#control_bar','.vjs-control-bar','xg-controls','.xgplayer-ads',"
                     + "'.xgplayer-controls','.prism-controlbar','.dplayer-controller','.dplayer-menu',"
                     + "'.video-controls','.player-controls','.live-controls','.vjs-big-play-button',"
@@ -72,27 +79,55 @@ public class LiveWebViewPlayer {
                     + "videoElement=v;"
                     + "var c=document.getElementById('video-fullscreen-container');"
                     + "if(!c){c=document.createElement('div');c.id='video-fullscreen-container';"
-                    + "c.style.cssText='position:fixed!important;top:0!important;left:0!important;width:100%!important;"
-                    + "height:100%!important;z-index:2147483647!important;background:#000!important;overflow:hidden!important;"
-                    + "transform:translateZ(0);';document.body.appendChild(c);}"
+                    + "c.style.cssText='position:fixed!important;top:0!important;left:0!important;width:100vw!important;"
+                    + "height:100vh!important;z-index:2147483647!important;background:#000!important;overflow:hidden!important;"
+                    + "transform:translateZ(0);margin:0!important;padding:0!important;';document.body.appendChild(c);}"
                     + "while(c.firstChild)c.removeChild(c.firstChild);"
-                    + "v.style.cssText='position:absolute!important;top:50%!important;left:50%!important;"
-                    + "transform:translate(-50%,-50%)!important;width:100%!important;height:100%!important;"
-                    + "object-fit:contain!important;outline:none!important;border:none!important;box-shadow:none!important;';"
+                    // object-fit:contain 保持视频比例铺满；如源画面比例与屏幕差异大可改 cover 裁剪铺满
+                    + "v.style.cssText='position:absolute!important;top:0!important;left:0!important;"
+                    + "width:100%!important;height:100%!important;"
+                    + "object-fit:contain!important;outline:none!important;border:none!important;"
+                    + "box-shadow:none!important;margin:0!important;padding:0!important;';"
                     + "c.appendChild(v);"
                     + "try{v.muted=false;v.volume=1;}catch(e){}"
-                    + "try{v.setAttribute('playsinline','');v.removeAttribute('muted');}catch(e){}"
+                    + "try{v.setAttribute('playsinline','');v.setAttribute('webkit-playsinline','');v.removeAttribute('muted');}catch(e){}"
                     + "var vp=document.createElement('meta');vp.name='viewport';"
                     + "vp.content='width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no';"
                     + "document.head.appendChild(vp);"
                     + "hideControls();"
                     + "}"
+                    // 在主文档 + 同源 iframe 中查找 video
+                    + "function findVideo(){"
+                    + "var vs=document.querySelectorAll('video');"
+                    + "if(vs.length>0)return vs[0];"
+                    + "try{var fs=document.querySelectorAll('iframe');"
+                    + "for(var i=0;i<fs.length;i++){try{var idoc=fs[i].contentDocument;"
+                    + "if(idoc){var iv=idoc.querySelectorAll('video');if(iv.length>0)return iv[0];}}"
+                    + "catch(e){}}}catch(e){}"
+                    + "return null;"
+                    + "}"
+                    // 跨域 iframe 内的 video 无法访问（contentDocument 为空），
+                    // 此时退而求其次：把页面中面积最大的 iframe 本身撑满整个视口，
+                    // 视频随 iframe 一起铺满屏幕（主流 TVBox 二开版处理跨域播放页的做法）。
+                    + "var iframeExpanded=null;"
+                    + "function expandIframe(){"
+                    + "try{var fs=document.querySelectorAll('iframe'),best=null,bestArea=0;"
+                    + "for(var i=0;i<fs.length;i++){var f=fs[i];var a=(f.offsetWidth||0)*(f.offsetHeight||0);"
+                    + "if(a>bestArea){bestArea=a;best=f;}}"
+                    + "if(!best)return false;"
+                    + "if(best===iframeExpanded)return true;"
+                    + "iframeExpanded=best;"
+                    + "best.style.cssText='position:fixed!important;top:0!important;left:0!important;"
+                    + "width:100vw!important;height:100vh!important;z-index:2147483646!important;"
+                    + "border:none!important;margin:0!important;padding:0!important;background:#000!important;';"
+                    + "return true;}catch(e){return false;}"
+                    + "}"
                     + "function checkVideo(){"
                     + "try{"
-                    + "var vs=document.querySelectorAll('video');"
-                    + "if(vs.length==0){if(videoElement&&videoElement.isConnected)return;}"
-                    + "var v=vs.length>0?vs[0]:null;"
-                    + "if(!v){if(Date.now()-startTime>20000)fastPhase=false;return;}"
+                    + "var v=findVideo();"
+                    + "if(!v){if(expandIframe())return;"
+                    + "if(videoElement&&videoElement.isConnected)return;"
+                    + "if(Date.now()-startTime>20000)fastPhase=false;return;}"
                     + "if(v.paused){try{v.play();}catch(e){}}"
                     + "if(v!==videoElement||!v.__tvboxSetup){"
                     + "if(v.readyState>0||Date.now()-startTime>4000){setupVideo(v);v.__tvboxSetup=true;"
@@ -100,7 +135,7 @@ public class LiveWebViewPlayer {
                     + "}"
                     + "}catch(e){}"
                     + "}"
-                    + "// 切换全屏视频容器显隐：显示容器=全屏观看视频，隐藏容器=露出页面原 UI（含节目表/频道列表）"
+                    // 切换全屏视频容器显隐：显示容器=全屏观看视频，隐藏容器=露出页面原 UI（含节目表/频道列表）
                     + "window.__tvboxToggleUI=function(){"
                     + "var c=document.getElementById('video-fullscreen-container');"
                     + "if(!c)return 'none';"

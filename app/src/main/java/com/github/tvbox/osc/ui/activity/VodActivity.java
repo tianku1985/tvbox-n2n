@@ -194,12 +194,12 @@ public class VodActivity extends BaseActivity {
                 onBackPressed();
             }
         });
-        // 源名：点击切换站点 / 长按重新加载当前源分类
+        // 源名：单击不再切源（取消左上角切源入口，避免误触），长按重新加载当前源分类；
+        // 如需切换点播源，可通过遥控器 MENU 键呼出（dispatchKeyEvent 保留 showSiteSwitch）。
         tvName.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                FastClickCheckUtil.check(view);
-                showSiteSwitch();
+                // 取消单击切源入口：单击不做任何响应
             }
         });
         tvName.setOnLongClickListener(new View.OnLongClickListener() {

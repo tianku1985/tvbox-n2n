@@ -52,6 +52,10 @@ public class NoticeBar {
         long deadline;
         /** 当前内容已展示到期：同内容再次 render 时保持隐藏，不再重新计时（修复主界面常显） */
         boolean expired;
+        /** 正在滚动的内容文本：周期 render 时用于判断是否需要重启滚动（避免跑马灯位置被重置） */
+        String scrollText;
+        /** 正在使用的滚动速度（像素/秒），与 scrollText 一起作为「是否需要重启滚动」的判断依据 */
+        int speed;
     }
 
     private static ScreenState getOrCreate(String screen) {
@@ -101,22 +105,39 @@ public class NoticeBar {
 
     // ==================== 渲染 ====================
 
+    /**
+     * 渲染公告条（幂等，可重复调用）。
+     *
+     * 修复要点（2026-10-22）：
+     *  1. 字号统一：首页 tvNotice 用 @dimen/ts_24（mm 单位），直播/点播动态叠加层原本用
+     *     setTextSize(24)（sp 单位），两者在同一设备上渲染大小不同。现叠加层默认字号改用
+     *     与首页相同的 ts_24 尺寸（getDimensionPixelSize），保证三处字号一致；JSON fontSize
+     *     非零时仍以 JSON 为准（sp 单位）。
+     *  2. duration 到期不消失：原代码在做过期/时间段判断之前就执行 tv.setVisibility(VISIBLE)，
+     *     导致即使已到期也会先闪显再隐藏；更严重的是周期 render（onResume/远程配置回调）
+     *     会在 hideRun 把视图置 GONE 后立刻又置 VISIBLE，造成「永不消失」。
+     *     修复：把 setVisibility(VISIBLE) 移到所有「应隐藏」判断之后，只有确实需要显示
+     *     时才置 VISIBLE；同内容到期后保持 expired=true，后续 render 直接 return 不触显。
+     */
     private static void render(final Activity act, final TextView tv, String screen) {
         final ScreenState ss = getOrCreate(screen);
         ss.view = tv;
         String notice = RemoteConfig.notice();
         JSONObject st = RemoteConfig.noticeStyle();
+        // 空内容 / 该界面未开启 → 隐藏
         if (notice == null || notice.trim().isEmpty() || !enabledFor(screen, st)) {
             hideScreen(ss);
+            ss.content = null; // 清除内容标记，下次有内容时按新内容重新计时（避免同文本回归时被误判过期）
             return;
         }
-        // 过期时间（yyyy-MM-dd，过期不显示）
+        // 过期时间（yyyy-MM-dd，当天结束前仍显示，过期不显示）
         String expire = st.optString("expire", "").trim();
         if (!expire.isEmpty()) {
             try {
                 Date exp = new SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(expire);
                 if (exp != null && new Date().after(new Date(exp.getTime() + 24L * 3600 * 1000 - 1))) {
                     hideScreen(ss);
+                    ss.content = null;
                     return;
                 }
             } catch (Throwable ignored) {
@@ -134,75 +155,35 @@ public class NoticeBar {
                 boolean in = (s <= e) ? (now >= s && now <= e) : (now >= s || now <= e);
                 if (!in) {
                     hideScreen(ss);
+                    ss.content = null;
                     return;
                 }
             } catch (Throwable ignored) {
             }
         }
         final String text = notice.trim();
-        tv.setText(text);
-        // 位置：首页为 ConstraintLayout，直播/点播叠加层为 FrameLayout
-        applyPosition(tv, st.optString("position", "bottom").trim());
-        // 背景色 / 字体颜色 / 字体大小 / 透明度
-        int bg = HomeEntry.parseColor(st.optString("bgColor", ""));
-        if (bg != 0) {
-            tv.setBackgroundColor(bg);
-        }
-        int fontColor = HomeEntry.parseColor(st.optString("fontColor", ""));
-        if (fontColor != 0) {
-            tv.setTextColor(fontColor);
-        }
-        int fontSize = st.optInt("fontSize", 0);
-        if (fontSize > 0) {
-            tv.setTextSize(fontSize);
-        }
-        try {
-            if (st.has("alpha")) {
-                tv.setAlpha(Math.max(0, Math.min(100, st.optInt("alpha", 100))) / 100f);
-            }
-        } catch (Throwable ignored) {
-        }
-        tv.setVisibility(View.VISIBLE);
-        // 滚动速度：speed>0 用自定义平滑滚动（由右向左）；否则回退系统 marquee
-        int speed = st.optInt("speed", 0);
-        if (speed > 0) {
-            tv.setSelected(false);
-            tv.setEllipsize(null);
-            startSpeedScroll(act, tv, text, speed, ss);
-        } else {
-            stopSpeedScroll(ss);
-            tv.setScroller(null);
-            tv.scrollTo(0, 0);
-            tv.setTranslationX(0f);
-            tv.setText(text);   // 恢复原始文本（自定义滚动会写入重复拼接后的长文本）
-            try {
-                tv.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
-            } catch (Throwable ignored) {
-            }
-            tv.setSelected(true);   // 选中态才会触发 marquee 滚动
-        }
-        // duration：从「该内容首次展示」起计时；ticker 周期性重渲染同一内容时不重置计时，
-        // 已到期的立即隐藏并保持（expired 防止主界面周期 render 重新武装 deadline 导致永不消失）。
-        int duration = st.optInt("duration", 0);
+        final long now = SystemClock.uptimeMillis();
+        final int duration = st.optInt("duration", 0);
+        // —— duration 计时判断（必须在 setVisibility(VISIBLE) 之前，避免到期后被重新置可见）——
         if (duration > 0) {
-            long now = SystemClock.uptimeMillis();
             if (!text.equals(ss.content)) {
-                // 新内容：重新计时并清除过期标记
+                // 新内容：重新计时，清除过期标记
                 ss.content = text;
                 ss.deadline = now + duration * 1000L;
                 ss.expired = false;
             } else if (ss.expired || ss.deadline <= 0) {
-                // 同一内容已展示到期：保持隐藏，不再重新显示
-                ss.expired = true;
+                // 同一内容已展示到期：保持隐藏，绝不重新显示
                 hideScreen(ss);
                 return;
             }
             long remain = ss.deadline - now;
             if (remain <= 0) {
+                // 正好到期：标记过期并隐藏
                 ss.expired = true;
                 hideScreen(ss);
                 return;
             }
+            // 未到期：（重新）挂载一次性隐藏任务，用剩余时间而不是 duration，避免周期 render 延长显示
             cancelAutoHide(ss);
             final TextView ftv = tv;
             ss.hideRun = new Runnable() {
@@ -211,17 +192,79 @@ public class NoticeBar {
                     ss.hideRun = null;
                     ss.deadline = 0;
                     ss.expired = true;
-                    ftv.setVisibility(View.GONE);
+                    if (ftv != null) {
+                        ftv.setVisibility(View.GONE);
+                    }
                     stopSpeedScroll(ss);
                 }
             };
             H.postDelayed(ss.hideRun, remain);
         } else {
+            // duration=0：常显，清除过期标记与隐藏任务
             cancelAutoHide(ss);
             ss.deadline = 0;
             ss.content = text;
             ss.expired = false;
         }
+        // —— 到此处说明公告需要显示，统一应用样式后再置可见 ——
+        applyPosition(tv, st.optString("position", "bottom").trim());
+        // 背景色 / 字体颜色
+        int bg = HomeEntry.parseColor(st.optString("bgColor", ""));
+        if (bg != 0) {
+            tv.setBackgroundColor(bg);
+        }
+        int fontColor = HomeEntry.parseColor(st.optString("fontColor", ""));
+        if (fontColor != 0) {
+            tv.setTextColor(fontColor);
+        }
+        // 字体大小：JSON 配了 fontSize(>0) 用 JSON（sp）；否则统一用首页同款 ts_24（mm→px），
+        // 保证首页/直播/点播三处字号一致。
+        int fontSize = st.optInt("fontSize", 0);
+        if (fontSize > 0) {
+            tv.setTextSize(fontSize);
+        } else {
+            try {
+                tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
+                        tv.getResources().getDimensionPixelSize(R.dimen.ts_24));
+            } catch (Throwable ignored) {
+                tv.setTextSize(24);
+            }
+        }
+        try {
+            if (st.has("alpha")) {
+                tv.setAlpha(Math.max(0, Math.min(100, st.optInt("alpha", 100))) / 100f);
+            }
+        } catch (Throwable ignored) {
+        }
+        // 滚动速度：speed>0 用自定义平滑滚动（由右向左）；否则回退系统 marquee。
+        // 周期 render（首页定时 ticker / 远程配置回调）会反复进来，若文本与速度都没变，
+        // 不能重启滚动，否则每次刷新都会把跑马灯位置重置到起点（视觉上「一卡一卡」）。
+        int speed = st.optInt("speed", 0);
+        boolean sameScrolling = ss.speedRun != null && ss.speed == speed && text.equals(ss.scrollText);
+        if (speed > 0) {
+            tv.setSelected(false);
+            tv.setEllipsize(null);
+            if (!sameScrolling) {
+                startSpeedScroll(act, tv, text, speed, ss);
+                ss.scrollText = text;
+                ss.speed = speed;
+            }
+        } else {
+            ss.scrollText = null;
+            ss.speed = 0;
+            stopSpeedScroll(ss);
+            tv.setScroller(null);
+            tv.scrollTo(0, 0);
+            tv.setTranslationX(0f);
+            tv.setText(text);
+            try {
+                tv.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
+            } catch (Throwable ignored) {
+            }
+            tv.setSelected(true);
+        }
+        // 最后再置可见：确保到期/禁用的公告不会闪显
+        tv.setVisibility(View.VISIBLE);
     }
 
     private static void hideScreen(ScreenState ss) {
@@ -324,7 +367,14 @@ public class NoticeBar {
         tv.setGravity(Gravity.CENTER_VERTICAL);
         tv.setTextColor(0xFFFFD54F);
         tv.setBackgroundColor(0x66000000);
-        tv.setTextSize(24);
+        // 默认字号与首页 tvNotice 一致（@dimen/ts_24），避免首页/直播/点播三处渲染大小不一；
+        // render() 中若 JSON 配了 fontSize 会再覆盖。
+        try {
+            tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
+                    act.getResources().getDimensionPixelSize(R.dimen.ts_24));
+        } catch (Throwable ignored) {
+            tv.setTextSize(24);
+        }
         tv.setFocusable(false);
         tv.setClickable(false);
         tv.setVisibility(View.GONE);

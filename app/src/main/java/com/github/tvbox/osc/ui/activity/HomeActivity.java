@@ -158,21 +158,8 @@ public class HomeActivity extends BaseActivity {
         com.github.tvbox.osc.n2n.HomeEntry.refresh(this);
         this.tvDate = findViewById(R.id.tvDate);
         this.contentLayout = findViewById(R.id.contentLayout);
-        // Button : TVBOX >> Click to switch data source / Longclick to clear cache & refresh --
-        tvName.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                FastClickCheckUtil.check(v);
-                showSiteSwitch();
-            }
-        });
-        tvName.setOnLongClickListener(new View.OnLongClickListener() {
-            @Override
-            public boolean onLongClick(View v) {
-                clearHomeCache();
-                return true;
-            }
-        });
+        // 左上角名称：单击不再切源（取消入口），长按清缓存重载；MENU 键仍可呼出切源
+        bindTopLeftName();
         // Button : Wifi >> Go into Android Wifi Settings -------------
         tvWifi.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -255,6 +242,28 @@ public class HomeActivity extends BaseActivity {
             th.printStackTrace();
         }
         setLoadSir(this.contentLayout);
+    }
+
+    /**
+     * 左上角名称（tvName）交互规则（2026-10-22 调整）：
+     *  · 单击：不再打开「切换点播源」对话框（取消左上角切源入口，避免误触）；
+     *  · 长按：清理缓存并重载首页（保留）。
+     * 如需切换点播源，可通过遥控器 MENU 键呼出（dispatchKeyEvent 仍保留 showSiteSwitch）。
+     */
+    private void bindTopLeftName() {
+        tvName.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                // 取消单击切源入口：单击不做任何响应
+            }
+        });
+        tvName.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                clearHomeCache();
+                return true;
+            }
+        });
     }
 
     //站点切换
@@ -450,7 +459,8 @@ public class HomeActivity extends BaseActivity {
                             @Override
                             public void run() {
                                 if (!useCacheConfig) {
-                                    Toast.makeText(HomeActivity.this, getString(R.string.hm_ok), Toast.LENGTH_SHORT).show();
+                                    // 点播接口加载成功：弹出带倒计时的通知，N 秒后自动关闭（N 由 JSON loadSuccessDuration 配置）
+                                    showLoadSuccessWithCountdown();
                                 }
                                 initData();
                             }
@@ -724,6 +734,70 @@ public class HomeActivity extends BaseActivity {
             ControlManager.get().stopServer();
         }
         com.github.tvbox.osc.n2n.HomeEntry.stopTicker();
+    }
+
+    /**
+     * 点播接口加载成功通知：带倒计时的 TipDialog，N 秒后自动关闭。
+     * N 由 JSON "loadSuccessDuration" 配置（默认 3 秒；0=不弹通知，静默成功）。
+     * 倒计时显示在「确定」按钮上，如「确定 (3)」；每秒递减，到 0 自动 dismiss；
+     * 用户手动点「确定」也可提前关闭。
+     */
+    private void showLoadSuccessWithCountdown() {
+        final int duration = com.github.tvbox.osc.n2n.RemoteConfig.loadSuccessDuration();
+        if (duration <= 0) {
+            // 配置为 0：不弹通知，静默加载成功
+            return;
+        }
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        final int[] remain = {duration};
+        final TipDialog[] holder = new TipDialog[1];
+        final Runnable tick = new Runnable() {
+            @Override
+            public void run() {
+                remain[0]--;
+                if (remain[0] <= 0) {
+                    if (holder[0] != null && holder[0].isShowing()) {
+                        holder[0].dismiss();
+                    }
+                    return;
+                }
+                try {
+                    android.widget.TextView leftBtn = holder[0].findViewById(R.id.leftBtn);
+                    if (leftBtn != null) {
+                        leftBtn.setText(getString(R.string.hm_ok) + " (" + remain[0] + ")");
+                    }
+                } catch (Throwable ignored) {
+                }
+                mHandler.postDelayed(this, 1000);
+            }
+        };
+        holder[0] = new TipDialog(HomeActivity.this,
+                getString(R.string.hm_ok),
+                getString(R.string.hm_ok) + " (" + remain[0] + ")",
+                "",
+                new TipDialog.OnListener() {
+                    @Override
+                    public void left() {
+                        mHandler.removeCallbacks(tick);
+                        if (holder[0] != null) holder[0].dismiss();
+                    }
+                    @Override
+                    public void right() {}
+                    @Override
+                    public void cancel() {
+                        mHandler.removeCallbacks(tick);
+                    }
+                });
+        holder[0].setOnDismissListener(new android.content.DialogInterface.OnDismissListener() {
+            @Override
+            public void onDismiss(android.content.DialogInterface dialog) {
+                mHandler.removeCallbacks(tick);
+            }
+        });
+        holder[0].show();
+        mHandler.postDelayed(tick, 1000);
     }
 
     // Site Switch on Home Button（JSON feature=siteSwitch 入口也调用，需 public）

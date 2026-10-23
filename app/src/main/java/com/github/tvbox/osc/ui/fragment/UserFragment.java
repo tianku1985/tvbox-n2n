@@ -188,10 +188,17 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         // 多行模式：关闭网格列表内部滚动，内容完全展开、由外层 ScrollView 统一滚动，
         // 入口行（历史一行）即可随下方内容一起上/下滚动（与单行模式行为一致）
         tvHotListForGrid.setNestedScrollingEnabled(false);
+        // 推荐列表标题：模式 0 且 JSON 配了自定义推荐时显示「推荐」，否则「豆瓣热播」
         String tvRate="";
-        if(Hawk.get(HawkConfig.HOME_REC, 0) == 0){
-            tvRate="豆瓣热播";
-        }else if(Hawk.get(HawkConfig.HOME_REC, 0) == 1){
+        int recMode = Hawk.get(HawkConfig.HOME_REC, 0);
+        if(recMode == 0){
+            try {
+                org.json.JSONArray recMovies = com.github.tvbox.osc.n2n.RemoteConfig.homeRecMovies();
+                tvRate = (recMovies != null && recMovies.length() > 0) ? "推荐" : "豆瓣热播";
+            } catch (Throwable th) {
+                tvRate = "豆瓣热播";
+            }
+        }else if(recMode == 1){
           tvRate= homeSourceRec != null ? "站点推荐" : "豆瓣热播";
         }
         homeHotVodAdapter = new HomeHotVodAdapter(style,tvRate);
@@ -346,6 +353,8 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
             card.setBackgroundResource(R.drawable.shape_user_home);
             card.setClickable(true);
             card.setFocusable(true);
+            // 触屏/鼠标设备：允许触摸获得焦点，显示高亮态
+            card.setFocusableInTouchMode(true);
             card.setContentDescription(e.name);
 
             android.widget.ImageView iv = new android.widget.ImageView(mContext);
@@ -395,15 +404,35 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         }
     }
 
+    /**
+     * 初始化首页推荐列表。
+     * 推荐模式（HawkConfig.HOME_REC）：
+     *   0 = 豆瓣热播（默认）：若 JSON 配了 home.recMovies 自定义影片则优先展示，否则请求豆瓣接口；
+     *   1 = 站点推荐：用点播接口返回的 homeContent 列表；
+     *   2 = 观看历史：从本地播放记录取最近 20 条。
+     */
     private void initHomeHotVod(HomeHotVodAdapter adapter) {
-        if (Hawk.get(HawkConfig.HOME_REC, 0) == 1) {
+        int mode = Hawk.get(HawkConfig.HOME_REC, 0);
+        if (mode == 1) {
             if (homeSourceRec != null) {
                 adapter.setNewData(homeSourceRec);
             }
             return;
-        } else if (Hawk.get(HawkConfig.HOME_REC, 0) == 2) {
+        } else if (mode == 2) {
             return;
         }
+        // —— 模式 0：豆瓣热播 ——
+        // 优先使用 JSON 自定义推荐（home.recMovies），配置后不再请求豆瓣，适合离线/定制片单场景
+        try {
+            org.json.JSONArray recMovies = com.github.tvbox.osc.n2n.RemoteConfig.homeRecMovies();
+            if (recMovies != null && recMovies.length() > 0) {
+                adapter.setNewData(loadCustomRecMovies(recMovies));
+                return;
+            }
+        } catch (Throwable th) {
+            th.printStackTrace();
+        }
+        // 未配置自定义推荐：走豆瓣热播（带本地缓存，同一天只请求一次）
         try {
             Calendar cal = Calendar.getInstance();
             int year = cal.get(Calendar.YEAR);
@@ -442,6 +471,33 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         } catch (Throwable th) {
             th.printStackTrace();
         }
+    }
+
+    /**
+     * 解析 JSON 自定义推荐影片列表（home.recMovies）。
+     * 字段：name 片名（必填）、pic 封面（可选）、note 备注/评分（可选）、
+     *       id 点播详情 id（可选）、sourceKey 点播源 key（可选）。
+     * 无 id/sourceKey 的条目点击走搜索（与豆瓣无 id 条目行为一致）。
+     */
+    private ArrayList<Movie.Video> loadCustomRecMovies(org.json.JSONArray arr) {
+        ArrayList<Movie.Video> result = new ArrayList<>();
+        try {
+            for (int i = 0; i < arr.length(); i++) {
+                org.json.JSONObject obj = arr.optJSONObject(i);
+                if (obj == null) continue;
+                Movie.Video vod = new Movie.Video();
+                vod.name = obj.optString("name", "").trim();
+                if (vod.name.isEmpty()) continue;
+                vod.pic = obj.optString("pic", "").trim();
+                vod.note = obj.optString("note", "").trim();
+                vod.id = obj.optString("id", "").trim();
+                vod.sourceKey = obj.optString("sourceKey", "").trim();
+                result.add(vod);
+            }
+        } catch (Throwable th) {
+            th.printStackTrace();
+        }
+        return result;
     }
 
     private ArrayList<Movie.Video> loadHots(String json) {

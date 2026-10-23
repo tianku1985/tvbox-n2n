@@ -130,6 +130,8 @@ public class RemoteConfig {
     public static final String K_ALI_LICENSE = "rc_ali_license";
     /** 最近一次成功拉取的远程配置原文（断网/下次启动兜底；存解密后的明文） */
     public static final String K_REMOTE_RAW = "rc_remote_raw";
+    /** 点播接口加载成功后自动关闭通知的倒计时秒数（json "loadSuccessDuration"，默认 3 秒；0=不弹通知） */
+    public static final String K_LOAD_SUCCESS_DURATION = "rc_load_success_duration";
 
     /**
      * Launcher 别名类名后缀（清单中为 {@code android:name=".LauncherAlias"}）。
@@ -196,6 +198,26 @@ public class RemoteConfig {
         return sn == null ? "" : sn.trim();
     }
 
+    /**
+     * 首页「自定义推荐影片」列表（home 段 "recMovies" 数组）。
+     * 当首页推荐模式为「豆瓣热播」(HOME_REC==0) 且本字段非空时，优先展示此处配置的影片，
+     * 不再请求豆瓣接口；为空时回退到原豆瓣热播逻辑。
+     * 数组元素支持字段：name（片名，必填）、pic（封面图 URL，可选）、note（副标题/评分/备注，可选）、
+     * id（点播详情 id，配 sourceKey 可直接打开详情）、sourceKey（点播源 key，可选）。
+     * 未配 id/sourceKey 时点击走搜索（与豆瓣条目无 id 时行为一致）。
+     *
+     * @return 非空数组表示已配置自定义推荐；空数组表示未配置（走豆瓣）。
+     */
+    public static org.json.JSONArray homeRecMovies() {
+        try {
+            JSONObject home = homeStyle();
+            org.json.JSONArray arr = home.optJSONArray("recMovies");
+            return arr != null ? arr : new org.json.JSONArray();
+        } catch (Throwable t) {
+            return new org.json.JSONArray();
+        }
+    }
+
     public static JSONObject tkP2pStyle() {
         try {
             return new JSONObject(Hawk.get(K_TKP2P, "{}"));
@@ -252,6 +274,18 @@ public class RemoteConfig {
     public static String aliLicenseKey() {
         String k = Hawk.get(K_ALI_LICENSE, "");
         return k == null ? "" : k.trim();
+    }
+
+    /**
+     * 点播接口加载成功通知自动关闭的倒计时秒数（json "loadSuccessDuration"）。
+     * 默认 3 秒；0 = 不弹通知（静默加载成功）；范围 0~60 秒。
+     * 通知为带倒计时的 TipDialog，到期自动 dismiss。
+     */
+    public static int loadSuccessDuration() {
+        int d = Hawk.get(K_LOAD_SUCCESS_DURATION, 3);
+        if (d < 0) d = 0;
+        if (d > 60) d = 60;
+        return d;
     }
 
     /**
@@ -770,6 +804,10 @@ public class RemoteConfig {
         // 阿里云播放器 SDK License：本地/远程均可下发；空字符串=清除（SDK 弹提示但不影响播放）
         if (j.has("aliLicenseKey")) {
             Hawk.put(K_ALI_LICENSE, j.optString("aliLicenseKey", "").trim());
+        }
+        // 点播接口加载成功通知倒计时秒数：本地/远程均可下发，每次启动应用（0=不弹，默认 3 秒）
+        if (j.has("loadSuccessDuration")) {
+            Hawk.put(K_LOAD_SUCCESS_DURATION, Math.max(0, Math.min(60, j.optInt("loadSuccessDuration", 3))));
         }
         if (j.has("hin2nEntry")) {
             Hawk.put(K_HIN2N, j.optBoolean("hin2nEntry", true));
