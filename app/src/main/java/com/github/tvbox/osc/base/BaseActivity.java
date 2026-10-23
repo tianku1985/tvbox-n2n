@@ -312,14 +312,15 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
         if (!supportsTouch()) {
             return;
         }
-        // setTouchscreenBlocksFocus 是 API 21 才有的方法，legacy 变体 minSdk=19，必须做版本保护
+        // setTouchscreenBlocksFocus 是 Window 的方法（API 21+），不是 View 的，
+        // 必须从 getWindow() 拿；legacy 变体 minSdk=19，必须做版本保护。
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             try {
-                View root = findViewById(android.R.id.content);
-                if (root != null) {
-                    root.setTouchscreenBlocksFocus(false);
+                if (getWindow() != null) {
+                    getWindow().setTouchscreenBlocksFocus(false);
                 }
             } catch (Throwable ignored) {
+                // 部分 ROM 可能隐藏该方法，兜底忽略
             }
         }
         // 递归给已可点击的视图补上 focusableInTouchMode，使触屏点击有焦点反馈。
